@@ -20,7 +20,7 @@ class MonthlyIter(object):
   _sum = 0
   _time_per_month = None
   
-  def __init__(self, length, start=0, l365=True, units='seconds'):
+  def __init__(self, length, start=0, l365=True, units='seconds', lctr=True):
     ''' initialize with number of month (length) and start month (start) '''
     # interprete first month
     if isinstance(start,basestring):
@@ -38,6 +38,7 @@ class MonthlyIter(object):
     self._i = start # start counting here
     self._len = length + start
     self._sum = 0 # cumulative sum (initialize with 0)
+    self._lctr = lctr # return mid-point or boundary values
     
   def __iter__(self):
     ''' make iterator iterable'''
@@ -51,20 +52,25 @@ class MonthlyIter(object):
       cumsum = self._sum # return the previous value
       self._sum += self._time_per_month[self._i%12] # cyclical
       self._i += 1 # increase for next month
+      if self._lctr: cumsum = (cumsum+self._sum)/2. # mid-point or boundary values
+      # N.B.: the values computed here are the end points/boundaries, not the centers/mid-points
       return cumsum
         
 
 # function to write input file list
-def generateInputFilelist(filename=None, folder=None, input_folder=None, input_pattern=None, 
+def generateInputFilelist(filename=None, folder=None, input_folder=None, input_pattern=None, lcenter=True,
                           listformat=list_format, lvalidate=True, units='seconds', l365=True,
                           lFortran=True, interval='monthly', length=0, mode='climatology'):
   ''' a function to generate a list of climate data input files for HGS '''
+  # determine end time in seconds (begin == 0)
+  if interval[:5].lower() == 'month': 
+    end_time = 86400. * 365. * length/12. 
+    idxprd = 12 # one year for monthly input
+  else: end_time = interval * length  
   # construct time and file name lists
   if mode[-5:] == '-mean' or mode in ('mean','steady-state'):
-    # determin begin and end times in seconds (begin == 0)
-    if interval[:5].lower() == 'month': end_time = 86400. * 365. * length/12. 
-    else: end_time = interval * length
     time_iter = iter([0,end_time])
+    lperiodic = False
   else:
     # determine mode
     if mode in ('climatology','periodic'): lperiodic = True      
@@ -78,8 +84,8 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
         else: raise NotImplementedError, "Unknown units: '{:s}.".format(units)
     # initialize time iterator
     if interval[:5].lower() == 'month':
-      idxprd = 12 # one year for monthly input
-      time_iter = MonthlyIter(length=length, start=0, l365=l365, units=units)
+      time_iter = MonthlyIter(length=length-1 if lcenter else length, start=0, l365=l365, 
+                              units=units, lctr=lcenter)
     elif interval[:3].lower() == 'day': 
       raise NotImplementedError, interval
   # write time/filepath list based on iterators
@@ -88,7 +94,7 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
   if os.path.exists(filename): os.remove(filename) # remove old file
   openfile = open(filename, 'w') # open file list
   for idx,time in enumerate(time_iter):
-    list_time = time # cumulative time in list
+    list_time = time; list_idx = idx # cumulative time/index in list
     # construct filename
     if lperiodic:
       time %= period; idx %= idxprd
@@ -98,8 +104,12 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
     # check if file actually exists
     if lvalidate and not os.path.exists(filepath): 
       raise IOError, "The input file '{:s}' does not exist.\n(run folder: '{:s}')".format(filepath,folder)
-    # write list entry
+    # write list entry(s)
+    if list_idx == 0 and list_time != 0: # add a first line starting at t=0
+      openfile.write(listformat.format(T=0,F=filepath))
     openfile.write(listformat.format(T=list_time,F=filepath))
+  if list_time < end_time: # add another line until the end of the simulation
+    openfile.write(listformat.format(T=end_time,F=filepath))
   openfile.close()
     
     
