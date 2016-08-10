@@ -68,13 +68,13 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
     idxprd = 12 # one year for monthly input
   else: end_time = interval * length  
   # construct time and file name lists
-  if mode[-5:] == '-mean' or mode in ('mean','steady-state'):
+  if mode[-5:] == '-mean' or mode in ('mean','steady','steady-state'):
     time_iter = iter([0,end_time])
     lperiodic = False
   else:
     # determine mode
-    if mode in ('climatology','periodic'): lperiodic = True      
-    elif mode in ('time-series','transient'): lperiodic = False
+    if mode in ('clim','peri','climatology','periodic'): lperiodic = True      
+    elif mode in ('time-series','timeseries','transient','trans'): lperiodic = False
     else: raise NotImplementedError, mode
     # determine length of period (always one year, but different units)
     if lperiodic:
@@ -117,9 +117,9 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
 if __name__ == '__main__':
     
     # test cases
-#     test_case = 'simple_mean'
+    test_case = 'simple_mean'
 #     test_case = 'climatology'
-    test_case = 'time-series'
+#     test_case = 'time-series'
     
     ## file settings
     # work directory settings ("global" variable)
