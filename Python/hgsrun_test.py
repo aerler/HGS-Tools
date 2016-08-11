@@ -38,13 +38,19 @@ class GrokTest(unittest.TestCase):
       raise IOError("HGS Template for testing not found:\n '{}'".format(self.hgs_template))
     # test folder
     self.rundir = '{}/grok_test/'.format(workdir,)
-    if os.path.isdir(self.rundir): shutil.rmtree(self.rundir)
-    os.mkdir(self.rundir)
+    #if os.path.isdir(self.rundir): shutil.rmtree(self.rundir)
+    #os.mkdir(self.rundir)
+    if not os.path.isdir(self.rundir): os.mkdir(self.rundir)
     # grok test files
     self.grok_input  = '{}/{}.grok'.format(self.hgs_template,self.hgs_testcase)
     self.grok_output = '{}/{}.grok'.format(self.rundir,self.hgs_testcase)
+    # some grok settings
+    self.runtime = 5*365*24*60*60 # two years in seconds
+    self.input_interval = 'monthly'
+    self.input_mode = 'periodic'
     # create Grok instance
-    self.grok = Grok(rundir=self.rundir, project=self.hgs_testcase)
+    self.grok = Grok(rundir=self.rundir, project=self.hgs_testcase, runtime=self.runtime,
+                     input_mode=self.input_mode, input_interval=self.input_interval)
     # load a config file from template
     if not os.path.isfile(self.grok_input):
       raise IOError("Grok configuration file for testing not found:\n '{}'".format(self.grok_input))
@@ -72,11 +78,22 @@ class GrokTest(unittest.TestCase):
     grok.setRuntime(time)
     # test
     assert grok.runtime == time
-    # read config file into in-memory file and verify time
+    # convert config file list into string and verify
     output = ''.join(grok._lines) # don't need newlines 
     #print(output)
     assert '{:.3e}'.format(time) in output, '{:.3e}'.format(time)
     
+  def testInputLists(self):
+    ''' test writing of input list files with climate forcings '''
+    grok = self.grok
+    
+    # write lists for fictional scenario
+    grok.generateInputLists(input_mode='PET', input_prefix='test', 
+                            input_folder=self.rundir, lvalidate=False,)
+    # convert config file list into string and verify
+    output = ''.join(grok._lines) # don't need newlines 
+    assert 'precip.inc' in output
+    assert 'pet.inc' in output
     
     
   def testWrite(self):
@@ -97,6 +114,8 @@ if __name__ == "__main__":
     
     specific_tests = []
 #     specific_tests += ['SetTime']
+#     specific_tests += ['Write']
+#     specific_tests += ['InputLists']
 
 
     # list of tests to be performed

@@ -8,13 +8,14 @@ A Python module to generate the input file list that contains the atmospheric fo
 
 import numpy as np
 import os
-from geodata.misc import days_per_month, days_per_month_365, seconds_per_month, seconds_per_month_365, abbr_of_month
+from geodata.misc import days_per_month, days_per_month_365, seconds_per_month, seconds_per_month_365, abbr_of_month,\
+  ArgumentError
 list_format = '{T:18.3f} {F:s}'
 
 
 # iterator for monthly intervals
 class MonthlyIter(object):
-  ''' iterator to return the cumulative at the end of each month '''
+  ''' iterator to return the the elapsed time at the middle or end of each month '''
   _len = None
   _i = 0
   _sum = 0
@@ -53,20 +54,95 @@ class MonthlyIter(object):
       self._sum += self._time_per_month[self._i%12] # cyclical
       self._i += 1 # increase for next month
       if self._lctr: cumsum = (cumsum+self._sum)/2. # mid-point or boundary values
-      # N.B.: the values computed here are the end points/boundaries, not the centers/mid-points
+      # N.B.: the values in self._sum are the end points/boundaries, not the centers/mid-points
       return cumsum
-        
+
+# iterator for daily intervals
+class DailyIter(object):
+  ''' iterator to return the the elapsed time at the middle or end of each day '''
+  _len = None
+  _i = 0
+  _time_per_day = None
+  
+  def __init__(self, length, start=0, units='seconds', lctr=True, l365=True):
+    ''' initialize with number of days (length) and start day (start) '''
+    if not l365: raise NotImplementedError('Need to think about how to handle leap years')
+    # figure out units and data convention (l365 means no leap days)
+    if units[:6].lower() == 'second': 
+      self._time_per_day = 86400. if l365 else NotImplemented
+    elif units[:3].lower() == 'day':
+      self._time_per_day = 1 if l365 else NotImplemented
+    else:
+      raise NotImplementedError("Unknown units: '{:s}'".format(units))
+    self._i = start # start counting here
+    self._len = length + start
+    self._sum = 0 # cumulative sum (initialize with 0)
+    self._lctr = lctr # return mid-point or boundary values
+    
+  def __iter__(self):
+    ''' make iterator iterable'''
+    return self
+  
+  def next(self):
+    ''' return cumulative elapsed time for this month '''
+    if self._i > self._len:
+      raise StopIteration
+    else:
+      i = self._i + 0.5 if self._lctr else self._i # mid-point or boundary values
+      self._i += 1 # increase count of days
+      # N.B.: the computer with self._i alone would be the end points/boundaries, not the centers/mid-points
+      return self._time_per_day * i
+
+# function to resolve length, end_time, and interval
+def resolveInterval(length=None, end_time=None, interval=None):
+  ''' determine length or end_time based on interval and the other variable '''
+  if length and end_time: raise ArgumentError
+  if isinstance(interval,basestring):
+    # interval is a string
+    if interval[:5].lower() == 'month': 
+      if length: # determing end_time from length and interval
+        end_time = 86400. * 365. * length/12.
+      else: # determine length from end_time and interval 
+        length = end_time * 12. / 86400. / 365.  
+    elif interval.lower() in ('day','daily'): 
+      if length: end_time = 86400. * length # determing end_time from length and interval        
+      else: length = end_time / 86400. # determine length from end_time and interval 
+    else:
+      raise NotImplementedError(interval)
+  else: 
+    # interval is a number (in 'units')
+    if length: end_time = interval * length
+    else: length = end_time//interval
+  # return consistent length and end_time
+  return length, end_time
+
+
+# function to determine period based on 
+def resolvePeriod(period=None, interval=None, units=None, l365=False):
+  ''' determine the period length based on input variables '''
+  if period.lower() in ('annual','yearly'):
+    # period length in right units
+    if units[:6].lower() == 'second': period = 365.*86400. if l365 else 365.2425*86400.
+    elif units[:3].lower() == 'day': period = 365. if l365 else 365.2425
+    elif units[:5].lower() == 'month': period = 12
+    else: raise NotImplementedError("Unknown units: '{:s}.".format(units))
+    # period length as multiples of interval
+    if isinstance(interval,basestring):
+      if interval[:5].lower() == 'month': idxprd = 12 # one year for monthly input
+      elif interval.lower() in ('day','daily'): idxprd = 365. if l365 else 365.2425
+      else: raise NotImplementedError("Unknown interval: '{:s}.".format(interval))
+    else: idxprd = period // interval # period should be a number by now
+  # return period in correct units and as multiples of interval
+  return period, idxprd
+
 
 # function to write input file list
 def generateInputFilelist(filename=None, folder=None, input_folder=None, input_pattern=None, lcenter=True,
-                          listformat=list_format, lvalidate=True, units='seconds', l365=True,
-                          lFortran=True, interval='monthly', length=0, mode='climatology'):
+                          listformat=list_format, lvalidate=True, units='seconds', l365=True, lFortran=True, 
+                          interval='monthly', length=0, end_time=0, mode='climatology', period='yearly'):
   ''' a function to generate a list of climate data input files for HGS '''
-  # determine end time in seconds (begin == 0)
-  if interval[:5].lower() == 'month': 
-    end_time = 86400. * 365. * length/12. 
-    idxprd = 12 # one year for monthly input
-  else: end_time = interval * length  
+  # determine end time in seconds (begin == 0) or number of intervals (length)
+  length, end_time = resolveInterval(length=length, end_time=end_time, interval=interval)
   # construct time and file name lists
   if mode[-5:] == '-mean' or mode in ('mean','steady','steady-state'):
     time_iter = iter([0,end_time])
@@ -78,15 +154,15 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
     else: raise NotImplementedError(mode)
     # determine length of period (always one year, but different units)
     if lperiodic:
-        if units[:6].lower() == 'second': period = 365.*86400. if l365 else 365.2425*86400.
-        elif units[:3].lower() == 'day': period = 365. if l365 else 365.2425
-        elif units[:5].lower() == 'month': period = 12
-        else: raise NotImplementedError("Unknown units: '{:s}.".format(units))
+      period, idxprd = resolvePeriod(period=period, interval=interval, units=units)      
     # initialize time iterator
     if interval[:5].lower() == 'month':
       time_iter = MonthlyIter(length=length-1 if lcenter else length, start=0, l365=l365, 
                               units=units, lctr=lcenter)
-    elif interval[:3].lower() == 'day': 
+    elif interval.lower() in ('day','daily'): 
+      time_iter = DailyIter(length=length-1 if lcenter else length, start=0, l365=l365, 
+                              units=units, lctr=lcenter)
+    else:
       raise NotImplementedError(interval)
   # write time/filepath list based on iterators
   listformat = listformat+'\n' # need *two* end of line character
@@ -117,9 +193,9 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
 if __name__ == '__main__':
     
     # test cases
-    test_case = 'simple_mean'
+#     test_case = 'simple_mean'
 #     test_case = 'climatology'
-#     test_case = 'time-series'
+    test_case = 'time-series'
     
     ## file settings
     # work directory settings ("global" variable)
@@ -139,7 +215,7 @@ if __name__ == '__main__':
       # test simple mean
       generateInputFilelist(filename=testfile, folder=testfolder,
                             input_folder='../test_folder', input_pattern='test_file.asc', 
-                            length=180, mode='mean', lvalidate=False)
+                            length=100, interval='daily', mode='mean', lvalidate=False)
     
     elif test_case == 'climatology':
       # test simple mean
@@ -151,7 +227,9 @@ if __name__ == '__main__':
       # test simple mean
       generateInputFilelist(filename=testfile, folder=testfolder,
                             input_folder='../test_folder', input_pattern='test_file_{IDX:02d}.asc', 
-                            length=24, mode='time-series', lvalidate=False)
+                            #length=24, mode='time-series', lvalidate=False)
+                            length=10, interval='daily', mode='time-series', lvalidate=False)
+
 
     ## read and print test file
     openfile = open(testfilepath, 'r')

@@ -12,7 +12,7 @@ import numpy as np
 import os, shutil
 import subprocess # launching external programs
 # internal imports
-from input_list import generateInputFilelist
+from input_list import generateInputFilelist, resolveInterval
 from geodata.misc import ArgumentError
 
 
@@ -24,18 +24,25 @@ class Grok(object):
   '''
   rundir = None # folder where the experiment is set up and executed
   project = None # a project designator used for file names
+  input_mode = None # type of simulation (forcing data): stead-state, periodic, transient
+  input_interval = None # update interval for climate forcing
   runtime = None # run time for the simulations (in seconds)
-  mode = None # type of simulation (forcing data): stead-state, periodic, transient
-  interval = None # update interval for climate forcing
+  length = None # run time in multiples of the interval length
   _lines = None # list of lines in file
   _sourcefile = None # file that the configuration was read from
   _targetfile = None # file that the configuration is written to
   
-  def __init__(self, rundir=None, project=None):
-    ''' Read the grok configuration file into memory (requires templeate to start from). '''
+  def __init__(self, rundir=None, project=None, runtime=None, length=None, input_mode=None, input_interval=None):
+    ''' initialize a Grok configuration object with some settings '''
     if not os.path.isdir(rundir): raise IOError(rundir)
+    # determine end time in seconds (begin == 0) or number of intervals (length)
+    length, runtime = resolveInterval(length=length, end_time=runtime, interval=input_interval)
+    # assign class variables
     self.rundir = rundir
     self.project = project
+    self.runtime = runtime
+    self.input_mode= input_mode
+    self.input_interval = input_interval
   
   def read(self, filename=None, folder=None):
     ''' Read a grok configuration file into memory (or a template to start from). '''    
@@ -48,6 +55,8 @@ class Grok(object):
       self._lines = src.readlines() # read all lines into list
     # strip white spaces and convert to lower case
     self._lines = [line.strip().lower() for line in self._lines]
+    # apply time setting
+    if self.runtime: self.setRuntime(self.runtime)
       
   def write(self, filename=None):
     ''' Write the grok configuration to a file in run dir. '''    
@@ -61,11 +70,11 @@ class Grok(object):
       tgt.write('\n'.join(self._lines)+'\n')
       # N.B.: this is necessary, because our list does not have newlines and Python does not add them...
 
-  def setParam(self, param, value, format=None, after=None, start=0):
+  def setParam(self, param, value, formatter=None, after=None, start=0):
     ''' edit a single parameter, based on the assumption that the parameter value follows in the 
         line below the one where the parameter name appears (case in-sensitive); format is a
         regular format string used to write the value '''
-    if format: value = format.format(value) # apply appropriate formatting
+    if formatter: value = formatter.format(value) # apply appropriate formatting
     else: value = str(value)
     start = self._lines.index(after, start) if after else start # search offset for primary paramerter
     self._lines[self._lines.index(param.lower())+1] = value # replace value in list of lines
@@ -80,11 +89,11 @@ class Grok(object):
     elif dtype: value = dtype(value) # try conversion this way...
     return value
 
-  def replaceParam(self, old, new, format=None, after=None, start=0):
+  def replaceParam(self, old, new, formatter=None, after=None, start=0):
     ''' repalce a parameter value with a new value '''
-    if format: 
-      new = format.format(new) # apply appropriate formatting
-      old = format.format(old) # apply appropriate formatting
+    if formatter: 
+      new = formatter.format(new) # apply appropriate formatting
+      old = formatter.format(old) # apply appropriate formatting
     else:
       new = str(new); old = str(old)
     start = self._lines.index(after, start) if after else start # search offset for primary paramerter
@@ -99,7 +108,8 @@ class Grok(object):
   def setRuntime(self, time):
     ''' set the run time of the simulations (model time in seconds) '''
     self.runtime = time
-    self.setParam('output times', time, format='{:.3e}', )
+    if self._lines:
+      self.setParam('output times', time, formatter='{:.3e}', )
   
   def setInputMode(self, mode=None, interval=None):
     ''' set the type of the simulation: mean/steady-state, climatology/periodic, time-series/transient '''
@@ -122,7 +132,7 @@ class Grok(object):
       if input_mode.upper() == 'PET': # liquid water + snowmelt & PET as input
         input_vars = dict(precip=('rain','liqwatflx'),  
                           pet=('potential evapotranspiration','pet'))
-      if input_mode.upper() == 'NET': # liquid water + snowmelt - ET as input
+      elif input_mode.upper() == 'NET': # liquid water + snowmelt - ET as input
         input_vars = dict(precip=('rain','waterflx'),)
       else:
         raise ArgumentError("Invalid input_mode or input_vars missing:\n {}, {}".format(input_mode,input_vars))
@@ -136,7 +146,7 @@ class Grok(object):
       generateInputFilelist(filename=filename, folder=self.rundir, input_folder=input_folder, 
                             input_pattern=input_pattern, lcenter=lcenter, 
                             lvalidate=lvalidate, units='seconds', l365=l365, lFortran=lFortran, 
-                            interval=self.interval, length=self.runtime, mode=self.mode)
+                            interval=self.input_interval, end_time=self.runtime, mode=self.input_mode)
 
   def runGrok(self, executable='grok_premium.x', logfile='log.grok'):
     ''' run the Grok executable in the current directory '''
