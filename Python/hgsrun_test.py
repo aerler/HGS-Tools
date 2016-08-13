@@ -188,7 +188,7 @@ class HGSTest(GrokTest):
     logfile = '{}/log.hgs_run'.format(hgs.rundir)
     assert hgs.grokOK is None, hgs.grokOK
     # set environment variable for license file
-    print('\nHGSDIR: {}\n'.format(self.hgsdir))
+    print('\nHGSDIR: {}'.format(self.hgsdir))
     # attempt to run HGS
     if not os.path.isfile(exe): raise IOError(exe)
     try: ec = hgs.runHGS(executable=exe, logfile=logfile, skip_grok=True)
@@ -204,9 +204,14 @@ class HGSTest(GrokTest):
   def testSetup(self):
     ''' test copying of a run folder from a template '''
     hgs = self.hgs
+    if not os.path.isdir(self.hgs_template): raise IOError(self.hgs_template)
     # run setup
-    hgs.setupRundir(template=None, bin_folder=None)
+    hgs.setupRundir(template=self.hgs_template, bin_folder=None)
     # check that all items are there
+    assert os.path.isdir(self.rundir), self.rundir
+    for exe in (self.hgs_bin, self.grok_bin):
+      local_exe = '{}/{}'.format(self.rundir,exe)
+      assert os.path.exists(local_exe), local_exe
     
     
 if __name__ == "__main__":

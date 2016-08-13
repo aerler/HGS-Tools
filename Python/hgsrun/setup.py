@@ -200,9 +200,25 @@ class HGS(Grok):
                              length=length, input_mode=input_mode, input_interval=input_interval)
     self.NP = NP # number of processors
     
-  def setupRundir(self, template=None, bin_folder=None):
+  def setupRundir(self, template=None, bin_folder=None, loverwrite=True):
     ''' copy entire run folder from a template and link executables '''
-    raise NotImplementedError
+    if template is None: raise ValueError("Need to specify a template path.")
+    if not os.path.isdir(template): raise IOError(template)
+    # clear existing directory
+    if loverwrite and os.path.isdir(self.rundir): shutil.rmtree(self.rundir)
+    # copy folder tree
+    if not os.path.isdir(self.rundir): shutil.copytree(template, self.rundir, symlinks=True)
+    # put links to executables in place
+    for exe in (self.hgs_bin, self.grok_bin):
+      local_exe = '{}/{}'.format(self.rundir,exe)
+      if bin_folder is not None:
+        os.symlink('{}/{}'.format(bin_folder,exe), local_exe)
+      # check executables
+      if os.path.islink(local_exe):
+        if not os.path.exists(local_exe): 
+          raise IOError("Link to executable '{}' in run folder is broken.\n ('{}') ".format(exe,self.rundir))
+      elif not os.path.isfile(local_exe): 
+        raise IOError("Executable file '{}' not found in run folder.\n ('{}') ".format(exe,self.rundir)) 
     
   def runGrok(self, executable=None, logfile='log.grok', lerror=True):
     ''' run the Grok executable in the run directory and set flag indicating success '''
