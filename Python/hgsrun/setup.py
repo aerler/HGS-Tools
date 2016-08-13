@@ -15,6 +15,13 @@ import subprocess # launching external programs
 from input_list import generateInputFilelist, resolveInterval
 from geodata.misc import ArgumentError
 
+# some named exceptions
+class GrokError(Exception):
+  ''' Exception indicating an Error in Grok '''
+  pass
+class HGSError(Exception):
+  ''' Exception indicating an Error in HGS '''
+  pass
 
 ## a class to handle Grok for HGS simulations
 class Grok(object):
@@ -22,8 +29,11 @@ class Grok(object):
     A class that loads a grok configuration file into memory, provides functions for editing,
     saving the file, and running Grok.
   '''
+  grok_bin = 'grok_premium.x' # default Grok executable
+  batchpfx = 'batch.pfx' # a file that defines the HGS problem name for Grok
   rundir = None # folder where the experiment is set up and executed
   project = None # a project designator used for file names
+  problem = None # the HGS problem name (defaults to project)
   input_mode = None # type of simulation (forcing data): stead-state, periodic, transient
   input_interval = None # update interval for climate forcing
   runtime = None # run time for the simulations (in seconds)
@@ -32,7 +42,8 @@ class Grok(object):
   _sourcefile = None # file that the configuration was read from
   _targetfile = None # file that the configuration is written to
   
-  def __init__(self, rundir=None, project=None, runtime=None, length=None, input_mode=None, input_interval=None):
+  def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, 
+               input_mode=None, input_interval=None):
     ''' initialize a Grok configuration object with some settings '''
     if not os.path.isdir(rundir): raise IOError(rundir)
     # determine end time in seconds (begin == 0) or number of intervals (length)
@@ -40,6 +51,7 @@ class Grok(object):
     # assign class variables
     self.rundir = rundir
     self.project = project
+    self.problem = project if problem is None else problem
     self.runtime = runtime
     self.input_mode= input_mode
     self.input_interval = input_interval
@@ -148,18 +160,106 @@ class Grok(object):
                             lvalidate=lvalidate, units='seconds', l365=l365, lFortran=lFortran, 
                             interval=self.input_interval, end_time=self.runtime, mode=self.input_mode)
 
-  def runGrok(self, executable='grok_premium.x', logfile='log.grok'):
-    ''' run the Grok executable in the current directory '''
+  def runGrok(self, executable=None, logfile='log.grok', batchpfx=None, lerror=True):
+    ''' run the Grok executable in the run directory '''
+    pwd = os.getcwd() # save present workign directory to return later
     os.chdir(self.rundir) # go into run Grok/HGS folder
-    with open(logfile, 'a') as lf: # output and error log
+    self.grok_bin = executable if executable is not None else self.grok_bin
+    self.batchpfx = batchpfx if batchpfx is not None else self.batchpfx
+    if not os.path.isfile(self.grok_bin): 
+      raise IOError("Grok executable '{}' not found.".format(self.grok_bin))
+    # create batch.pfx file with problem name for batch processing
+    with open(self.batchpfx, 'w+') as bp: bp.write(self.problem) # just one line...
+    # run executable while logging output
+    with open(logfile, 'w+') as lf: # output and error log
       # run Grok
-      subprocess.call([executable], stdout=lf, stderr=lf)
+      subprocess.call([self.grok_bin], stdout=lf, stderr=lf)
       # parse log file for errors
       lf.seek(2,2) # i.e. -3, third line from the end
       ec = ( lf.readline().strip() == '---- Normal exit ----' )
-    if ec: 
-      return 0
-    else: 
-      print("WARNING: Grok failed; inspect log-file: {}".format(logfile))
-      return 1     
+    os.chdir(pwd) # return to previous working directory
+    if lerror and not ec: 
+      raise GrokError("Grok failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
+    return 0 if ec else 1
+            
       
+class HGS(Grok):
+  '''
+    A child class of Grok that can also set up the entire run folder and launch an HGS instance;
+    otherwise the same as Grok.
+  '''
+  hgs_bin   = 'hgs_premium.x' # default HGS executable
+  grokOK    = None # indicate if Grok ran successfully
+  pidx_file = 'parallelindx.dat' # file with parallel execution settings 
+  
+  def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, 
+               input_mode=None, input_interval=None, NP=1):
+    ''' initialize HGS instance with a few more parameters: number of processors... '''
+    # call parent constructor (Grok)
+    super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
+                             length=length, input_mode=input_mode, input_interval=input_interval)
+    self.NP = NP # number of processors
+    
+  def setupRundir(self, template=None, bin_folder=None):
+    ''' copy entire run folder from a template and link executables '''
+    raise NotImplementedError
+    
+  def runGrok(self, executable=None, logfile='log.grok', lerror=True):
+    ''' run the Grok executable in the run directory and set flag indicating success '''
+    ec = Grok.runGrok(self, executable=executable, logfile=logfile, lerror=lerror)
+    self.grokOK = True if ec == 0 else False # set Grok flag
+    return ec
+  
+  def writeParallelIndex(self, NP=None, dom_parts=None, solver=None, input_coloring=False, 
+                         run_time=-1., restart=1, parallelindex=None):
+    ''' write the parallelindex.dat input file for HGS execution '''
+    pwd = os.getcwd() # save present workign directory to return later
+    os.chdir(self.rundir) # go into run Grok/HGS folder
+    # fix up arguments
+    self.pidx_file = parallelindex if parallelindex is not None else self.pidx_file
+    if NP is None: NP = self.NP
+    if dom_parts is None: dom_parts = NP
+    if solver is None: solver = 1 if NP == 1 else 2
+    input_coloring = 'T' if input_coloring else 'F'
+    # the other two are just numbers (float and int)
+    # insert arguments
+    contents  = '__Number_of_CPU\n  {:d}\n'.format(NP)
+    contents += '__Num_Domain_Partitiong\n  {:d}\n'.format(dom_parts)
+    contents += '__Solver_Type\n  {:d}\n'.format(solver)
+    contents += '__Coloring_Input\n  {:s}\n'.format(input_coloring)
+    contents += '__Wrting_Output_Time\n  {:g}\n'.format(run_time)
+    contents += '__Simulation_Restart\n  {:d}\n'.format(restart)
+    # write file
+    with open(self.pidx_file, 'w+') as pi: pi.writelines(contents)
+    if os.path.isfile(self.pidx_file): self.pidxOK = True # make sure file was written
+    else: raise IOError(self.pidx_file)
+    os.chdir(pwd) # return to previous working directory
+    
+  def runHGS(self, executable=None, logfile='log.hgs', skip_grok=False, skip_pidx=False, lerror=True):
+    ''' check if all inputs are in place and run the HGS executable in the run directory '''
+    pwd = os.getcwd() # save present workign directory to return later
+    os.chdir(self.rundir) # go into run Grok/HGS folder
+    self.hgs_bin = executable if executable is not None else self.hgs_bin
+    if not os.path.isfile(self.hgs_bin): 
+      raise IOError("HGS executable '{}' not found.".format(self.hgs_bin))
+    # check prerequisites
+    if not skip_grok: 
+      ec = self.runGrok(lerror=lerror) # run grok (will raise exception if failed)
+      if lerror and ec != 0: raise GrokError('Grok did not run or complete properly.')
+    if not skip_pidx:
+      self.writeParallelIndex() # write parallel index with default settings
+      if not os.path.isfile(self.pidx_file): 
+        raise HGSError('Parallel index file was not written properly.')    
+    # run executable while logging output
+    with open(logfile, 'w+') as lf: # output and error log
+      # run HGS
+      subprocess.call([self.hgs_bin], stdout=lf, stderr=lf)
+      # parse log file for errors
+      lf.seek(1,2) # i.e. -2, second line from the end (different from Grok)
+      ec = ( lf.readline().strip() == '---- Normal exit ----' )
+    os.chdir(pwd) # return to previous working directory
+    if lerror and not ec: 
+      raise HGSError("HGS failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
+    return 0 if ec else 1
+  
+  
