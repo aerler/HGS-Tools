@@ -12,7 +12,8 @@ import os, sys, gc, shutil
 
 
 # import modules to be tested
-from setup import Grok, GrokError, HGS, HGSError
+from hgs_setup import Grok, GrokError, HGS, HGSError
+from hgs_ensemble import EnsHGS, EnsembleError
 
 # work directory settings ("global" variable)
 data_root = os.getenv('DATA_ROOT', '')
@@ -147,8 +148,7 @@ class HGSTest(GrokTest):
     self.NP = NP
     # create Grok instance
     self.hgs = HGS(rundir=self.rundir, project=self.hgs_testcase, runtime=self.runtime,
-                     input_mode=self.input_mode, input_interval=self.input_interval, 
-                     NP=self.NP)
+                   input_mode=self.input_mode, input_interval=self.input_interval, NP=self.NP)
     self.grok = self.hgs
     # load a config file from template
     if not os.path.isfile(self.grok_input):
@@ -212,13 +212,71 @@ class HGSTest(GrokTest):
     for exe in (self.hgs_bin, self.grok_bin):
       local_exe = '{}/{}'.format(self.rundir,exe)
       assert os.path.exists(local_exe), local_exe
+   
     
+## tests for EnsHGS class
+class EnsHGSTest(unittest.TestCase):  
+  # some HGS test data
+  hgs_template = data_root+'/HGS/Templates/GRW-test/' 
+  hgs_testcase = 'grw_omafra' # name of test project (for file names)
+  rundir       = '{}/enshgs_test/'.format(workdir,) # test folder
+  grok_bin     = 'grok_premium.x' # Grok executable
+  hgs_bin      = 'hgs_premium.x' # HGS executable
+  hgsdir       = os.getenv('HGSDIR',) # HGS license file  
+   
+  def setUp(self):
+    ''' initialize an HGS ensemble '''
+    if not os.path.isdir(self.hgs_template): 
+      raise IOError("HGS Template for testing not found:\n '{}'".format(self.hgs_template))
+    #if os.path.isdir(self.rundir): shutil.rmtree(self.rundir)
+    #os.mkdir(self.rundir)
+    if not os.path.isdir(self.rundir): os.mkdir(self.rundir)
+    # grok test files
+    self.grok_input  = '{}/{}.grok'.format(self.hgs_template,self.hgs_testcase)
+    self.grok_output = '{}/{}.grok'.format(self.rundir,self.hgs_testcase)
+    # some grok settings
+    self.runtime = 5*365*24*60*60 # two years in seconds
+    self.input_interval = 'monthly'
+    self.input_mode = 'periodic'
+    # HGS settings
+    self.NP = NP
+    # load a config file from template
+    if not os.path.isfile(self.grok_input):
+      raise IOError("Grok configuration file for testing not found:\n '{}'".format(self.grok_input))
+
+  def tearDown(self):
+    ''' clean up '''
+    gc.collect()
+    #shutil.rmtree(self.rundir)
+
+  def testInitEns(self):
+    ''' initialize the an HGS ensemble using list expansion '''
+    # define simple rundir pattern
+    rundir = self.rundir + "/{A}/{B}/{C}/"
+    rundir_args = dict(A=['A1','A2'], B=['B'], C=['C1','C2'], outer_list=['A','B',('C','input_mode')])
+    # initialize ensemble with general and rundir arguments
+    enshgs = EnsHGS(rundir=rundir, project=self.hgs_testcase, runtime=self.runtime,
+                    input_mode=['steady-state','periodic'], input_interval=self.input_interval, 
+                    NP=self.NP, **rundir_args)
+    assert len(enshgs) == 4, len(enshgs)
+    # test expansion of folder arguments
+    for As in rundir_args['A']:
+      for Bs in rundir_args['B']:
+        for Cs in rundir_args['C']:        
+          tmpdir = rundir.format(A=As, B=Bs, C=Cs)
+          assert tmpdir in enshgs.rundirs, tmpdir
+          # test concurrent expansion of input_mode with folder argument C
+          i = enshgs.rundirs.index(tmpdir)
+          if Cs == 'C1': assert enshgs.members[i].input_mode == 'steady-state'
+          if Cs == 'C2': assert enshgs.members[i].input_mode == 'periodic'
     
+
 if __name__ == "__main__":
 
     
     specific_tests = []
 #     specific_tests += ['Class']
+#     specific_tests += ['InitEns']
 #     specific_tests += ['InputLists']
 #     specific_tests += ['ParallelIndex']
 #     specific_tests += ['RunGrok']
@@ -231,8 +289,9 @@ if __name__ == "__main__":
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-    tests += ['Grok']
-    tests += ['HGS']    
+#     tests += ['Grok']
+#     tests += ['HGS']    
+    tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()

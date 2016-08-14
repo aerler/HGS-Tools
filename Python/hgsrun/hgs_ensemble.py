@@ -11,7 +11,7 @@ to actually running HGS.
 import inspect
 # internal imports
 from utils.misc import expandArgumentList
-from setup import HGS
+from hgs_setup import HGS
 from geodata.misc import ArgumentError
 
 
@@ -45,12 +45,13 @@ class EnsHGS(object):
       # expand run folder 
       rundir = kwargs.pop('rundir')
       if not isinstance(rundir,basestring): raise TypeError(rundir)
-      rundir.format(**kwargs) # make all arguments available
+      rundir = rundir.format(**kwargs) # make all arguments available
       if rundir in self.rundirs:
         raise ArgumentError("Multiple occurence of run directory:\n '{}'".format(rundir))
       self.rundirs.append(rundir)
       # isolate HGS constructor arguments
-      hgsargs = {arg:kwargs[arg] for arg in inspect.getargspec(HGS.__init__)[2]} # returns args, varargs, kwargs, defaults
+      hgsargs = inspect.getargspec(HGS.__init__).args
+      hgsargs = {arg:kwargs[arg] for arg in hgsargs if arg in kwargs} # returns args, varargs, kwargs, defaults
       self.hgsargs.append(hgsargs)
       # initialize HGS instance      
       hgs = HGS(rundir=rundir, **hgsargs)

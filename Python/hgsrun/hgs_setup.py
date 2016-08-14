@@ -43,9 +43,9 @@ class Grok(object):
   _targetfile = None # file that the configuration is written to
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, 
-               input_mode=None, input_interval=None):
+               input_mode=None, input_interval=None, lcheckdir=True):
     ''' initialize a Grok configuration object with some settings '''
-    if not os.path.isdir(rundir): raise IOError(rundir)
+    if lcheckdir and not os.path.isdir(rundir): raise IOError(rundir)
     # determine end time in seconds (begin == 0) or number of intervals (length)
     length, runtime = resolveInterval(length=length, end_time=runtime, interval=input_interval)
     # assign class variables
@@ -197,7 +197,8 @@ class HGS(Grok):
     ''' initialize HGS instance with a few more parameters: number of processors... '''
     # call parent constructor (Grok)
     super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
-                             length=length, input_mode=input_mode, input_interval=input_interval)
+                             input_mode=input_mode, input_interval=input_interval,
+                             length=length, lcheckdir=False)
     self.NP = NP # number of processors
     
   def setupRundir(self, template=None, bin_folder=None, loverwrite=True):
