@@ -66,6 +66,9 @@ class EnsHGS(object):
     assert len(self.members) == len(self.rundirs) == len(self.hgsargs)
     return len(self.members)
   
+  def __iter__(self):
+    return self.members.__iter__()
+  
   def __getattr__(self, attr):
     ''' execute function call on ensemble members, using the same arguments; list expansion with 
         inner_list/outer_list is also supported'''
@@ -90,13 +93,23 @@ class EnsHGS(object):
           raise ArgumentError('Length of results list does not match ensemble size! {} ~= {}'.format(
                               len(results),len(self.members)))
         return results
+      # return wrapper function
+      return wrapper
     else:
       return methods # in this case, these are just class/instance variables
+      
         
-  def setupExperiments(self):
+  def setupExperiments(self, inner_list=None, outer_list=None, lgrok=True, **allargs):
     ''' set up run dirs as execute Grok for each member; check setup and report results '''
-    raise NotImplementedError
-  
+    from hgs_setup import HGS
+    # create run folders and copy data
+    kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.setupRundir).args if arg in allargs}
+    self.setupRundir(inner_list=None, outer_list=None, **kwargs)
+    # run Grok
+    if lgrok: 
+      kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.runGrok).args if arg in allargs}
+      self.runGrok(inner_list=None, outer_list=None, **kwargs)
+    
   def runExperiments(self, NP):
     ''' run multiple experiments in parallel using multi-processing and report results '''
     raise NotImplementedError

@@ -29,13 +29,16 @@ class Grok(object):
     A class that loads a grok configuration file into memory, provides functions for editing,
     saving the file, and running Grok.
   '''
-  grok_bin = 'grok_premium.x' # default Grok executable
+  grok_bin = './grok_premium.x' # default Grok executable
   batchpfx = 'batch.pfx' # a file that defines the HGS problem name for Grok
   rundir = None # folder where the experiment is set up and executed
   project = None # a project designator used for file names
   problem = None # the HGS problem name (defaults to project)
   input_mode = None # type of simulation (forcing data): stead-state, periodic, transient
   input_interval = None # update interval for climate forcing
+  input_vars = 'PET' # input variable configuration
+  input_prefix = None # prefix for input files
+  input_folder = '../climate_forcing' # default folder for input data
   runtime = None # run time for the simulations (in seconds)
   length = None # run time in multiples of the interval length
   _lines = None # list of lines in file
@@ -43,7 +46,8 @@ class Grok(object):
   _targetfile = None # file that the configuration is written to
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, 
-               input_mode=None, input_interval=None, lcheckdir=True):
+               input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
+               input_folder='../climate_forcing', lcheckdir=True):
     ''' initialize a Grok configuration object with some settings '''
     if lcheckdir and not os.path.isdir(rundir): raise IOError(rundir)
     # determine end time in seconds (begin == 0) or number of intervals (length)
@@ -55,8 +59,11 @@ class Grok(object):
     self.runtime = runtime
     self.input_mode= input_mode
     self.input_interval = input_interval
+    self.input_vars = input_vars
+    self.input_prefix = input_prefix
+    self.input_folder = input_folder    
   
-  def read(self, filename=None, folder=None):
+  def readConfig(self, filename=None, folder=None):
     ''' Read a grok configuration file into memory (or a template to start from). '''    
     filename = filename or '{:s}.grok'.format(self.project) # or default name
     filename = '{:s}/{:s}'.format(folder or self.rundir, filename) # prepend folder
@@ -70,7 +77,7 @@ class Grok(object):
     # apply time setting
     if self.runtime: self.setRuntime(self.runtime)
       
-  def write(self, filename=None):
+  def writeConfig(self, filename=None):
     ''' Write the grok configuration to a file in run dir. '''    
     filename = filename or '{:s}.grok'.format(self.project) # or default name    
     filename = '{:s}/{:s}'.format(self.rundir,filename) # prepend run dir
@@ -136,26 +143,35 @@ class Grok(object):
     else: raise NotImplementedError(interval)
     self.interval = interval
   
-  def generateInputLists(self, input_mode='PET', input_prefix=None, input_folder='../climate_forcing', 
-                         input_vars=None, lvalidate=True, lcenter=True, l365=True, lFortran=True):
+  def generateInputLists(self, input_vars=None, input_prefix=None, input_folder=None,
+                         lvalidate=True, lcenter=True, l365=True, lFortran=True):
     ''' generate and validate lists of input files and write to appropriate files '''
+    input_vars = self.input_vars if input_vars is None else input_vars
+    input_prefix = self.input_prefix if input_prefix is None else input_prefix
+    input_folder = self.input_folder if input_folder is None else input_folder
     # generate default input vars
-    if input_vars is None:
-      if input_mode.upper() == 'PET': # liquid water + snowmelt & PET as input
+    if isinstance(input_vars,basestring):
+      if input_vars.upper() == 'PET': # liquid water + snowmelt & PET as input
         input_vars = dict(precip=('rain','liqwatflx'),  
                           pet=('potential evapotranspiration','pet'))
-      elif input_mode.upper() == 'NET': # liquid water + snowmelt - ET as input
+      elif input_vars.upper() == 'NET': # liquid water + snowmelt - ET as input
         input_vars = dict(precip=('rain','waterflx'),)
-      else:
-        raise ArgumentError("Invalid input_mode or input_vars missing:\n {}, {}".format(input_mode,input_vars))
+      else: raise ArgumentError("Invalid or missing input_vars: {}".format(input_vars))
+    elif not isinstance(input_vars, dict): raise TypeError(input_vars)
     # iterate over variables and generate corresponding input lists
     for varname,val in input_vars.iteritems():
       vartype,wrfvar = val
-      filename = '{}.inc'.format(varname)
+      filename = '{0}.inc'.format(varname)
       self.setParam('time raster table', 'include {}'.format(filename), after=vartype)
-      input_pattern = '{}_{}_iTime_{{IDX}}.asc'.format(input_prefix, wrfvar) # IDX will be substituted
+      if self.input_mode == 'steady-state':
+        input_pattern = '{0}_{1}_iTime_{{IDX:d}}.asc'.format(input_prefix, wrfvar) # IDX will be substituted
+      elif self.input_mode == 'periodic':
+        input_pattern = '{0}_{1}_iTime_{{IDX:02d}}.asc'.format(input_prefix, wrfvar) # IDX will be substituted
+      elif self.input_mode == 'transient':
+        input_pattern = '{0}_{1}_iTime_{{IDX:03d}}.asc'.format(input_prefix, wrfvar) # IDX will be substituted
+      else: raise GrokError(self.input_mode)
       # write file list
-      generateInputFilelist(filename=filename, folder=self.rundir, input_folder=input_folder, 
+      generateInputFilelist(filename=filename, folder=self.rundir, input_folder=self.input_folder, 
                             input_pattern=input_pattern, lcenter=lcenter, 
                             lvalidate=lvalidate, units='seconds', l365=l365, lFortran=lFortran, 
                             interval=self.input_interval, end_time=self.runtime, mode=self.input_mode)
@@ -188,20 +204,22 @@ class HGS(Grok):
     A child class of Grok that can also set up the entire run folder and launch an HGS instance;
     otherwise the same as Grok.
   '''
-  hgs_bin   = 'hgs_premium.x' # default HGS executable
+  hgs_bin   = './hgs_premium.x' # default HGS executable
   grokOK    = None # indicate if Grok ran successfully
   pidx_file = 'parallelindx.dat' # file with parallel execution settings 
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, 
-               input_mode=None, input_interval=None, NP=1):
+               input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
+               input_folder='../climate_forcing', NP=1):
     ''' initialize HGS instance with a few more parameters: number of processors... '''
     # call parent constructor (Grok)
     super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
                              input_mode=input_mode, input_interval=input_interval,
-                             length=length, lcheckdir=False)
+                             input_vars=input_vars, input_prefix=input_prefix, 
+                             input_folder=input_folder, length=length, lcheckdir=False)
     self.NP = NP # number of processors
     
-  def setupRundir(self, template=None, bin_folder=None, loverwrite=True):
+  def setupRundir(self, template=None, bin_folder=None, loverwrite=True, lconfig=True):
     ''' copy entire run folder from a template and link executables '''
     if template is None: raise ValueError("Need to specify a template path.")
     if not os.path.isdir(template): raise IOError(template)
@@ -220,10 +238,16 @@ class HGS(Grok):
           raise IOError("Link to executable '{}' in run folder is broken.\n ('{}') ".format(exe,self.rundir))
       elif not os.path.isfile(local_exe): 
         raise IOError("Executable file '{}' not found in run folder.\n ('{}') ".format(exe,self.rundir)) 
+    # load config file from template folder
+    if lconfig: self.readConfig(folder=template)
     
-  def runGrok(self, executable=None, logfile='log.grok', lerror=True):
+  def runGrok(self, executable=None, logfile='log.grok', lerror=True, lconfig=True, linput=True):
     ''' run the Grok executable in the run directory and set flag indicating success '''
-    ec = Grok.runGrok(self, executable=executable, logfile=logfile, lerror=lerror)
+    # write config file and input lists to run folder
+    if lconfig: self.writeConfig()
+    if linput: self.generateInputLists()
+    # run Grok and collect exit code
+    ec = super(HGS,self).runGrok(executable=executable, logfile=logfile, lerror=lerror)
     self.grokOK = True if ec == 0 else False # set Grok flag
     return ec
   

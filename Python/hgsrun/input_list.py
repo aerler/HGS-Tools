@@ -176,7 +176,8 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
       time %= period; idx %= idxprd
     if lFortran: idx += 1 # Fortran index starts at 1, not 0    
     input_file = input_pattern.format(TIME=time,IDX=idx)
-    filepath = '{:s}/{:s}'.format(input_folder,input_file) # assemble current file name
+    if input_folder is None: filepath = input_file
+    else: filepath = '{:s}/{:s}'.format(input_folder,input_file) # assemble current file name
     # check if file actually exists
     if lvalidate and not os.path.exists(filepath): 
       raise IOError("The input file '{:s}' does not exist.\n(run folder: '{:s}')".format(filepath,folder))

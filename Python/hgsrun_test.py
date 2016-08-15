@@ -32,6 +32,8 @@ class GrokTest(unittest.TestCase):
   # some Grok test data
   hgs_template = data_root+'/HGS/Templates/GRW-test/' 
   hgs_testcase = 'grw_omafra' # name of test project (for file names)
+  test_data    = data_root+'/HGS/Templates/input/clim/climate_forcing/'
+  test_prefix  = 'grw2' # pefix for climate input
   rundir       = '{}/grok_test/'.format(workdir,) # test folder
   grok_bin     = 'grok_premium.x' # Grok executable
    
@@ -55,12 +57,12 @@ class GrokTest(unittest.TestCase):
     # load a config file from template
     if not os.path.isfile(self.grok_input):
       raise IOError("Grok configuration file for testing not found:\n '{}'".format(self.grok_input))
-    self.grok.read(folder=self.hgs_template)
+    self.grok.readConfig(folder=self.hgs_template)
     assert isinstance(self.grok._lines, list), self.grok._lines
       
   def tearDown(self):
     ''' clean up '''
-    self.grok.write()
+    self.grok.writeConfig()
     del self.grok
     gc.collect()
     #shutil.rmtree(self.rundir)
@@ -75,8 +77,8 @@ class GrokTest(unittest.TestCase):
     ''' test writing of input list files with climate forcings '''
     grok = self.grok  
     # write lists for fictional scenario
-    grok.generateInputLists(input_mode='PET', input_prefix='test', 
-                            input_folder=self.rundir, lvalidate=False,)
+    grok.generateInputLists(input_vars='PET', input_prefix=self.test_prefix, 
+                            input_folder=self.test_data, lvalidate=True,)
     # convert config file list into string and verify
     output = ''.join(grok._lines) # don't need newlines 
     assert 'precip.inc' in output
@@ -116,10 +118,10 @@ class GrokTest(unittest.TestCase):
     grok._lines = None # delete already loaded file contents
     # read from template
     assert os.path.isfile(self.grok_input), self.grok_input 
-    grok.read(folder=self.hgs_template)
+    grok.readConfig(folder=self.hgs_template)
     assert isinstance(grok._lines, list), grok._lines
     # write to rundir
-    grok.write() 
+    grok.writeConfig() 
     assert os.path.isfile(self.grok_output), self.grok_output
     
 
@@ -148,12 +150,13 @@ class HGSTest(GrokTest):
     self.NP = NP
     # create Grok instance
     self.hgs = HGS(rundir=self.rundir, project=self.hgs_testcase, runtime=self.runtime,
-                   input_mode=self.input_mode, input_interval=self.input_interval, NP=self.NP)
+                   input_mode=self.input_mode, input_interval=self.input_interval, 
+                   input_prefix=self.test_prefix, input_folder=self.test_data ,NP=self.NP)
     self.grok = self.hgs
     # load a config file from template
     if not os.path.isfile(self.grok_input):
       raise IOError("Grok configuration file for testing not found:\n '{}'".format(self.grok_input))
-    self.grok.read(folder=self.hgs_template)
+    self.grok.readConfig(folder=self.hgs_template)
     assert isinstance(self.hgs._lines, list), self.hgs._lines
 
   def testParallelIndex(self):
@@ -170,9 +173,11 @@ class HGSTest(GrokTest):
     exe = '{}/{}'.format(self.hgs_template,self.grok_bin) # run folder not set up
     logfile = '{}/log.grok'.format(hgs.rundir)
     assert hgs.grokOK is None, hgs.grokOK
+    # climate data
+    if not os.path.isdir(self.test_data): raise IOError(self.test_data)
     # run Grok
     if not os.path.isfile(exe): raise IOError(exe)
-    ec = hgs.runGrok(executable=exe, logfile=logfile, lerror=False)
+    ec = hgs.runGrok(executable=exe, logfile=logfile, lerror=False, linput=lbin)
     # check output
     batchpfx = self.rundir+hgs.batchpfx
     assert os.path.isfile(batchpfx), batchpfx
@@ -240,6 +245,10 @@ class EnsHGSTest(unittest.TestCase):
     self.input_mode = 'periodic'
     # HGS settings
     self.NP = NP
+    # create 2-member ensemble
+    self.enshgs = EnsHGS(rundir=self.rundir + "/{A}/", project=self.hgs_testcase, runtime=self.runtime,
+                         input_mode=self.input_mode, input_interval=self.input_interval, 
+                         NP=self.NP, A=['A1','A2'], outer_list=['A'])
     # load a config file from template
     if not os.path.isfile(self.grok_input):
       raise IOError("Grok configuration file for testing not found:\n '{}'".format(self.grok_input))
@@ -270,6 +279,23 @@ class EnsHGSTest(unittest.TestCase):
           if Cs == 'C1': assert enshgs.members[i].input_mode == 'steady-state'
           if Cs == 'C2': assert enshgs.members[i].input_mode == 'periodic'
     
+  def testSetTime(self):
+    ''' test the method application mechanism '''
+    enshgs = self.enshgs
+    assert all(rt == self.runtime for rt in enshgs.runtime), enshgs.runtime
+    time = 1 # new runtime
+    enshgs.setRuntime(time=time)
+    assert all(hgs.runtime == time for hgs in enshgs), enshgs.members # EnsHGS supports iteration over members
+    assert all(rt == time for rt in enshgs.runtime), enshgs.runtime # EnsHGS supports iteration over members
+    print(enshgs.runtime)
+    
+  def testSetupExp(self):
+    ''' test experiment setup '''
+    enshgs = self.enshgs
+    assert all(not g for g in enshgs.grokOK), enshgs.grokOK
+    # setup run folders
+    enshgs.setupExperiments(template=self.hgs_template)
+    
 
 if __name__ == "__main__":
 
@@ -281,6 +307,7 @@ if __name__ == "__main__":
 #     specific_tests += ['ParallelIndex']
 #     specific_tests += ['RunGrok']
 #     specific_tests += ['SetTime']
+#     specific_tests += ['SetupExp']
 #     specific_tests += ['Write']
 
     lbin = True # execute binaries to test runner methods
@@ -289,9 +316,9 @@ if __name__ == "__main__":
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-#     tests += ['Grok']
+    tests += ['Grok']
 #     tests += ['HGS']    
-    tests += ['EnsHGS']
+#     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()
