@@ -78,7 +78,9 @@ class Grok(object):
     self._lines = [line.strip() for line in self._lines]
     # N.B.: converting to lower case creates problems with file/folder path
     # apply time setting
-    if self.runtime: self.setRuntime(self.runtime)
+    if self.runtime is not None: self.setRuntime(time=self.runtime)
+    # return exit code
+    return 0 if isinstance(self._lines,list) else 0
       
   def writeConfig(self, filename=None):
     ''' Write the grok configuration to a file in run dir. '''    
@@ -91,7 +93,8 @@ class Grok(object):
     with open(filename, 'w') as tgt: # with-environment should take care of closing the file
       tgt.write('\n'.join(self._lines)+'\n')
       # N.B.: this is necessary, because our list does not have newlines and Python does not add them...
-    return
+    # return exit code
+    return 0 if os.path.isfile(filename) else 1
       
   def setParam(self, param, value, formatter=None, after=None, start=0):
     ''' edit a single parameter, based on the assumption that the parameter value follows in the 
@@ -170,16 +173,13 @@ class Grok(object):
       else: raise ArgumentError("Invalid or missing input_vars: {}".format(input_vars))
     elif not isinstance(input_vars, dict): raise TypeError(input_vars)
     # iterate over variables and generate corresponding input lists
+    ec = 0 # cumulative exit code
     for varname,val in input_vars.iteritems():
       vartype,wrfvar = val
       filename = '{0}.inc'.format(varname)
       self.setParam('time raster table', 'include {}'.format(filename), after=vartype)
       length = self.length + 1 if lFortran else self.length
       input_pattern = '{0:s}_{{IDX:0{1:d}d}}'.format(axis, int(np.ceil(np.log10(length)))) # number of digits
-#       if self.input_mode == 'steady-state': input_pattern = 'iTime_{{IDX:d}}.asc' # IDX will be substituted
-#       elif self.input_mode == 'periodic': input_pattern = 'iTime_{{IDX:02d}}.asc' # IDX will be substituted
-#       elif self.input_mode == 'transient': input_pattern = 'iTime_{{IDX:03d}}.asc' # IDX will be substituted
-#       else: raise GrokError(self.input_mode)
       input_pattern = '{0}_{1}.asc'.format(wrfvar,input_pattern)
       if input_prefix is not None: input_pattern = '{0}_{1}'.format(input_prefix,input_pattern)
       # write file list
@@ -187,7 +187,10 @@ class Grok(object):
                             input_pattern=input_pattern, lcenter=lcenter, 
                             lvalidate=lvalidate, units='seconds', l365=l365, lFortran=lFortran, 
                             interval=self.input_interval, end_time=self.runtime, mode=self.input_mode)
-
+      ec += 0 if os.path.isfile(filename) else 1    
+    # return exit code
+    return ec
+  
   def runGrok(self, executable=None, logfile='log.grok', batchpfx=None, lerror=True):
     ''' run the Grok executable in the run directory '''
     pwd = os.getcwd() # save present workign directory to return later
@@ -203,12 +206,12 @@ class Grok(object):
       # run Grok
       subprocess.call([self.grok_bin], stdout=lf, stderr=lf)
       # parse log file for errors
-      ec = ( tail(lf, n=3)[0].strip() == '---- Normal exit ----' )
+      lec = ( tail(lf, n=3)[0].strip() == '---- Normal exit ----' )
       # i.e. -3, third line from the end (different from HGS)
     os.chdir(pwd) # return to previous working directory
-    if lerror and not ec: 
+    if lerror and not lec: 
       raise GrokError("Grok failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
-    return 0 if ec else 1
+    return 0 if lec else 1
             
       
 class HGS(Grok):
@@ -216,23 +219,29 @@ class HGS(Grok):
     A child class of Grok that can also set up the entire run folder and launch an HGS instance;
     otherwise the same as Grok.
   '''
+  template_folder = None # temlate for rundir setup
   hgs_bin   = './hgs_premium.x' # default HGS executable
+  rundirOK  = None # indicate if rundir setup was successfule
+  configOK  = None # indicate if Grok configuration was successful
   grokOK    = None # indicate if Grok ran successfully
+  pidxOK    = None # indicate if parallel index configuration was successful
   pidx_file = 'parallelindx.dat' # file with parallel execution settings 
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, 
                input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
-               input_folder='../climate_forcing', NP=1):
+               input_folder='../climate_forcing', template_folder=None, NP=1):
     ''' initialize HGS instance with a few more parameters: number of processors... '''
     # call parent constructor (Grok)
     super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
                              input_mode=input_mode, input_interval=input_interval,
                              input_vars=input_vars, input_prefix=input_prefix, 
                              input_folder=input_folder, length=length, lcheckdir=False)
+    self.template_folder = template_folder # where to get the templates
     self.NP = NP # number of processors
     
-  def setupRundir(self, template=None, bin_folder=None, loverwrite=True, lconfig=True):
+  def setupRundir(self, template=None, bin_folder=None, loverwrite=True):
     ''' copy entire run folder from a template and link executables '''
+    template = self.template_folder if template is None else template
     if template is None: raise ValueError("Need to specify a template path.")
     if not os.path.isdir(template): raise IOError(template)
     # clear existing directory
@@ -250,22 +259,37 @@ class HGS(Grok):
           raise IOError("Link to executable '{}' in run folder is broken.\n ('{}') ".format(exe,self.rundir))
       elif not os.path.isfile(local_exe): 
         raise IOError("Executable file '{}' not found in run folder.\n ('{}') ".format(exe,self.rundir)) 
+    # set rundir status
+    self.rundirOK = True if os.path.isdir(self.rundir) else False
+    return 0 if self.rundirOK else 1
+    
+  def setupConfig(self, template=None, linput=True, lpidx=True):
+    ''' load config file from template and write configuration to rundir '''
+    template = self.rundir if template is None else template
+    ec = 0 # cumulative exit code
     # load config file from template folder
-    if lconfig: self.readConfig(folder=template)
+    ec += self.readConfig(folder=template)
+    # N.B.: runtime is already set by readConfig
+    # write input lists to run folder
+    if linput: ec += self.generateInputLists(lvalidate=True)
+    # write config file to run folder
+    ec += self.writeConfig()
+    # write parallelindex with default settings
+    if lpidx: ec += self.writeParallelIndex() # can also run just before HGS
+    # set config status
+    self.configOK = True if ec == 0 else False
+    return ec
     
   def runGrok(self, executable=None, logfile='log.grok', lerror=False, lconfig=True, linput=True):
     ''' run the Grok executable in the run directory and set flag indicating success '''
-    # write config file and input lists to run folder
     if lconfig: self.writeConfig()
-    if linput: self.generateInputLists()
-    # run Grok and collect exit code
     ec = super(HGS,self).runGrok(executable=executable, logfile=logfile, lerror=lerror)
     self.grokOK = True if ec == 0 else False # set Grok flag
     return ec
   
   def writeParallelIndex(self, NP=None, dom_parts=None, solver=None, input_coloring=False, 
                          run_time=-1., restart=1, parallelindex=None):
-    ''' write the parallelindex.dat input file for HGS execution '''
+    ''' write the parallelindex.dat input file for HGS execution (executed by runHGS) '''
     pwd = os.getcwd() # save present workign directory to return later
     os.chdir(self.rundir) # go into run Grok/HGS folder
     # fix up arguments
@@ -287,25 +311,33 @@ class HGS(Grok):
     if os.path.isfile(self.pidx_file): self.pidxOK = True # make sure file was written
     else: raise IOError(self.pidx_file)
     os.chdir(pwd) # return to previous working directory
+    return 0 if self.pidxOK else 1
     
-  def runHGS(self, executable=None, logfile='log.hgs', skip_grok=False, skip_pidx=False, lerror=True):
+  def runHGS(self, executable=None, logfile='log.hgs', lerror=True,
+             skip_config=False, skip_grok=False, skip_pidx=False):
     ''' check if all inputs are in place and run the HGS executable in the run directory '''
-    pwd = os.getcwd() # save present workign directory to return later
+    pwd = os.getcwd() # save present workign directory to return later    
     os.chdir(self.rundir) # go into run Grok/HGS folder
     self.hgs_bin = executable if executable is not None else self.hgs_bin
     if not os.path.isfile(self.hgs_bin): 
       raise IOError("HGS executable '{}' not found.".format(self.hgs_bin))
-    # check prerequisites
-    if not skip_grok: 
+    ## check prerequisites and run, if necessary
+    # Grok configuration
+    if not skip_config and not self.configOK:
+      ec = self.setupConfig() # will run with defaults, assuming template is already defined
+      if lerror and ec != 0: raise GrokError('Grok configuration did not complete properly.')
+    # Grok run
+    if not skip_grok and not self.grokOK: 
       ec = self.runGrok(lerror=lerror) # run grok (will raise exception if failed)
       if lerror and ec != 0: raise GrokError('Grok did not run or complete properly.')
-    if not skip_pidx:
+    # parallelindex configuration
+    if not skip_pidx and not self.pidxOK:
       self.writeParallelIndex() # write parallel index with default settings
       if not os.path.isfile(self.pidx_file): 
         raise HGSError('Parallel index file was not written properly.')    
-    # run executable while logging output
+    ## run executable while logging output
     with open(logfile, 'w+') as lf: # output and error log
-      # run HGS
+      # run HGS as subprocess
       subprocess.call([self.hgs_bin], stdout=lf, stderr=lf)
       # parse log file for errors
       ec = ( tail(lf, n=2)[0].strip() == '---- Normal exit ----' )

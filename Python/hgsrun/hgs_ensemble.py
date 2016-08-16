@@ -11,8 +11,8 @@ to actually running HGS.
 import inspect, multiprocessing
 # internal imports
 from utils.misc import expandArgumentList
-from hgs_setup import HGS
 from geodata.misc import ArgumentError
+from hgs_setup import HGS, HGSError, GrokError
 
 
 # named exception
@@ -145,27 +145,55 @@ class EnsHGS(object):
   def __getattr__(self, attr):
     ''' execute function call on ensemble members, using the same arguments; list expansion with 
         inner_list/outer_list is also supported'''
-    # N.B.: this method returns an on-the-fly wrapper function which expands the argument list and
-    #       applies it over the list of methods from all ensemble members
+    # N.B.: this method returns an on-the-fly EnsembleWrapper instance which expands the argument       
+    #       list and applies it over the list of methods from all ensemble members
     # N.B.: this method is only called as a fallback, if no class/instance attribute exists,
     #       i.e. Variable methods and attributes will always have precedent 
-    # instantiate new wrapper with current arguments
-    wrapper = EnsembleWrapper(self,attr)
-    # return wrapper function
-    return wrapper
-      
+    # instantiate new wrapper with current arguments and return wrapper instance
+    return EnsembleWrapper(self,attr)      
         
-  def setupExperiments(self, inner_list=None, outer_list=None, lgrok=True, lparallel=True, NP=None, **allargs):
+  def setupExperiments(self, inner_list=None, outer_list=None, lgrok=False, lparallel=True, NP=None, **allargs):
     ''' set up run dirs as execute Grok for each member; check setup and report results '''
-    from hgs_setup import HGS
+    ec = 0 # cumulative exit code (sum of all members)
     # create run folders and copy data
     kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.setupRundir).args if arg in allargs}
-    self.setupRundir(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
+    ecs = self.setupRundir(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
+    if any(ecs): 
+      raise GrokError("Run folder setup failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
+    ec += sum(ecs)
+    # write configuration
+    kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.setupConfig).args if arg in allargs}
+    ecs = self.setupConfig(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
+    if any(ecs): 
+      raise GrokError("Grok configuration failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
+    ec += sum(ecs)
     # run Grok
     if lgrok: 
       kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.runGrok).args if arg in allargs}
-      self.runGrok(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
+      ecs = self.runGrok(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
+      if any(ecs): 
+        raise GrokError("Grok execution failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
+      ec += sum(ecs)
+    # return sum of all exit codes
+    return ec
     
-  def runExperiments(self, NP):
-    ''' run multiple experiments in parallel using multi-processing and report results '''
-    raise NotImplementedError
+  def runSimulations(self, inner_list=None, outer_list=None, lsetup=True, lgrok=False, 
+                     lparallel=True, NP=None, **allargs):
+    ''' execute HGS for each ensemble member and report results; set up run dirs as execute Grok,
+        if necessary; note that Grok will be executed in runHGS, just prior to HGS '''
+    ec = 0 # cumulative exit code (sum of all members)
+    # check and run setup and configuration
+    if lsetup:
+      ecs = self.setupExperiments(inner_list=inner_list, outer_list=outer_list, lgrok=lgrok, lparallel=lparallel, NP=NP)
+      if any(ecs): 
+        raise GrokError("Experiment setup failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
+      ec += sum(ecs)
+    # run HGS
+    kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.runHGS).args if arg in allargs}
+    ecs = self.runHGS(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
+    if any(ecs): 
+      raise HGSError("Grok configuration failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
+    ec += sum(ecs)
+    # return sum of all exit codes
+    return ec
+    
