@@ -8,7 +8,7 @@ to actually running HGS.
 '''
 
 # external imports
-import inspect
+import inspect, multiprocessing
 # internal imports
 from utils.misc import expandArgumentList
 from hgs_setup import HGS
@@ -20,6 +20,72 @@ class EnsembleError(Exception):
   ''' Exception indicating an Error with the HGS Ensemble '''
   pass
 
+# a function that executes a class/instance method for use in apply_async
+def apply_method(member, attr, **kwargs): 
+  return member,getattr(member, attr)(**kwargs)
+
+## define ensemble wrapper class
+class EnsembleWrapper(object):
+  ''' 
+    A class that applies an attribute or method call on the ensemble class to all of its members
+    and returns a list of the results. The ensemble class is assumed to have an attribute 
+    'members', which is a list of the ensemble member.
+    The EnsembleWrapper class is instantiated with the ensemble class and the called attibure or
+    method in the __getattr__ method and is returned instead of the class attribute.
+  '''
+
+  def __init__(self, klass, attr):
+    ''' the object has to be initialized with the ensemlbe class 'klass' and the called attribute
+        'attr' in the __getattr__ method '''
+    self.klass = klass # the object that the attribute is called on
+    self.attr = attr # the attribute name that is called
+    
+  def __call__(self, lparallel=False, NP=None, inner_list=None, outer_list=None, **kwargs):
+    ''' this method is called instead of a class or instance method; it applies the arguments 
+        'kwargs' to each ensemble member; it also supports argument expansion with inner and 
+        outer product (prior to application to ensemble) and parallelization using multiprocessing '''
+    # expand kwargs to ensemble list
+    kwargs_list = expandArgumentList(inner_list=inner_list, outer_list=outer_list, **kwargs)
+    if len(kwargs_list) == 1: kwargs_list = kwargs_list * len(self.klass.members)
+    elif len(kwargs_list) != len(self.klass.members): 
+      raise ArgumentError('Length of expanded argument list does not match ensemble size! {} ~= {}'.format(
+                          len(kwargs_list),len(self.klass.members)))
+    # loop over ensemble members and execute function
+    if lparallel:
+      # parallelize method execution using multiprocessing
+      pool = multiprocessing.Pool(processes=NP) # initialize worker pool
+      # define work loads: functions and their arguments
+      results = [pool.apply_async(apply_method, (member,self.attr), kwargs) for member,kwargs in zip(self.klass.members,kwargs_list)]
+      # N.B.: Beware Pickling!!!
+      pool.close(); pool.join() # wait to finish
+      # retrieve and assemble results 
+      results = [result.get() for result in results]
+      # divide members and results (apply_method returns both, in case members were modified)
+      self.klass.members = [result[0] for result in results]
+      results = [result[1] for result in results]
+    else:
+      # get instance methods
+      methods = [getattr(member,self.attr) for member in self.klass.members]
+      # just apply sequentially
+      results = [method(**kwargs) for method,kwargs in zip(methods,kwargs_list)]
+    if len(results) != len(self.klass.members): 
+      raise ArgumentError('Length of results list does not match ensemble size! {} ~= {}'.format(
+                          len(results),len(self.klass.members)))
+    return tuple(results)
+  
+  def getter(self, value):
+    ''' get attribute values of all ensemble members and return as list '''
+    return [getattr(member, self.attr) for member in self.klass.members]
+
+#   def setter(self, value):
+#     ''' set attribute of all ensemble members to the same value (argument expansion not supported) '''
+#     for member in self.klass.members: setattr(member, self.attr, value)
+# N.B.: setting attributes is done via the __setattr__ method, which does not involve this wrapper...
+
+  def __iter__(self):
+    ''' return an iterator over the attribute values of all ensemble members '''
+    return iter([getattr(member, self.attr) for member in self.klass.members])
+  
 
 ## HGS Ensemble manager class
 class EnsHGS(object):
@@ -69,6 +135,13 @@ class EnsHGS(object):
   def __iter__(self):
     return self.members.__iter__()
   
+  def __setattr__(self, attr, value):
+    ''' redirect setting of attributes to ensemble members if the ensemble class does not have it '''
+    if attr in self.__dict__ or attr in EnsHGS.__dict__: 
+      super(EnsHGS, self).__setattr__(attr, value)
+    else:
+      for member in self.members: setattr(member, attr, value)
+  
   def __getattr__(self, attr):
     ''' execute function call on ensemble members, using the same arguments; list expansion with 
         inner_list/outer_list is also supported'''
@@ -76,39 +149,22 @@ class EnsHGS(object):
     #       applies it over the list of methods from all ensemble members
     # N.B.: this method is only called as a fallback, if no class/instance attribute exists,
     #       i.e. Variable methods and attributes will always have precedent 
-    # get list of member methods
-    methods = [getattr(member,attr) for member in self.members]
-    if all([callable(method) for method in methods]):
-      ## define wrapper function
-      def wrapper(inner_list=None, outer_list=None, **kwargs):
-        # expand kwargs to ensemble list
-        kwargs_list = expandArgumentList(inner_list=inner_list, outer_list=outer_list, **kwargs)
-        if len(kwargs_list) == 1: kwargs_list = kwargs_list * len(self.members)
-        elif len(kwargs_list) != len(self.members): 
-          raise ArgumentError('Length of expanded argument list does not match ensemble size! {} ~= {}'.format(
-                              len(kwargs_list),len(self.members)))
-        # loop over ensemble members and execute function
-        results = [method(**kwargs) for method,kwargs in zip(methods,kwargs_list)]
-        if len(results) != len(self.members): 
-          raise ArgumentError('Length of results list does not match ensemble size! {} ~= {}'.format(
-                              len(results),len(self.members)))
-        return results
-      # return wrapper function
-      return wrapper
-    else:
-      return methods # in this case, these are just class/instance variables
+    # instantiate new wrapper with current arguments
+    wrapper = EnsembleWrapper(self,attr)
+    # return wrapper function
+    return wrapper
       
         
-  def setupExperiments(self, inner_list=None, outer_list=None, lgrok=True, **allargs):
+  def setupExperiments(self, inner_list=None, outer_list=None, lgrok=True, lparallel=True, NP=None, **allargs):
     ''' set up run dirs as execute Grok for each member; check setup and report results '''
     from hgs_setup import HGS
     # create run folders and copy data
     kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.setupRundir).args if arg in allargs}
-    self.setupRundir(inner_list=None, outer_list=None, **kwargs)
+    self.setupRundir(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
     # run Grok
     if lgrok: 
       kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.runGrok).args if arg in allargs}
-      self.runGrok(inner_list=None, outer_list=None, **kwargs)
+      self.runGrok(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
     
   def runExperiments(self, NP):
     ''' run multiple experiments in parallel using multi-processing and report results '''

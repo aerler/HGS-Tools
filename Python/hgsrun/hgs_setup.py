@@ -14,6 +14,7 @@ import subprocess # launching external programs
 # internal imports
 from input_list import generateInputFilelist, resolveInterval
 from geodata.misc import ArgumentError
+from utils.misc import tail
 
 # some named exceptions
 class GrokError(Exception):
@@ -57,11 +58,12 @@ class Grok(object):
     self.project = project
     self.problem = project if problem is None else problem
     self.runtime = runtime
-    self.input_mode= input_mode
-    self.input_interval = input_interval
-    self.input_vars = input_vars
-    self.input_prefix = input_prefix
-    self.input_folder = input_folder    
+    self.length = length
+    # input configuration
+    if input_mode or input_interval:
+      self.setInputMode(input_mode=input_mode, input_interval=input_interval,
+                        input_vars=input_vars, input_prefix=input_prefix,
+                        input_folder=input_folder)
   
   def readConfig(self, filename=None, folder=None):
     ''' Read a grok configuration file into memory (or a template to start from). '''    
@@ -73,7 +75,8 @@ class Grok(object):
     with open(filename, 'r') as src: # with-environment should take care of closing the file
       self._lines = src.readlines() # read all lines into list
     # strip white spaces and convert to lower case
-    self._lines = [line.strip().lower() for line in self._lines]
+    self._lines = [line.strip() for line in self._lines]
+    # N.B.: converting to lower case creates problems with file/folder path
     # apply time setting
     if self.runtime: self.setRuntime(self.runtime)
       
@@ -88,7 +91,8 @@ class Grok(object):
     with open(filename, 'w') as tgt: # with-environment should take care of closing the file
       tgt.write('\n'.join(self._lines)+'\n')
       # N.B.: this is necessary, because our list does not have newlines and Python does not add them...
-
+    return
+      
   def setParam(self, param, value, formatter=None, after=None, start=0):
     ''' edit a single parameter, based on the assumption that the parameter value follows in the 
         line below the one where the parameter name appears (case in-sensitive); format is a
@@ -130,21 +134,28 @@ class Grok(object):
     if self._lines:
       self.setParam('output times', time, formatter='{:.3e}', )
   
-  def setInputMode(self, mode=None, interval=None):
+  def setInputMode(self, input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
+                   input_folder='../climate_forcing'):
     ''' set the type of the simulation: mean/steady-state, climatology/periodic, time-series/transient '''
-    mode = mode.lower()
-    if mode in ('mean','steady','steady-state') or mode[-5:] == '-mean': mode = 'steady-state'
-    elif mode[:4] in ('clim','peri','climatology','periodic'): mode = 'periodic'
-    elif mode in ('time-series','timeseries','trans','transient'): mode = 'transient'
-    self.mode = mode
-    interval = interval.lower()
-    if interval[:5].lower() == 'month': interval = 'monthly'
-    elif interval[:3].lower() == 'day': interval = 'daily'
-    else: raise NotImplementedError(interval)
-    self.interval = interval
+    # resolve type of input data 
+    input_mode = input_mode.lower()
+    if input_mode in ('mean','steady','steady-state') or input_mode[-5:] == '-mean': input_mode = 'steady-state'
+    elif input_mode[:4] in ('clim','peri','climatology','periodic'): input_mode = 'periodic'
+    elif input_mode in ('time-series','timeseries','trans','transient'): input_mode = 'transient'
+    self.input_mode = input_mode
+    # set input interval
+    input_interval = input_interval.lower()
+    if input_interval[:5].lower() == 'month': input_interval = 'monthly'
+    elif input_interval[:3].lower() == 'day': input_interval = 'daily'
+    else: raise NotImplementedError(input_interval)
+    self.input_interval = input_interval
+    # set other variables
+    self.input_vars = input_vars
+    self.input_prefix = input_prefix
+    self.input_folder = input_folder
   
   def generateInputLists(self, input_vars=None, input_prefix=None, input_folder=None,
-                         lvalidate=True, lcenter=True, l365=True, lFortran=True):
+                         lvalidate=True, axis='iTime', lcenter=True, l365=True, lFortran=True):
     ''' generate and validate lists of input files and write to appropriate files '''
     input_vars = self.input_vars if input_vars is None else input_vars
     input_prefix = self.input_prefix if input_prefix is None else input_prefix
@@ -163,13 +174,14 @@ class Grok(object):
       vartype,wrfvar = val
       filename = '{0}.inc'.format(varname)
       self.setParam('time raster table', 'include {}'.format(filename), after=vartype)
-      if self.input_mode == 'steady-state':
-        input_pattern = '{0}_{1}_iTime_{{IDX:d}}.asc'.format(input_prefix, wrfvar) # IDX will be substituted
-      elif self.input_mode == 'periodic':
-        input_pattern = '{0}_{1}_iTime_{{IDX:02d}}.asc'.format(input_prefix, wrfvar) # IDX will be substituted
-      elif self.input_mode == 'transient':
-        input_pattern = '{0}_{1}_iTime_{{IDX:03d}}.asc'.format(input_prefix, wrfvar) # IDX will be substituted
-      else: raise GrokError(self.input_mode)
+      length = self.length + 1 if lFortran else self.length
+      input_pattern = '{0:s}_{{IDX:0{1:d}d}}'.format(axis, int(np.ceil(np.log10(length)))) # number of digits
+#       if self.input_mode == 'steady-state': input_pattern = 'iTime_{{IDX:d}}.asc' # IDX will be substituted
+#       elif self.input_mode == 'periodic': input_pattern = 'iTime_{{IDX:02d}}.asc' # IDX will be substituted
+#       elif self.input_mode == 'transient': input_pattern = 'iTime_{{IDX:03d}}.asc' # IDX will be substituted
+#       else: raise GrokError(self.input_mode)
+      input_pattern = '{0}_{1}.asc'.format(wrfvar,input_pattern)
+      if input_prefix is not None: input_pattern = '{0}_{1}'.format(input_prefix,input_pattern)
       # write file list
       generateInputFilelist(filename=filename, folder=self.rundir, input_folder=self.input_folder, 
                             input_pattern=input_pattern, lcenter=lcenter, 
@@ -191,8 +203,8 @@ class Grok(object):
       # run Grok
       subprocess.call([self.grok_bin], stdout=lf, stderr=lf)
       # parse log file for errors
-      lf.seek(2,2) # i.e. -3, third line from the end
-      ec = ( lf.readline().strip() == '---- Normal exit ----' )
+      ec = ( tail(lf, n=3)[0].strip() == '---- Normal exit ----' )
+      # i.e. -3, third line from the end (different from HGS)
     os.chdir(pwd) # return to previous working directory
     if lerror and not ec: 
       raise GrokError("Grok failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
@@ -241,7 +253,7 @@ class HGS(Grok):
     # load config file from template folder
     if lconfig: self.readConfig(folder=template)
     
-  def runGrok(self, executable=None, logfile='log.grok', lerror=True, lconfig=True, linput=True):
+  def runGrok(self, executable=None, logfile='log.grok', lerror=False, lconfig=True, linput=True):
     ''' run the Grok executable in the run directory and set flag indicating success '''
     # write config file and input lists to run folder
     if lconfig: self.writeConfig()
@@ -296,8 +308,8 @@ class HGS(Grok):
       # run HGS
       subprocess.call([self.hgs_bin], stdout=lf, stderr=lf)
       # parse log file for errors
-      lf.seek(1,2) # i.e. -2, second line from the end (different from Grok)
-      ec = ( lf.readline().strip() == '---- Normal exit ----' )
+      ec = ( tail(lf, n=2)[0].strip() == '---- Normal exit ----' )
+      # i.e. -2, second line from the end (different from Grok)
     os.chdir(pwd) # return to previous working directory
     if lerror and not ec: 
       raise HGSError("HGS failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))

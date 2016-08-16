@@ -25,7 +25,9 @@ if not os.path.isdir(workdir): raise IOError(workdir)
 # other settings
 NP = 2 # for parallel tests
 ldebug = False # additional debug output
-lbin = False # run executables
+# lbin = True # execute binaries to test runner methods
+lbin = False # don't execute binaries (takes very long)
+
 
 ## tests for Grok class
 class GrokTest(unittest.TestCase):  
@@ -34,6 +36,7 @@ class GrokTest(unittest.TestCase):
   hgs_testcase = 'grw_omafra' # name of test project (for file names)
   test_data    = data_root+'/HGS/Templates/input/clim/climate_forcing/'
   test_prefix  = 'grw2' # pefix for climate input
+  lvalidate    = False # validate input data
   rundir       = '{}/grok_test/'.format(workdir,) # test folder
   grok_bin     = 'grok_premium.x' # Grok executable
    
@@ -78,7 +81,7 @@ class GrokTest(unittest.TestCase):
     grok = self.grok  
     # write lists for fictional scenario
     grok.generateInputLists(input_vars='PET', input_prefix=self.test_prefix, 
-                            input_folder=self.test_data, lvalidate=True,)
+                            input_folder=self.test_data, lvalidate=self.lvalidate,)
     # convert config file list into string and verify
     output = ''.join(grok._lines) # don't need newlines 
     assert 'precip.inc' in output
@@ -128,6 +131,7 @@ class GrokTest(unittest.TestCase):
 ## tests for HGS class
 class HGSTest(GrokTest):  
   # some HGS test data
+  lvalidate    = True # validate input data
   rundir       = '{}/hgs_test/'.format(workdir,) # test folder
   hgs_bin      = 'hgs_premium.x' # HGS executable
   hgsdir       = os.getenv('HGSDIR',) # HGS license file
@@ -176,15 +180,16 @@ class HGSTest(GrokTest):
     # climate data
     if not os.path.isdir(self.test_data): raise IOError(self.test_data)
     # run Grok
-    if not os.path.isfile(exe): raise IOError(exe)
-    ec = hgs.runGrok(executable=exe, logfile=logfile, lerror=False, linput=lbin)
-    # check output
-    batchpfx = self.rundir+hgs.batchpfx
-    assert os.path.isfile(batchpfx), batchpfx
-    assert os.path.isfile(logfile), logfile
-    assert ec > 0, ec
-    # check flag
-    assert hgs.grokOK is False, hgs.grokOK
+    if lbin:
+      if not os.path.isfile(exe): raise IOError(exe)
+      ec = hgs.runGrok(executable=exe, logfile=logfile, lerror=False, linput=lbin)
+      # check output
+      batchpfx = self.rundir+hgs.batchpfx
+      assert os.path.isfile(batchpfx), batchpfx
+      assert os.path.isfile(logfile), logfile
+      assert ec == 0, ec
+      # check flag
+      assert hgs.grokOK is True, hgs.grokOK
 
   def testRunHGS(self):
     ''' test the HGS runner command (will fail without proper folder setup) '''
@@ -224,6 +229,8 @@ class EnsHGSTest(unittest.TestCase):
   # some HGS test data
   hgs_template = data_root+'/HGS/Templates/GRW-test/' 
   hgs_testcase = 'grw_omafra' # name of test project (for file names)
+  test_data    = data_root+'/HGS/Templates/input/clim/climate_forcing/'
+  test_prefix  = 'grw2'
   rundir       = '{}/enshgs_test/'.format(workdir,) # test folder
   grok_bin     = 'grok_premium.x' # Grok executable
   hgs_bin      = 'hgs_premium.x' # HGS executable
@@ -248,6 +255,7 @@ class EnsHGSTest(unittest.TestCase):
     # create 2-member ensemble
     self.enshgs = EnsHGS(rundir=self.rundir + "/{A}/", project=self.hgs_testcase, runtime=self.runtime,
                          input_mode=self.input_mode, input_interval=self.input_interval, 
+                         input_prefix=self.test_prefix, input_folder=self.test_data,
                          NP=self.NP, A=['A1','A2'], outer_list=['A'])
     # load a config file from template
     if not os.path.isfile(self.grok_input):
@@ -284,7 +292,14 @@ class EnsHGSTest(unittest.TestCase):
     enshgs = self.enshgs
     assert all(rt == self.runtime for rt in enshgs.runtime), enshgs.runtime
     time = 1 # new runtime
+    # setter method
     enshgs.setRuntime(time=time)
+    assert all(hgs.runtime == time for hgs in enshgs), enshgs.members # EnsHGS supports iteration over members
+    assert all(rt == time for rt in enshgs.runtime), enshgs.runtime # EnsHGS supports iteration over members
+    #print(enshgs.runtime)
+    # using new ensemble wrapper
+    time = 10
+    enshgs.runtime = time
     assert all(hgs.runtime == time for hgs in enshgs), enshgs.members # EnsHGS supports iteration over members
     assert all(rt == time for rt in enshgs.runtime), enshgs.runtime # EnsHGS supports iteration over members
     print(enshgs.runtime)
@@ -293,9 +308,25 @@ class EnsHGSTest(unittest.TestCase):
     ''' test experiment setup '''
     enshgs = self.enshgs
     assert all(not g for g in enshgs.grokOK), enshgs.grokOK
+    # setup run folders and run Grok
+    enshgs.setupExperiments(template=self.hgs_template, lgrok=lbin, lparallel=True)
+    assert not lbin or all(g for g in enshgs.grokOK), enshgs.grokOK
+    for rundir in enshgs.rundirs:
+      assert os.path.isdir(rundir), rundir
+      if lbin:
+        grokfile = '{0}/{1}.grok'.format(rundir,self.hgs_testcase)
+        assert os.path.isfile(grokfile), grokfile
+
+  def testSetupRundir(self):
+    ''' test rundir setup '''
+    enshgs = self.enshgs
+    assert all(not g for g in enshgs.grokOK), enshgs.grokOK
     # setup run folders
-    enshgs.setupExperiments(template=self.hgs_template)
-    
+    enshgs.setupExperiments(template=self.hgs_template, lgrok=False, lparallel=True)
+    for rundir in enshgs.rundirs:
+      assert os.path.isdir(rundir), rundir
+      grok_bin = '{0}/{1}'.format(rundir,self.grok_bin)
+      assert os.path.exists(grok_bin), grok_bin
 
 if __name__ == "__main__":
 
@@ -308,17 +339,16 @@ if __name__ == "__main__":
 #     specific_tests += ['RunGrok']
 #     specific_tests += ['SetTime']
 #     specific_tests += ['SetupExp']
+#     specific_tests += ['SetupRundir']
 #     specific_tests += ['Write']
 
-    lbin = True # execute binaries to test runner methods
-#     lbin = False # don't execute binaries (takes very long)
 
     # list of tests to be performed
     tests = [] 
     # list of variable tests
     tests += ['Grok']
-#     tests += ['HGS']    
-#     tests += ['EnsHGS']
+    tests += ['HGS']    
+    tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()
