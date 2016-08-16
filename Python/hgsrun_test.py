@@ -302,7 +302,6 @@ class EnsHGSTest(unittest.TestCase):
     enshgs.runtime = time
     assert all(hgs.runtime == time for hgs in enshgs), enshgs.members # EnsHGS supports iteration over members
     assert all(rt == time for rt in enshgs.runtime), enshgs.runtime # EnsHGS supports iteration over members
-    print(enshgs.runtime)
     
   def testRunEns(self):
     ''' test running the ensemble; the is the primary application test '''
@@ -354,7 +353,7 @@ if __name__ == "__main__":
 #     specific_tests += ['InitEns']
 #     specific_tests += ['InputLists']
 #     specific_tests += ['ParallelIndex']
-    specific_tests += ['RunEns']
+#     specific_tests += ['RunEns']
 #     specific_tests += ['RunGrok']
 #     specific_tests += ['SetTime']
 #     specific_tests += ['SetupExp']

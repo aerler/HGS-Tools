@@ -314,7 +314,7 @@ class HGS(Grok):
     os.chdir(pwd) # return to previous working directory
     return 0 if self.pidxOK else 1
     
-  def runHGS(self, executable=None, logfile='log.hgs', lerror=True,
+  def runHGS(self, executable=None, logfile='log.hgs_run', lerror=True,
              skip_config=False, skip_grok=False, skip_pidx=False):
     ''' check if all inputs are in place and run the HGS executable in the run directory '''
     pwd = os.getcwd() # save present workign directory to return later    
@@ -341,8 +341,8 @@ class HGS(Grok):
       # run HGS as subprocess
       subprocess.call([self.hgs_bin], stdout=lf, stderr=lf)
       # parse log file for errors
-      lec = ( tail(lf, n=2)[0].strip() == '---- Normal exit ----' )
-      # i.e. -2, second line from the end (different from Grok)
+      lec = ( tail(lf, n=2)[0].strip() == '---- NORMAL EXIT ----' )
+      # i.e. -2, second line from the end (and different capitalization from Grok!)
     os.chdir(pwd) # return to previous working directory
     if lerror and not lec: 
       raise HGSError("HGS failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))

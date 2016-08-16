@@ -73,18 +73,19 @@ class EnsembleWrapper(object):
                           len(results),len(self.klass.members)))
     return tuple(results)
   
-  def getter(self, value):
-    ''' get attribute values of all ensemble members and return as list '''
-    return [getattr(member, self.attr) for member in self.klass.members]
+#   def __get__(self, ):
+#     ''' get attribute values of all ensemble members and return as list '''
+#     print('\nGETTER\n')
+#     return [getattr(member, self.attr) for member in self.klass.members]
 
 #   def setter(self, value):
 #     ''' set attribute of all ensemble members to the same value (argument expansion not supported) '''
 #     for member in self.klass.members: setattr(member, self.attr, value)
 # N.B.: setting attributes is done via the __setattr__ method, which does not involve this wrapper...
 
-  def __iter__(self):
-    ''' return an iterator over the attribute values of all ensemble members '''
-    return iter([getattr(member, self.attr) for member in self.klass.members])
+#   def __iter__(self):
+#     ''' return an iterator over the attribute values of all ensemble members '''
+#     return iter([getattr(member, self.attr) for member in self.klass.members])
   
 
 ## HGS Ensemble manager class
@@ -149,8 +150,15 @@ class EnsHGS(object):
     #       list and applies it over the list of methods from all ensemble members
     # N.B.: this method is only called as a fallback, if no class/instance attribute exists,
     #       i.e. Variable methods and attributes will always have precedent 
-    # instantiate new wrapper with current arguments and return wrapper instance
-    return EnsembleWrapper(self,attr)      
+    # determine attribute type
+    attrs = [callable(getattr(member, attr)) for member in self.members]
+    if not any(attrs):
+      # treat as regular attributes and return list of attibutes of all members
+      return [getattr(member, attr) for member in self.members]
+    elif all(attrs):
+      # instantiate new wrapper with current arguments and return wrapper instance
+      return EnsembleWrapper(self,attr)
+    else: raise EnsembleError("Inconsistent attribute type '{}'".format(attr))
         
   def setupExperiments(self, inner_list=None, outer_list=None, lgrok=False, lparallel=True, NP=None, **allargs):
     ''' set up run dirs as execute Grok for each member; check setup and report results '''
