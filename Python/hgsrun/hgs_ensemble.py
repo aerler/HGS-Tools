@@ -158,20 +158,20 @@ class EnsHGS(object):
     # create run folders and copy data
     kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.setupRundir).args if arg in allargs}
     ecs = self.setupRundir(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
-    if any(ecs): 
+    if any(ecs) or not all(self.rundirOK): 
       raise GrokError("Run folder setup failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
     ec += sum(ecs)
     # write configuration
     kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.setupConfig).args if arg in allargs}
     ecs = self.setupConfig(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
-    if any(ecs): 
+    if any(ecs) or not all(self.configOK): 
       raise GrokError("Grok configuration failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
     ec += sum(ecs)
     # run Grok
     if lgrok: 
       kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.runGrok).args if arg in allargs}
       ecs = self.runGrok(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
-      if any(ecs): 
+      if any(ecs) or not all(self.GrokOK): 
         raise GrokError("Grok execution failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
       ec += sum(ecs)
     # return sum of all exit codes
@@ -184,14 +184,14 @@ class EnsHGS(object):
     ec = 0 # cumulative exit code (sum of all members)
     # check and run setup and configuration
     if lsetup:
-      ecs = self.setupExperiments(inner_list=inner_list, outer_list=outer_list, lgrok=lgrok, lparallel=lparallel, NP=NP)
-      if any(ecs): 
-        raise GrokError("Experiment setup failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
-      ec += sum(ecs)
+      ec = self.setupExperiments(inner_list=inner_list, outer_list=outer_list, lgrok=lgrok, lparallel=lparallel, NP=NP)
+      if ec > 0 or not all(self.configOK): 
+        rundirs = [rundir for rundir,OK in zip(self.rundirs,self.configOK) if not OK]
+        raise GrokError("Experiment setup failed in {0} cases:\n{1}".format(ec,rundirs))
     # run HGS
     kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.runHGS).args if arg in allargs}
     ecs = self.runHGS(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
-    if any(ecs): 
+    if any(ecs) or not all(self.HGSOK): 
       raise HGSError("Grok configuration failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
     ec += sum(ecs)
     # return sum of all exit codes

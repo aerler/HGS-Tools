@@ -176,7 +176,7 @@ class HGSTest(GrokTest):
     hgs = self.hgs  
     exe = '{}/{}'.format(self.hgs_template,self.grok_bin) # run folder not set up
     logfile = '{}/log.grok'.format(hgs.rundir)
-    assert hgs.grokOK is None, hgs.grokOK
+    assert hgs.GrokOK is None, hgs.GrokOK
     # climate data
     if not os.path.isdir(self.test_data): raise IOError(self.test_data)
     # run Grok
@@ -189,14 +189,14 @@ class HGSTest(GrokTest):
       assert os.path.isfile(logfile), logfile
       assert ec == 0, ec
       # check flag
-      assert hgs.grokOK is True, hgs.grokOK
+      assert hgs.GrokOK is True, hgs.GrokOK
 
   def testRunHGS(self):
     ''' test the HGS runner command (will fail without proper folder setup) '''
     hgs = self.hgs  
     exe = '{}/{}'.format(self.hgs_template,self.hgs_bin) # run folder not set up
     logfile = '{}/log.hgs_run'.format(hgs.rundir)
-    assert hgs.grokOK is None, hgs.grokOK
+    assert hgs.GrokOK is None, hgs.GrokOK
     # set environment variable for license file
     print('\nHGSDIR: {}'.format(self.hgsdir))
     # attempt to run HGS
@@ -209,7 +209,7 @@ class HGSTest(GrokTest):
     assert os.path.isfile(logfile), logfile
     assert ec > 0, ec
     # check flag
-    assert hgs.grokOK is None, hgs.grokOK
+    assert hgs.GrokOK is None, hgs.GrokOK
 
   def testSetup(self):
     ''' test copying of a run folder from a template '''
@@ -249,14 +249,14 @@ class EnsHGSTest(unittest.TestCase):
     # some grok settings
     self.runtime = 5*365*24*60*60 # two years in seconds
     self.input_interval = 'monthly'
-    self.input_mode = 'periodic'
+    self.input_mode = 'steady-state'
     # HGS settings
     self.NP = NP
     # create 2-member ensemble
     self.enshgs = EnsHGS(rundir=self.rundir + "/{A}/", project=self.hgs_testcase, runtime=self.runtime,
                          input_mode=self.input_mode, input_interval=self.input_interval, 
                          input_prefix=self.test_prefix, input_folder=self.test_data,
-                         NP=self.NP, A=['A1','A2'], outer_list=['A'])
+                         NP=self.NP, A=['A1','A2'], outer_list=['A'], template_folder=self.hgs_template)
     # load a config file from template
     if not os.path.isfile(self.grok_input):
       raise IOError("Grok configuration file for testing not found:\n '{}'".format(self.grok_input))
@@ -304,13 +304,30 @@ class EnsHGSTest(unittest.TestCase):
     assert all(rt == time for rt in enshgs.runtime), enshgs.runtime # EnsHGS supports iteration over members
     print(enshgs.runtime)
     
+  def testRunEns(self):
+    ''' test running the ensemble; the is the primary application test '''
+    enshgs = self.enshgs
+    assert all(not g for g in enshgs.HGSOK), enshgs.HGSOK
+    # set runtime to 2 minutes
+    enshgs.setRuntime(time=120)
+    # check license
+    print('\nHGSDIR: {}'.format(self.hgsdir))
+    # setup run folders and run Grok
+    enshgs.runSimulations(lsetup=True, lgrok=False, skip_grok=True, lparallel=True, NP=2)
+    assert not lbin or all(g for g in enshgs.HGSOK), enshgs.HGSOK
+    for rundir in enshgs.rundirs:
+      assert os.path.isdir(rundir), rundir
+      if lbin:
+        hgslog = '{0}/log.hgs_run'.format(rundir)
+        assert os.path.isfile(hgslog), hgslog
+
   def testSetupExp(self):
     ''' test experiment setup '''
     enshgs = self.enshgs
-    assert all(not g for g in enshgs.grokOK), enshgs.grokOK
+    assert all(not g for g in enshgs.GrokOK), enshgs.GrokOK
     # setup run folders and run Grok
-    enshgs.setupExperiments(template=self.hgs_template, lgrok=lbin, lparallel=True)
-    assert not lbin or all(g for g in enshgs.grokOK), enshgs.grokOK
+    enshgs.setupExperiments(lgrok=lbin, lparallel=True)
+    assert not lbin or all(g for g in enshgs.GrokOK), enshgs.GrokOK
     for rundir in enshgs.rundirs:
       assert os.path.isdir(rundir), rundir
       if lbin:
@@ -320,13 +337,14 @@ class EnsHGSTest(unittest.TestCase):
   def testSetupRundir(self):
     ''' test rundir setup '''
     enshgs = self.enshgs
-    assert all(not g for g in enshgs.grokOK), enshgs.grokOK
+    assert all(not g for g in enshgs.GrokOK), enshgs.GrokOK
     # setup run folders
-    enshgs.setupExperiments(template=self.hgs_template, lgrok=False, lparallel=True)
+    enshgs.setupExperiments(lgrok=False, lparallel=True)
     for rundir in enshgs.rundirs:
       assert os.path.isdir(rundir), rundir
       grok_bin = '{0}/{1}'.format(rundir,self.grok_bin)
       assert os.path.exists(grok_bin), grok_bin
+
 
 if __name__ == "__main__":
 
@@ -336,6 +354,7 @@ if __name__ == "__main__":
 #     specific_tests += ['InitEns']
 #     specific_tests += ['InputLists']
 #     specific_tests += ['ParallelIndex']
+    specific_tests += ['RunEns']
 #     specific_tests += ['RunGrok']
 #     specific_tests += ['SetTime']
 #     specific_tests += ['SetupExp']
@@ -346,8 +365,8 @@ if __name__ == "__main__":
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-    tests += ['Grok']
-    tests += ['HGS']    
+#     tests += ['Grok']
+#     tests += ['HGS']    
     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above

@@ -223,8 +223,9 @@ class HGS(Grok):
   hgs_bin   = './hgs_premium.x' # default HGS executable
   rundirOK  = None # indicate if rundir setup was successfule
   configOK  = None # indicate if Grok configuration was successful
-  grokOK    = None # indicate if Grok ran successfully
+  GrokOK    = None # indicate if Grok ran successfully
   pidxOK    = None # indicate if parallel index configuration was successful
+  HGSOK     = None # indicate if HGS ran successfully
   pidx_file = 'parallelindx.dat' # file with parallel execution settings 
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, 
@@ -284,7 +285,7 @@ class HGS(Grok):
     ''' run the Grok executable in the run directory and set flag indicating success '''
     if lconfig: self.writeConfig()
     ec = super(HGS,self).runGrok(executable=executable, logfile=logfile, lerror=lerror)
-    self.grokOK = True if ec == 0 else False # set Grok flag
+    self.GrokOK = True if ec == 0 else False # set Grok flag
     return ec
   
   def writeParallelIndex(self, NP=None, dom_parts=None, solver=None, input_coloring=False, 
@@ -327,7 +328,7 @@ class HGS(Grok):
       ec = self.setupConfig() # will run with defaults, assuming template is already defined
       if lerror and ec != 0: raise GrokError('Grok configuration did not complete properly.')
     # Grok run
-    if not skip_grok and not self.grokOK: 
+    if not skip_grok and not self.GrokOK: 
       ec = self.runGrok(lerror=lerror) # run grok (will raise exception if failed)
       if lerror and ec != 0: raise GrokError('Grok did not run or complete properly.')
     # parallelindex configuration
@@ -340,11 +341,12 @@ class HGS(Grok):
       # run HGS as subprocess
       subprocess.call([self.hgs_bin], stdout=lf, stderr=lf)
       # parse log file for errors
-      ec = ( tail(lf, n=2)[0].strip() == '---- Normal exit ----' )
+      lec = ( tail(lf, n=2)[0].strip() == '---- Normal exit ----' )
       # i.e. -2, second line from the end (different from Grok)
     os.chdir(pwd) # return to previous working directory
-    if lerror and not ec: 
+    if lerror and not lec: 
       raise HGSError("HGS failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
-    return 0 if ec else 1
+    self.HGSOK = lec # set Grok flag
+    return 0 if lec else 1
   
   
