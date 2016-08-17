@@ -179,7 +179,7 @@ class Grok(object):
       filename = '{0}.inc'.format(varname)
       self.setParam('time raster table', 'include {}'.format(filename), after=vartype)
       if self.input_interval == 'monthly':
-        if self.input_mode == 'steady-state': input_pattern = 'iTime_{IDX:02d}' # IDX will be substituted
+        if self.input_mode == 'steady-state': input_pattern = 'iTime_{IDX:d}' # IDX will be substituted
         elif self.input_mode == 'periodic': input_pattern = 'iTime_{IDX:02d}' # IDX will be substituted
         elif self.input_mode == 'transient': input_pattern = 'iTime_{IDX:03d}' # IDX will be substituted
         else: raise GrokError(self.input_mode)
