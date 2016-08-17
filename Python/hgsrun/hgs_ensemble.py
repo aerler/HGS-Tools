@@ -102,17 +102,22 @@ class EnsHGS(object):
     ''' initialize an ensemble of HGS simulations based on HGS arguments and project descriptors;
         all keyword arguments are automatically expanded based on inner/outer product rules, defined
         using the inner_list/outer_list arguments; the expanded argument lists are used to initialize
-        the individual ensemble members; note that a string substitution is applied to 'rundir'
-        prior to constructing the HGS instance, i.e. rundir.format(**kwargs) '''
+        the individual ensemble members; note that a string substitution is applied to all folder 
+        variables (incl. 'rundir') prior to constructing the HGS instance, i.e. rundir.format(**kwargs) '''
     # expand argument list (plain, nothing special)
     kwargs_list = expandArgumentList(inner_list=inner_list, outer_list=outer_list, **kwargs)
     # loop over ensemble members
     self.members = []; self.rundirs = []; self.hgsargs = [] # ensemble lists
     for kwargs in kwargs_list:
-      # expand run folder 
-      rundir = kwargs.pop('rundir')
-      if not isinstance(rundir,basestring): raise TypeError(rundir)
-      rundir = rundir.format(**kwargs) # make all arguments available
+      # isolate folder variables and perform variable substitution
+      for folder_type in ('template_folder','input_folder','rundir'):
+        if folder_type in kwargs:
+          folder = kwargs[folder_type]
+          if not isinstance(folder,basestring): raise TypeError(folder)
+          # perform keyword substitution with all available arguments
+          kwargs[folder_type] = folder.format(**kwargs)
+      # check rundir
+      rundir = kwargs['rundir']
       if rundir in self.rundirs:
         raise ArgumentError("Multiple occurence of run directory:\n '{}'".format(rundir))
       self.rundirs.append(rundir)
@@ -121,7 +126,7 @@ class EnsHGS(object):
       hgsargs = {arg:kwargs[arg] for arg in hgsargs if arg in kwargs} # returns args, varargs, kwargs, defaults
       self.hgsargs.append(hgsargs)
       # initialize HGS instance      
-      hgs = HGS(rundir=rundir, **hgsargs)
+      hgs = HGS(**hgsargs)
       self.members.append(hgs)
     
   @property

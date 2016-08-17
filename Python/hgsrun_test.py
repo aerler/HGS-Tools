@@ -94,7 +94,9 @@ class GrokTest(unittest.TestCase):
     logfile = '{}/log.grok'.format(grok.rundir)
     # run Grok
     if not os.path.isfile(exe): raise IOError(exe)
-    try: ec = grok.runGrok(executable=exe, logfile=logfile)
+    try: 
+      ec = grok.runGrok(executable=exe, logfile=logfile, ldryrun=not lbin)
+      if not lbin: ec = 1 # because the test should fail...
     except GrokError: ec = 1
     # check output
     batchpfx = '{}/batch.pfx'.format(self.rundir)
@@ -149,7 +151,7 @@ class HGSTest(GrokTest):
     # some grok settings
     self.runtime = 5*365*24*60*60 # two years in seconds
     self.input_interval = 'monthly'
-    self.input_mode = 'steady-state'
+    self.input_mode = 'periodic'
     # HGS settings
     self.NP = NP
     # create Grok instance
@@ -180,16 +182,15 @@ class HGSTest(GrokTest):
     # climate data
     if not os.path.isdir(self.test_data): raise IOError(self.test_data)
     # run Grok
-    if lbin:
-      if not os.path.isfile(exe): raise IOError(exe)
-      ec = hgs.runGrok(executable=exe, logfile=logfile, lerror=False, linput=lbin)
-      # check output
-      batchpfx = self.rundir+hgs.batchpfx
-      assert os.path.isfile(batchpfx), batchpfx
-      assert os.path.isfile(logfile), logfile
-      assert ec == 0, ec
-      # check flag
-      assert hgs.GrokOK is True, hgs.GrokOK
+    if not os.path.isfile(exe): raise IOError(exe)
+    ec = hgs.runGrok(executable=exe, logfile=logfile, lerror=False, linput=lbin, ldryrun=not lbin)
+    # check output
+    batchpfx = self.rundir+hgs.batchpfx
+    assert os.path.isfile(batchpfx), batchpfx
+    assert os.path.isfile(logfile), logfile
+    assert ec == 0, ec
+    # check flag
+    assert hgs.GrokOK is True, hgs.GrokOK
 
   def testRunHGS(self):
     ''' test the HGS runner command (will fail without proper folder setup) '''
@@ -201,7 +202,7 @@ class HGSTest(GrokTest):
     print('\nHGSDIR: {}'.format(self.hgsdir))
     # attempt to run HGS
     if not os.path.isfile(exe): raise IOError(exe)
-    try: ec = hgs.runHGS(executable=exe, logfile=logfile, skip_grok=True)
+    try: ec = hgs.runHGS(executable=exe, logfile=logfile, skip_grok=True, ldryrun=not lbin)
     except HGSError: ec = 1
     # check output
     pidx_file = self.rundir+hgs.pidx_file
@@ -216,7 +217,7 @@ class HGSTest(GrokTest):
     hgs = self.hgs
     if not os.path.isdir(self.hgs_template): raise IOError(self.hgs_template)
     # run setup
-    hgs.setupRundir(template=self.hgs_template, bin_folder=None)
+    hgs.setupRundir(template_folder=self.hgs_template, bin_folder=None)
     # check that all items are there
     assert os.path.isdir(self.rundir), self.rundir
     for exe in (self.hgs_bin, self.grok_bin):
@@ -249,7 +250,7 @@ class EnsHGSTest(unittest.TestCase):
     # some grok settings
     self.runtime = 5*365*24*60*60 # two years in seconds
     self.input_interval = 'monthly'
-    self.input_mode = 'steady-state'
+    self.input_mode = 'periodic'
     # HGS settings
     self.NP = NP
     # create 2-member ensemble
@@ -307,12 +308,11 @@ class EnsHGSTest(unittest.TestCase):
     ''' test running the ensemble; the is the primary application test '''
     enshgs = self.enshgs
     assert all(not g for g in enshgs.HGSOK), enshgs.HGSOK
-    # set runtime to 2 minutes
-    enshgs.setRuntime(time=120)
     # check license
     print('\nHGSDIR: {}'.format(self.hgsdir))
     # setup run folders and run Grok
-    enshgs.runSimulations(lsetup=True, lgrok=False, skip_grok=True, lparallel=True, NP=2)
+    enshgs.runSimulations(lsetup=True, lgrok=False, skip_grok=True, lparallel=True, NP=2, 
+                          runtime_override=120, ldryrun=not lbin) # set runtime to 2 minutes
     assert not lbin or all(g for g in enshgs.HGSOK), enshgs.HGSOK
     for rundir in enshgs.rundirs:
       assert os.path.isdir(rundir), rundir
@@ -351,9 +351,9 @@ if __name__ == "__main__":
     specific_tests = []
 #     specific_tests += ['Class']
 #     specific_tests += ['InitEns']
-    specific_tests += ['InputLists']
+#     specific_tests += ['InputLists']
 #     specific_tests += ['ParallelIndex']
-#     specific_tests += ['RunEns']
+    specific_tests += ['RunEns']
 #     specific_tests += ['RunGrok']
 #     specific_tests += ['SetTime']
 #     specific_tests += ['SetupExp']
@@ -365,8 +365,8 @@ if __name__ == "__main__":
     tests = [] 
     # list of variable tests
 #     tests += ['Grok']
-    tests += ['HGS']    
-#     tests += ['EnsHGS']
+#     tests += ['HGS']    
+    tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()

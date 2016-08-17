@@ -1,0 +1,33 @@
+# YAML configuration file for HGS ensemble runs
+# 16/08/2016, Andre R. Erler
+
+# HGS parameters
+HGS_parameters:
+  project: 'GRW' # project tag, mainly for folder
+  #rundir: '/data-3/HGS/{project}/grw2/{EXPERIMENT}/{MODE}/{HGS_TASK}/'
+  rundir: '/media/tmp/enshgs_test/{EXPERIMENT}/{PERIOD}/{HGS_TASK}/'
+  problem: 'grw_omafra'
+#  runtime: 120
+  length:  180 # in monthly
+  NP: 1  # serial execution
+  input_mode: ['steady-state','periodic'] # outer product, parallel to PERIOD
+  input_interval: 'monthly'
+  input_vars: 'PET'
+  input_prefix: 'grw2'
+  input_folder: '/data/HGS/Templates/input/clim/climate_forcing/'
+  template_folder: '/data/HGS/Templates/GRW-test/' 
+  # N.B.: folder specification by keyword argument
+  # rundir specification
+  EXPERIMENT: ['test-A','test-B'] # outer product, independent
+  PERIOD: ['annual_15','clim_15'] # outer product, parallel to input_mode
+  HGS_TASK: 'hgs_run'
+  # list expansion parameters
+  outer_list: ['EXPERIMENT',['input_mode','PERIOD']]
+# parameters for parallel batch execution
+batch_config:
+  lsetup: True
+  lgrok: False 
+  skip_grok: True
+  lparallel: True
+  NP: 2
+  runtime_override: 120 # 2 minutes for testing

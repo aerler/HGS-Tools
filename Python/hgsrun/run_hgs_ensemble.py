@@ -23,6 +23,7 @@ from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 # hgsrun imports
 from hgs_ensemble import EnsHGS
+from types import NoneType
 
 # meta data
 __all__ = []
@@ -77,13 +78,15 @@ USAGE
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
         parser.add_argument("-v", "--verbose", dest="verbose", action="count", help="set verbosity level [default: %(default)s]")
         parser.add_argument('-V', '--version', action='version', version=program_version_message)
-        parser.add_argument('config', help="the ensemble configuration file (in YAML format)", type=str )
+        parser.add_argument('config', metavar='config.yaml', type=str, help="the ensemble configuration file (in YAML format)")
+        parser.add_argument('--data-root', nargs='?', const=os.getenv('DATA_ROOT', None), default=None, type=(NoneType,basestring), help="")
 
         # Process arguments
         args = parser.parse_args()
 
-        yamlfile = args.config
         verbose = args.verbose
+        yamlfile = args.config
+        data_root = args.data_root
 
         if verbose > 0:
             print("Verbose mode on")
@@ -94,17 +97,23 @@ USAGE
         # read file 
         with open(yamlfile) as f: 
           config = yaml.load(f, Loader=yaml.Loader)
+        hgs_config = config['HGS_parameters'] # HGS configuration
+        batch_config = config['batch_config'] # patch run parameters
+        # add data_root, if not already present
+        if data_root not in hgs_config: hgs_config['DATA_ROOT'] = data_root
+        
         # instantiate ensemble
         if verbose > 0:
           print("\nYAML Configuration that will be passed to EnsHGS class:")
           print(config['HGS_parameters'])
-        enshgs = EnsHGS(**config['HGS_parameters'])
+        enshgs = EnsHGS(**hgs_config)
 
         ## here we are actually running the program
         if verbose > 0:
           print("\nYAML Configuration for batch execution:")
           print(config['batch_config'])
-        ec = enshgs.runSimulations(**config['batch_config'])
+        ec = enshgs.runSimulations(**batch_config)
+        
         # check results
         if ec == 0 and all(g for g in enshgs.HGSOK):
           print("\n   ***   All HGS Simulations Completed Successfully!!!   ***\n")
@@ -116,6 +125,7 @@ USAGE
         
         # return exit code of HGS ensemble
         return ec
+      
     except KeyboardInterrupt:
         ### handle keyboard interrupt ###
         return 0

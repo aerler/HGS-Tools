@@ -16,6 +16,23 @@ from input_list import generateInputFilelist, resolveInterval
 from geodata.misc import ArgumentError
 from utils.misc import tail
 
+## patch symlink on Windows
+# adapted from Stak Overflow (last answer: "Edit 2"):
+# https://stackoverflow.com/questions/6260149/os-symlink-support-in-windows
+if os.name == "nt":
+  def symlink_ms(source, link_name):
+    import ctypes
+    csl = ctypes.windll.kernel32.CreateSymbolicLinkW
+    csl.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
+    csl.restype = ctypes.c_ubyte
+    flags = 1 if os.path.isdir(source) else 0
+    try:
+      if csl(link_name, source.replace('/', '\\'), flags) == 0:
+          raise ctypes.WinError()
+    except:
+      pass
+  os.symlink = symlink_ms
+
 # some named exceptions
 class GrokError(Exception):
   ''' Exception indicating an Error in Grok '''
@@ -199,7 +216,7 @@ class Grok(object):
     # return exit code
     return ec
   
-  def runGrok(self, executable=None, logfile='log.grok', batchpfx=None, lerror=True):
+  def runGrok(self, executable=None, logfile='log.grok', batchpfx=None, lerror=True, ldryrun=False):
     ''' run the Grok executable in the run directory '''
     pwd = os.getcwd() # save present workign directory to return later
     os.chdir(self.rundir) # go into run Grok/HGS folder
@@ -211,11 +228,15 @@ class Grok(object):
     with open(self.batchpfx, 'w+') as bp: bp.write(self.problem) # just one line...
     # run executable while logging output
     with open(logfile, 'w+') as lf: # output and error log
-      # run Grok
-      subprocess.call([self.grok_bin], stdout=lf, stderr=lf)
-      # parse log file for errors
-      lec = ( tail(lf, n=3)[0].strip() == '---- Normal exit ----' )
-      # i.e. -3, third line from the end (different from HGS)
+      if ldryrun:
+        lf.write('Dry-run --- no execution')
+        lec = True # pretend everything works
+      else:
+        # run Grok
+        subprocess.call([self.grok_bin], stdout=lf, stderr=lf)
+        # parse log file for errors
+        lec = ( tail(lf, n=3)[0].strip() == '---- Normal exit ----' )
+        # i.e. -3, third line from the end (different from HGS)
     os.chdir(pwd) # return to previous working directory
     if lerror and not lec: 
       raise GrokError("Grok failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
@@ -248,15 +269,17 @@ class HGS(Grok):
     self.template_folder = template_folder # where to get the templates
     self.NP = NP # number of processors
     
-  def setupRundir(self, template=None, bin_folder=None, loverwrite=True):
-    ''' copy entire run folder from a template and link executables '''
-    template = self.template_folder if template is None else template
-    if template is None: raise ValueError("Need to specify a template path.")
-    if not os.path.isdir(template): raise IOError(template)
+  def setupRundir(self, template_folder=None, bin_folder=None, loverwrite=True):
+    ''' copy entire run folder from a template folder and link executables '''
+    template_folder = self.template_folder if template_folder is None else template_folder
+    if template_folder is None: raise ValueError("Need to specify a template path.")
+    if not os.path.isdir(template_folder): raise IOError(template_folder)
     # clear existing directory
     if loverwrite and os.path.isdir(self.rundir): shutil.rmtree(self.rundir)
     # copy folder tree
-    if not os.path.isdir(self.rundir): shutil.copytree(template, self.rundir, symlinks=True)
+    if not os.path.isdir(self.rundir): shutil.copytree(template_folder, self.rundir, symlinks=True)
+    # place link to template
+    os.symlink(template_folder, '{}/template'.format(self.rundir))
     # put links to executables in place
     for exe in (self.hgs_bin, self.grok_bin):
       local_exe = '{}/{}'.format(self.rundir,exe)
@@ -272,12 +295,12 @@ class HGS(Grok):
     self.rundirOK = True if os.path.isdir(self.rundir) else False
     return 0 if self.rundirOK else 1
     
-  def setupConfig(self, template=None, linput=True, lpidx=True):
+  def setupConfig(self, template_folder=None, linput=True, lpidx=True):
     ''' load config file from template and write configuration to rundir '''
-    template = self.rundir if template is None else template
+    template_folder = self.rundir if template_folder is None else template_folder
     ec = 0 # cumulative exit code
     # load config file from template folder
-    ec += self.readConfig(folder=template)
+    ec += self.readConfig(folder=template_folder)
     # N.B.: runtime is already set by readConfig
     # write input lists to run folder
     if linput: ec += self.generateInputLists(lvalidate=True)
@@ -289,10 +312,10 @@ class HGS(Grok):
     self.configOK = True if ec == 0 else False
     return ec
     
-  def runGrok(self, executable=None, logfile='log.grok', lerror=False, lconfig=True, linput=True):
+  def runGrok(self, executable=None, logfile='log.grok', lerror=False, lconfig=True, linput=True, ldryrun=False):
     ''' run the Grok executable in the run directory and set flag indicating success '''
     if lconfig: self.writeConfig()
-    ec = super(HGS,self).runGrok(executable=executable, logfile=logfile, lerror=lerror)
+    ec = super(HGS,self).runGrok(executable=executable, logfile=logfile, lerror=lerror, ldryrun=ldryrun)
     self.GrokOK = True if ec == 0 else False # set Grok flag
     return ec
   
@@ -323,7 +346,7 @@ class HGS(Grok):
     return 0 if self.pidxOK else 1
     
   def runHGS(self, executable=None, logfile='log.hgs_run', lerror=True,
-             skip_config=False, skip_grok=False, skip_pidx=False):
+             skip_config=False, skip_grok=False, skip_pidx=False, ldryrun=False):
     ''' check if all inputs are in place and run the HGS executable in the run directory '''
     pwd = os.getcwd() # save present workign directory to return later    
     os.chdir(self.rundir) # go into run Grok/HGS folder
@@ -337,7 +360,7 @@ class HGS(Grok):
       if lerror and ec != 0: raise GrokError('Grok configuration did not complete properly.')
     # Grok run
     if not skip_grok and not self.GrokOK: 
-      ec = self.runGrok(lerror=lerror) # run grok (will raise exception if failed)
+      ec = self.runGrok(lerror=lerror, ldryrun=ldryrun) # run grok (will raise exception if failed)
       if lerror and ec != 0: raise GrokError('Grok did not run or complete properly.')
     # parallelindex configuration
     if not skip_pidx and not self.pidxOK:
@@ -346,11 +369,15 @@ class HGS(Grok):
         raise HGSError('Parallel index file was not written properly.')    
     ## run executable while logging output
     with open(logfile, 'w+') as lf: # output and error log
-      # run HGS as subprocess
-      subprocess.call([self.hgs_bin], stdout=lf, stderr=lf)
-      # parse log file for errors
-      lec = ( tail(lf, n=2)[0].strip() == '---- NORMAL EXIT ----' )
-      # i.e. -2, second line from the end (and different capitalization from Grok!)
+      if ldryrun:
+        lf.write('Dry-run --- no execution')
+        lec = True # pretend everything works
+      else:
+        # run HGS as subprocess
+        subprocess.call([self.hgs_bin], stdout=lf, stderr=lf)
+        # parse log file for errors
+        lec = ( tail(lf, n=2)[0].strip() == '---- NORMAL EXIT ----' )
+        # i.e. -2, second line from the end (and different capitalization from Grok!)
     os.chdir(pwd) # return to previous working directory
     if lerror and not lec: 
       raise HGSError("HGS failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
