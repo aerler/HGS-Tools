@@ -149,7 +149,7 @@ class HGSTest(GrokTest):
     # some grok settings
     self.runtime = 5*365*24*60*60 # two years in seconds
     self.input_interval = 'monthly'
-    self.input_mode = 'periodic'
+    self.input_mode = 'steady-state'
     # HGS settings
     self.NP = NP
     # create Grok instance
@@ -207,7 +207,7 @@ class HGSTest(GrokTest):
     pidx_file = self.rundir+hgs.pidx_file
     assert os.path.isfile(pidx_file), pidx_file
     assert os.path.isfile(logfile), logfile
-    assert ec > 0, ec
+    assert ec == 0, ec
     # check flag
     assert hgs.GrokOK is None, hgs.GrokOK
 
@@ -351,7 +351,7 @@ if __name__ == "__main__":
     specific_tests = []
 #     specific_tests += ['Class']
 #     specific_tests += ['InitEns']
-#     specific_tests += ['InputLists']
+    specific_tests += ['InputLists']
 #     specific_tests += ['ParallelIndex']
 #     specific_tests += ['RunEns']
 #     specific_tests += ['RunGrok']
@@ -365,8 +365,8 @@ if __name__ == "__main__":
     tests = [] 
     # list of variable tests
 #     tests += ['Grok']
-#     tests += ['HGS']    
-    tests += ['EnsHGS']
+    tests += ['HGS']    
+#     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()

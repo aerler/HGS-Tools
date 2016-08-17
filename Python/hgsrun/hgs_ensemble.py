@@ -186,7 +186,7 @@ class EnsHGS(object):
     return ec
     
   def runSimulations(self, inner_list=None, outer_list=None, lsetup=True, lgrok=False, 
-                     lparallel=True, NP=None, **allargs):
+                     lparallel=True, NP=None, runtime_override=None, **allargs):
     ''' execute HGS for each ensemble member and report results; set up run dirs as execute Grok,
         if necessary; note that Grok will be executed in runHGS, just prior to HGS '''
     ec = 0 # cumulative exit code (sum of all members)
@@ -197,6 +197,7 @@ class EnsHGS(object):
         rundirs = [rundir for rundir,OK in zip(self.rundirs,self.configOK) if not OK]
         raise GrokError("Experiment setup failed in {0} cases:\n{1}".format(ec,rundirs))
     # run HGS
+    if runtime_override is not None: self.setRuntime(time=runtime_override)
     kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.runHGS).args if arg in allargs}
     ecs = self.runHGS(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
     if any(ecs) or not all(self.HGSOK): 

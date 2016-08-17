@@ -67,7 +67,7 @@ class Grok(object):
   
   def readConfig(self, filename=None, folder=None):
     ''' Read a grok configuration file into memory (or a template to start from). '''    
-    filename = filename or '{:s}.grok'.format(self.project) # or default name
+    filename = filename or '{:s}.grok'.format(self.problem) # or default name
     filename = '{:s}/{:s}'.format(folder or self.rundir, filename) # prepend folder
     if not os.path.isfile(filename): raise IOError(filename)
     self._sourcefile = filename # use  different file as template
@@ -84,7 +84,7 @@ class Grok(object):
       
   def writeConfig(self, filename=None):
     ''' Write the grok configuration to a file in run dir. '''    
-    filename = filename or '{:s}.grok'.format(self.project) # or default name    
+    filename = filename or '{:s}.grok'.format(self.problem) # or default name    
     filename = '{:s}/{:s}'.format(self.rundir,filename) # prepend run dir
     self._targetfile = filename # use  different file as template
     # move existing file to backup
@@ -178,8 +178,16 @@ class Grok(object):
       vartype,wrfvar = val
       filename = '{0}.inc'.format(varname)
       self.setParam('time raster table', 'include {}'.format(filename), after=vartype)
-      length = self.length + 1 if lFortran else self.length
-      input_pattern = '{0:s}_{{IDX:0{1:d}d}}'.format(axis, int(np.ceil(np.log10(length)))) # number of digits
+      if self.input_interval == 'monthly':
+        if self.input_mode == 'steady-state': input_pattern = 'iTime_{IDX:02d}' # IDX will be substituted
+        elif self.input_mode == 'periodic': input_pattern = 'iTime_{IDX:02d}' # IDX will be substituted
+        elif self.input_mode == 'transient': input_pattern = 'iTime_{IDX:03d}' # IDX will be substituted
+        else: raise GrokError(self.input_mode)
+        # N.B.: this is a very ugly hack - I don'e have a better idea at the moment, since
+        #       we don't know the original length of the time series
+      else:
+        length = self.length + 1 if lFortran else self.length
+        input_pattern = '{0:s}_{{IDX:0{1:d}d}}'.format(axis, int(np.ceil(np.log10(length)))) # number of digits
       input_pattern = '{0}_{1}.asc'.format(wrfvar,input_pattern)
       if input_prefix is not None: input_pattern = '{0}_{1}'.format(input_prefix,input_pattern)
       # write file list

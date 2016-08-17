@@ -168,26 +168,26 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
   listformat = listformat+'\n' # need *two* end of line character
   os.chdir(folder) # move into run folder
   if os.path.exists(filename): os.remove(filename) # remove old file
-  openfile = open(filename, 'w') # open file list
-  for idx,time in enumerate(time_iter):
-    list_time = time; list_idx = idx # cumulative time/index in list
-    # construct filename
-    if lperiodic:
-      time %= period; idx %= idxprd
-    if lFortran: idx += 1 # Fortran index starts at 1, not 0    
-    input_file = input_pattern.format(TIME=time,IDX=idx)
-    if input_folder is None: filepath = input_file
-    else: filepath = '{:s}/{:s}'.format(input_folder,input_file) # assemble current file name
-    # check if file actually exists
-    if lvalidate and not os.path.exists(filepath): 
-      raise IOError("The input file '{:s}' does not exist.\n(run folder: '{:s}')".format(filepath,folder))
-    # write list entry(s)
-    if list_idx == 0 and list_time != 0: # add a first line starting at t=0
-      openfile.write(listformat.format(T=0,F=filepath))
-    openfile.write(listformat.format(T=list_time,F=filepath))
-  if list_time < end_time: # add another line until the end of the simulation
-    openfile.write(listformat.format(T=end_time,F=filepath))
-  openfile.close()
+  with open(filename, 'w') as openfile: # open file list
+    list_time = 0 # in case there is no iteration (needed below)
+    for idx,time in enumerate(time_iter):
+      list_time = time; list_idx = idx # cumulative time/index in list
+      # construct filename
+      if lperiodic:
+        time %= period; idx %= idxprd
+      if lFortran: idx += 1 # Fortran index starts at 1, not 0    
+      input_file = input_pattern.format(TIME=time,IDX=idx)
+      if input_folder is None: filepath = input_file
+      else: filepath = '{:s}/{:s}'.format(input_folder,input_file) # assemble current file name
+      # check if file actually exists
+      if lvalidate and not os.path.exists(filepath): 
+        raise IOError("The input file '{:s}' does not exist.\n(run folder: '{:s}')".format(filepath,folder))
+      # write list entry(s)
+      if list_idx == 0 and list_time != 0: # add a first line starting at t=0
+        openfile.write(listformat.format(T=0,F=filepath))
+      openfile.write(listformat.format(T=list_time,F=filepath))
+    if list_time < end_time: # add another line until the end of the simulation
+      openfile.write(listformat.format(T=end_time,F=filepath))
     
     
 # abuse for testing
