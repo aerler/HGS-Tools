@@ -1,17 +1,17 @@
 #!/bin/bash
-# a rsync-based script to synchronize HGS hydrographs, configuration, and log files, with a remote host, 
-# while maintaining the original folder structure of the remote source
+# a rsync-based script to synchronize climate forcing data for HGS with a remote host, 
+# while maintaining the original folder structure of the local source
 
 # pre-process arguments using getopt
 if [ -z $( getopt -T ) ]; then
-  TMP=$( getopt -o qdn:p:h --long niceness:,project:,source:,dest:,quiet,debug,config:,data-root:,no-yaml,overwrite,help -n "$0" -- "$@" ) # pre-process arguments
+  TMP=$( getopt -o qdn:p:h --long niceness:,project:,source:,dest:,quiet,debug,config:,data-root:,yaml,overwrite,help -n "$0" -- "$@" ) # pre-process arguments
   [ $? != 0 ] && exit 1 # getopt already prints an error message
   eval set -- "$TMP" # reset positional parameters (arguments) to $TMP list
 fi # check if GNU getopt ("enhanced")
 # parse arguments
 VERBOSITY=1
 NICENESS=0
-YAML='*.yaml' # --include comes later
+#YAML=" --include '*.yaml'"
 #while getopts 'fs' OPTION; do # getopts version... supports only short options
 while true; do
   case "$1" in
@@ -23,7 +23,7 @@ while true; do
     -d | --debug         )   VERBOSITY=2; shift;;
          --config        )   KCFG="$2"; shift 2;;
          --data-root     )   DATA_ROOT="$2"; shift 2;;
-         --no-yaml       )   YAML=''; shift;;
+         --yaml          )   YAML='*.yaml'; shift;;
          --overwrite     )   OVERWRITE='OVERWRITE'; shift 2;;
     -h | --help          )   echo -e " \
                             \n\
@@ -36,7 +36,7 @@ while true; do
          --config         an alternative configuration file to source instead of kconfig.sh\n\
                           (set to 'NONE' to inherit settings from parent environment)\n\
          --data-root      root folder for data repository\n\
-         --no-yaml        do not update YAML configuration files (default: update)\n\
+         --yaml           also update YAML configuration files\n\
          --overwrite      download new copy of all files (not just update)\n\
     -h | --help           print this help \n\
                              "; exit 0;; # \n\ == 'line break, next line'; for syntax highlighting
@@ -63,8 +63,8 @@ export KCFG='NONE' # suppress sourcing in child processes
 [ $VERBOSITY -gt 0 ] && echo
 
 # apply settings
-SRC="${SRC:-"${HOST_ROOT}/HGS/${PROJECT}/"}" # remote folder
-DST="${DST:-"${DATA_ROOT}/HGS/${PROJECT}/"}" # local folder
+SRC="${SRC:-"${DATA_ROOT}/HGS/${PROJECT}/"}" # local folder
+DST="${DST:-"${HOST_ROOT}/HGS/${PROJECT}/"}" # remote folder
 
 # assemble options
 ROPT=${ROPT:-'--archive --compress'}
@@ -75,30 +75,29 @@ if [[ -n "$YAML" ]]; then YINC="--include"; fi # need to define command as well
 # print configuration for debug mode
 [ $VERBOSITY -gt 0 ] && echo "Source folder: ${SRC}" && echo
 if [ $VERBOSITY -gt 1 ]; then
-echo nice --adjustment=${NICENESS} rsync --links ${ROPT} ${YINC} ${YAML}
-	echo "${HOST}:${SRC}" "${DST}"
-	echo
+  echo nice --adjustment=${NICENESS} rsync --links ${ROPT} ${YINC} ${YAML}
+  echo "${SRC}" "${HOST}:${DST}"
+  echo
 fi # DEBUG
 
 ## execute rsync command
 nice --adjustment=${NICENESS} rsync --links ${ROPT} ${YINC} ${YAML} \
-      --exclude '*/gb/' --exclude '*/soil/' --include '*/' --include '*.hydrograph.*.dat' \
-      --include 'parallelindx.dat' --include 'progress.dat' --include 'log.*' --include '*.grok' \
-      --include 'batch.pfx' --include '*.log' --exclude '*' --prune-empty-dirs \
-      "${HOST}:${SRC}" "${DST}" # remote and local host/folders
+      --include '*/' --include '*.asc'  --exclude '*' --prune-empty-dirs \
+      "${SRC}" "${HOST}:${DST}" # remote and local host/folders
 ERR=$?
 # N.B.: this synchronizes all the hydrograph files, but also configuration and log files,
 #       including the YAML configuration files and logs of the driver script
+
 [ $VERBOSITY -gt 0 ] && echo && echo "Destination folder: ${DST}"
 
 # report
 if [ $VERBOSITY -gt 0 ]
   then
-		echo; echo
-		if [ $ERR -eq 0 ]
-		  then    echo "   <<<   Transfers Completed Successfully!   >>>   "
-		  else    echo "   ###   Transfers did not Complete! - Exit Code ${ERR}   ###   "
-		fi
-		echo
+    echo; echo
+    if [ $ERR -eq 0 ]
+      then    echo "   <<<   Transfers Completed Successfully!   >>>   "
+      else    echo "   ###   Transfers did not Complete! - Exit Code ${ERR}   ###   "
+    fi
+    echo
 fi # VERBOSITY
 exit $ERR
