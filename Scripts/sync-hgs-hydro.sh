@@ -84,6 +84,7 @@ fi # DEBUG
 nice --adjustment=${NICENESS} rsync --links ${ROPT} ${YINC} ${YAML} \
       --exclude '*/gb/' --exclude '*/soil/' --include '*/' --include '*.hydrograph.*.dat' \
       --include 'parallelindx.dat' --include 'progress.dat' --include 'log.*' --include '*.grok' \
+      --include 'SCHEDULED' --include 'IN_PROGRESS' --include 'COMPLETED' \
       --include 'batch.pfx' --include '*.log' --exclude '*' --prune-empty-dirs \
       "${HOST}:${SRC}" "${DST}" # remote and local host/folders
 ERR=$?
