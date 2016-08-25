@@ -256,10 +256,11 @@ class HGS(Grok):
   pidxOK    = None # indicate if parallel index configuration was successful
   HGSOK     = None # indicate if HGS ran successfully
   pidx_file = 'parallelindx.dat' # file with parallel execution settings 
+  lindicators = True # use indicator files (default: True)
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, 
                input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
-               input_folder='../climate_forcing', template_folder=None, NP=1):
+               input_folder='../climate_forcing', template_folder=None, NP=1, lindicator=True):
     ''' initialize HGS instance with a few more parameters: number of processors... '''
     # call parent constructor (Grok)
     super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
@@ -268,6 +269,7 @@ class HGS(Grok):
                              input_folder=input_folder, length=length, lcheckdir=False)
     self.template_folder = template_folder # where to get the templates
     self.NP = NP # number of processors
+    self.lindicators = lindicator # use indicator files
     
   def setupRundir(self, template_folder=None, bin_folder=None, loverwrite=True):
     ''' copy entire run folder from a template folder and link executables '''
@@ -292,7 +294,10 @@ class HGS(Grok):
       elif not os.path.isfile(local_exe): 
         raise IOError("Executable file '{}' not found in run folder.\n ('{}') ".format(exe,self.rundir)) 
     # set rundir status
-    self.rundirOK = True if os.path.isdir(self.rundir) else False
+    self.rundirOK = os.path.isdir(self.rundir)
+    if self.lindicators: 
+      if self.rundirOK: open('{}/SCHEDULED'.format(self.rundir),'a').close()
+      else: open('{}/ERROR'.format(self.rundir),'a').close()
     return 0 if self.rundirOK else 1
     
   def setupConfig(self, template_folder=None, linput=True, lpidx=True):
@@ -345,7 +350,7 @@ class HGS(Grok):
     os.chdir(pwd) # return to previous working directory
     return 0 if self.pidxOK else 1
     
-  def runHGS(self, executable=None, logfile='log.hgs_run', lerror=True,
+  def runHGS(self, executable=None, logfile='log.hgs_run', lerror=True, 
              skip_config=False, skip_grok=False, skip_pidx=False, ldryrun=False):
     ''' check if all inputs are in place and run the HGS executable in the run directory '''
     pwd = os.getcwd() # save present workign directory to return later    
@@ -366,7 +371,10 @@ class HGS(Grok):
     if not skip_pidx and not self.pidxOK:
       self.writeParallelIndex() # write parallel index with default settings
       if not os.path.isfile(self.pidx_file): 
-        raise HGSError('Parallel index file was not written properly.')    
+        raise HGSError('Parallel index file was not written properly.')  
+    # set indicator file to 'in progress'
+    if self.lindicators: 
+      shutil.move('{}/SCHEDULED'.format(self.rundir),'{}/IN_PROGRESS'.format(self.rundir))  
     ## run executable while logging output
     with open(logfile, 'w+') as lf: # output and error log
       if ldryrun:
@@ -382,6 +390,10 @@ class HGS(Grok):
     if lerror and not lec: 
       raise HGSError("HGS failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
     self.HGSOK = lec # set Grok flag
+    # set indicator file to indicate result
+    if self.lindicators:
+      if lec: shutil.move('{}/IN_PROGRESS'.format(self.rundir),'{}/COMPLETED'.format(self.rundir))  
+      else: shutil.move('{}/IN_PROGRESS'.format(self.rundir),'{}/FAILED'.format(self.rundir))  
     return 0 if lec else 1
   
   

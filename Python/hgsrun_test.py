@@ -202,13 +202,16 @@ class HGSTest(GrokTest):
     print('\nHGSDIR: {}'.format(self.hgsdir))
     # attempt to run HGS
     if not os.path.isfile(exe): raise IOError(exe)
-    try: ec = hgs.runHGS(executable=exe, logfile=logfile, skip_grok=True, ldryrun=not lbin)
-    except HGSError: ec = 1
+    open('{}/SCHEDULED'.format(self.rundir),'a').close() # create fake indicator
+    ec = hgs.runHGS(executable=exe, logfile=logfile, skip_grok=True, ldryrun=not lbin)
     # check output
     pidx_file = self.rundir+hgs.pidx_file
     assert os.path.isfile(pidx_file), pidx_file
     assert os.path.isfile(logfile), logfile
     assert ec == 0, ec
+    if hgs.HGSOK: indicator = '{}/COMPLETED'.format(self.rundir)
+    else: indicator = '{}/FAILED'.format(self.rundir)
+    assert os.path.isfile(indicator), indicator
     # check flag
     assert hgs.GrokOK is None, hgs.GrokOK
 
@@ -217,12 +220,16 @@ class HGSTest(GrokTest):
     hgs = self.hgs
     if not os.path.isdir(self.hgs_template): raise IOError(self.hgs_template)
     # run setup
-    hgs.setupRundir(template_folder=self.hgs_template, bin_folder=None)
-    # check that all items are there
-    assert os.path.isdir(self.rundir), self.rundir
-    for exe in (self.hgs_bin, self.grok_bin):
-      local_exe = '{}/{}'.format(self.rundir,exe)
-      assert os.path.exists(local_exe), local_exe
+    try: 
+      hgs.setupRundir(template_folder=self.hgs_template, bin_folder=None)
+      # check that all items are there
+      assert os.path.isdir(self.rundir), self.rundir
+      for exe in (self.hgs_bin, self.grok_bin):
+        local_exe = '{}/{}'.format(self.rundir,exe)
+        assert os.path.exists(local_exe), local_exe
+        indicator = '{}/SCHEDULED'.format(self.rundir)
+        assert os.path.exists(indicator), indicator
+    except WindowsError: pass
    
     
 ## tests for EnsHGS class
@@ -257,7 +264,8 @@ class EnsHGSTest(unittest.TestCase):
     self.enshgs = EnsHGS(rundir=self.rundir + "/{A}/", project=self.hgs_testcase, runtime=self.runtime,
                          input_mode=self.input_mode, input_interval=self.input_interval, 
                          input_prefix=self.test_prefix, input_folder=self.test_data,
-                         NP=self.NP, A=['A1','A2'], outer_list=['A'], template_folder=self.hgs_template)
+                         NP=self.NP, A=['A1','A2'], outer_list=['A'], template_folder=self.hgs_template,
+                         loverwrite=True)
     # load a config file from template
     if not os.path.isfile(self.grok_input):
       raise IOError("Grok configuration file for testing not found:\n '{}'".format(self.grok_input))
@@ -353,7 +361,7 @@ if __name__ == "__main__":
 #     specific_tests += ['InitEns']
 #     specific_tests += ['InputLists']
 #     specific_tests += ['ParallelIndex']
-    specific_tests += ['RunEns']
+#     specific_tests += ['RunEns']
 #     specific_tests += ['RunGrok']
 #     specific_tests += ['SetTime']
 #     specific_tests += ['SetupExp']

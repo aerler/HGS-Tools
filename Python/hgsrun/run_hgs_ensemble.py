@@ -23,7 +23,6 @@ from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 # hgsrun imports
 from hgs_ensemble import EnsHGS
-from types import NoneType
 
 # meta data
 __all__ = []
@@ -76,20 +75,47 @@ USAGE
     try:
         # Setup argument parser
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
-        parser.add_argument("-v", "--verbose", dest="verbose", action="count", help="set verbosity level [default: %(default)s]")
+        parser.add_argument("-v", "--verbose", dest="verbose", action="store_true", help="set verbosity level [default: %(default)s]")
+        #parser.add_argument("-v", "--verbose", dest="verbose", action="count", help="set verbosity level [default: %(default)s]")
+        parser.add_argument("--ignore-indicator", dest="noindicator", action='store_true', help="run all simulations, ignoring indicator files [default: %(default)s]")
+        parser.add_argument("--overwrite", dest="overwrite", action='store_true', help="overwrite all run folders, ignoring indicator files [default: %(default)s]")
+        parser.add_argument("--rerun-failed", dest="runfailed", action='store_true', help="rerun failed experiments, ignore completed [default: %(default)s]")
         parser.add_argument('-V', '--version', action='version', version=program_version_message)
         parser.add_argument('config', metavar='config.yaml', type=str, help="the ensemble configuration file (in YAML format)")
-        parser.add_argument('--data-root', nargs='?', const=os.getenv('DATA_ROOT', None), default=None, type=(NoneType,basestring), help="")
-
+        parser.add_argument('--data-root', nargs='?', const=os.getenv('DATA_ROOT', None), default=None, type=basestring, 
+                            help="Set the root folder of the data archive [default: $DATA_ROOT]")
+        parser.add_argument("--no-setup", dest="nosetup", action='store_true', help="skip run folder setup [default: %(default)s]")
+        parser.add_argument("--grok-first", dest="grok", action='store_true', 
+                            help="run Grok for all folders during setup [default: %(default)s]")
+        parser.add_argument("--skip-grok", dest="skipgrok", action='store_true', help="do not run Grok at all [default: %(default)s]")
+        parser.add_argument("--dry-run", dest="dryrun", action='store_true', 
+                            help="do not actually run simulations [default: %(default)s]")
+        parser.add_argument("-np", "-n", "--processes", dest="NP", nargs=1, default=None, type=int, 
+                            help="number of concurrent simulations to run [default: number of available CPUs]")
+        parser.add_argument("--serial", dest="serial", action='store_true', 
+                            help="run batch execution in serial mode [default: %(default)s]")
+        parser.add_argument("--runtime", dest="runtime", nargs=1, default=None, type=int, 
+                            help="override runtime setting [default: set in Grok configuration file]")
+        
         # Process arguments
         args = parser.parse_args()
-
-        verbose = args.verbose
+        
+        lverbose = args.verbose
+        lnoindicator = args.noindicator
+        loverwrite = args.overwrite
+        lrunfailed = args.runfailed
         yamlfile = args.config
         data_root = args.data_root
+        lnosetup = args.nosetup
+        lgrok = args.grok
+        lskipgrok = args.skipgrok
+        ldryrun = args.dryrun
+        NP = args.NP
+        lserial = args.serial
+        runtime = args.runtime
+        
 
-        if verbose > 0:
-            print("Verbose mode on")
+        if lverbose: print("Verbose mode on")
 
         ## load arguments from config file
         if not os.path.exists(yamlfile):
@@ -101,17 +127,31 @@ USAGE
         batch_config = config['batch_config'] # patch run parameters
         # add data_root, if not already present
         if data_root not in hgs_config: hgs_config['DATA_ROOT'] = data_root
+        # override some settings with command-line arguments
+        if lnoindicator: hgs_config['lindicator'] = False
+        if loverwrite: hgs_config['loverwrite'] = True
+        if lrunfailed: hgs_config['lrunfailed'] = True
         
         # instantiate ensemble
-        if verbose > 0:
+        if lverbose:
           print("\nYAML Configuration that will be passed to EnsHGS class:")
-          print(config['HGS_parameters'])
+          print(hgs_config)
         enshgs = EnsHGS(**hgs_config)
 
         ## here we are actually running the program
-        if verbose > 0:
+        if lnosetup: batch_config['lsetup'] = False
+        if lgrok: batch_config['lgrok'] = True
+        if lskipgrok: batch_config['skip_grok'] = True
+        if ldryrun: batch_config['ldryrun'] = True
+        if NP is not None: batch_config['NP'] = NP
+        if lserial or NP == 1: batch_config['lparallel'] = False
+        elif NP > 1: batch_config['lparallel'] = True
+        if runtime is not None: batch_config['runtime_override'] = runtime
+        
+        # run simulations
+        if lverbose:
           print("\nYAML Configuration for batch execution:")
-          print(config['batch_config'])
+          print(batch_config)
         ec = enshgs.runSimulations(**batch_config)
         
         # check results

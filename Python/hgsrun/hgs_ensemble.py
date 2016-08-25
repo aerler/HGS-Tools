@@ -8,6 +8,7 @@ to actually running HGS.
 '''
 
 # external imports
+import os
 import inspect, multiprocessing
 # internal imports
 from utils.misc import expandArgumentList
@@ -96,7 +97,10 @@ class EnsHGS(object):
   '''
   members = None # list of ensemble members
   rundirs = None # list of HGS run dirs
-  hgsargs  = None # list of kwargs used to instantiate ensemble members
+  hgsargs = None # list of kwargs used to instantiate ensemble members
+  lindicator = True # use indicator files
+  loverwrite = False # overwrite existing folders
+  lrunfailed = False # rerun failed experiments
   
   def __init__(self, inner_list=None, outer_list=None, **kwargs):
     ''' initialize an ensemble of HGS simulations based on HGS arguments and project descriptors;
@@ -104,6 +108,9 @@ class EnsHGS(object):
         using the inner_list/outer_list arguments; the expanded argument lists are used to initialize
         the individual ensemble members; note that a string substitution is applied to all folder 
         variables (incl. 'rundir') prior to constructing the HGS instance, i.e. rundir.format(**kwargs) '''
+    self.loverwrite= kwargs.get('loverwrite',self.loverwrite)
+    self.lindicator = kwargs.get('lindicator',self.lindicator)
+    self.lrunfailed = kwargs.get('lrunfailed',self.lrunfailed)
     # expand argument list (plain, nothing special)
     kwargs_list = expandArgumentList(inner_list=inner_list, outer_list=outer_list, **kwargs)
     # loop over ensemble members
@@ -120,14 +127,35 @@ class EnsHGS(object):
       rundir = kwargs['rundir']
       if rundir in self.rundirs:
         raise ArgumentError("Multiple occurence of run directory:\n '{}'".format(rundir))
-      self.rundirs.append(rundir)
-      # isolate HGS constructor arguments
-      hgsargs = inspect.getargspec(HGS.__init__).args
-      hgsargs = {arg:kwargs[arg] for arg in hgsargs if arg in kwargs} # returns args, varargs, kwargs, defaults
-      self.hgsargs.append(hgsargs)
-      # initialize HGS instance      
-      hgs = HGS(**hgsargs)
-      self.members.append(hgs)
+      # figure out skipping      
+      if os.path.exists(rundir):
+        if self.loverwrite:
+          print("Overwriting existing experiment folder '{:s}'.".format(rundir)); lskip = False
+        elif self.lindicator and os.path.exists('{}/SCHEDULED'.format(rundir)):
+          print("Skipping experiment folder '{:s}' (scheduled).".format(rundir)); lskip = True
+        elif self.lindicator and os.path.exists('{}/IN_PROGRESS'.format(rundir)):
+          print("Skipping experiment folder '{:s}' (in progress).".format(rundir)); lskip = True
+        elif self.lindicator and os.path.exists('{}/COMPLETED'.format(rundir)):
+          print("Skipping experiment folder '{:s}' (completed).".format(rundir)); lskip = True
+        elif self.lindicator and os.path.exists('{}/FAILED'.format(rundir)):
+          if self.lrunfailed:            
+            print("Re-using failed experiment folder '{:s}'.".format(rundir)); lskip = False
+          else: 
+            print("Skipping experiment folder '{:s}' (failed).".format(rundir)); lskip = True
+      else:
+        print("Creating new experiment folder '{:s}'.".format(rundir)); lskip = False
+      if not lskip:
+        self.rundirs.append(rundir)
+        # isolate HGS constructor arguments
+        hgsargs = inspect.getargspec(HGS.__init__).args
+        hgsargs = {arg:kwargs[arg] for arg in hgsargs if arg in kwargs} # returns args, varargs, kwargs, defaults
+        self.hgsargs.append(hgsargs)
+        # initialize HGS instance      
+        hgs = HGS(lindicator=self.lindicator, **hgsargs)
+        self.members.append(hgs)
+    # final check
+    if len(self.members) == 0: 
+      raise EnsembleError("No experiments to run (empty list).")
     
   @property
   def size(self):
