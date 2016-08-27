@@ -14,7 +14,7 @@ It defines classes_and_methods
 @license:    GPL v3
 
 @contact:    aerler@aquanty.com
-@deffield    updated: 16/08/2016
+@deffield    updated: 26/08/2016
 '''
 
 # external imports
@@ -26,11 +26,11 @@ from hgs_ensemble import EnsHGS
 
 # meta data
 __all__ = []
-__version__ = 0.1
+__version__ = 0.3
 __date__ = '2016-08-16'
-__updated__ = '2016-08-16'
+__updated__ = '2016-08-26'
 
-DEBUG = 1
+DEBUG = 0
 TESTRUN = 0
 PROFILE = 0
 
@@ -188,7 +188,7 @@ if __name__ == "__main__":
   
     if DEBUG:
         #sys.argv.append("-h")
-        sys.argv.append("-v")
+        sys.argv.append("-d")
     if TESTRUN:
         import doctest
         doctest.testmod()
