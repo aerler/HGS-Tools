@@ -8,8 +8,7 @@ to actually running HGS.
 '''
 
 # external imports
-import os
-import inspect, multiprocessing
+import os, inspect, multiprocessing
 # internal imports
 from utils.misc import expandArgumentList
 from geodata.misc import ArgumentError
@@ -23,7 +22,19 @@ class EnsembleError(Exception):
 
 # a function that executes a class/instance method for use in apply_async
 def apply_method(member, attr, **kwargs): 
-  return member,getattr(member, attr)(**kwargs)
+  ''' execute the method 'attr' of instance 'member' with keyword arguments 'kwargs';
+      return a tuple containing member instance (possibly changed) and method results '''
+  return member,getattr(member, attr)(**kwargs) # returns a TUPLE!!!
+
+# callback function to print reports of completed simulations
+def reportBack(result):
+  ''' function that prints the results of a simulations from a multiprocessing batch;
+      N.B.: the callback function is passed a result from apply_method, which is a tuple '''
+  member, ec = result
+  if ec == 0: # simulation completed successfully
+    print("The simulation in folder '{:s}' completed successfully!".format(member.rundir))
+  else: # simulation failed
+    print("FAILURE: The simulation in folder '{:s}' terminated with exit code {:d}!".format(member.rundir,ec)) 
 
 ## define ensemble wrapper class
 class EnsembleWrapper(object):
@@ -41,7 +52,7 @@ class EnsembleWrapper(object):
     self.klass = klass # the object that the attribute is called on
     self.attr = attr # the attribute name that is called
     
-  def __call__(self, lparallel=False, NP=None, inner_list=None, outer_list=None, **kwargs):
+  def __call__(self, lparallel=False, NP=None, inner_list=None, outer_list=None, callback=None, **kwargs):
     ''' this method is called instead of a class or instance method; it applies the arguments 
         'kwargs' to each ensemble member; it also supports argument expansion with inner and 
         outer product (prior to application to ensemble) and parallelization using multiprocessing '''
@@ -55,8 +66,12 @@ class EnsembleWrapper(object):
     if lparallel:
       # parallelize method execution using multiprocessing
       pool = multiprocessing.Pool(processes=NP) # initialize worker pool
-      # define work loads: functions and their arguments
-      results = [pool.apply_async(apply_method, (member,self.attr), kwargs) for member,kwargs in zip(self.klass.members,kwargs_list)]
+      if callback is not None and not callable(callback): raise TypeError(callback)
+      # N.B.: the callback function is passed a result from the apply_method function, 
+      #       which returns a tuple of the form (member, exit_code)
+      # define work loads (function and its arguments) and start tasks      
+      results = [pool.apply_async(apply_method, (member,self.attr), kwargs, callback=callback) 
+                                      for member,kwargs in zip(self.klass.members,kwargs_list)]          
       # N.B.: Beware Pickling!!!
       pool.close(); pool.join() # wait to finish
       # retrieve and assemble results 
@@ -98,6 +113,7 @@ class EnsHGS(object):
   members = None # list of ensemble members
   rundirs = None # list of HGS run dirs
   hgsargs = None # list of kwargs used to instantiate ensemble members
+  lreport = True # print short simulation summaries and other info (using callback)
   lindicator = True # use indicator files
   loverwrite = False # overwrite existing folders
   lrunfailed = False # rerun failed experiments
@@ -108,6 +124,7 @@ class EnsHGS(object):
         using the inner_list/outer_list arguments; the expanded argument lists are used to initialize
         the individual ensemble members; note that a string substitution is applied to all folder 
         variables (incl. 'rundir') prior to constructing the HGS instance, i.e. rundir.format(**kwargs) '''
+    self.lreport= kwargs.get('lreport',self.lreport)
     self.loverwrite= kwargs.get('loverwrite',self.loverwrite)
     self.lindicator = kwargs.get('lindicator',self.lindicator)
     self.lrunfailed = kwargs.get('lrunfailed',self.lrunfailed)
@@ -130,20 +147,27 @@ class EnsHGS(object):
       # figure out skipping      
       if os.path.exists(rundir):
         if self.loverwrite:
-          print("Overwriting existing experiment folder '{:s}'.".format(rundir)); lskip = False
+          if self.lreport: print("Overwriting existing experiment folder '{:s}'.".format(rundir))
+          lskip = False
         elif self.lindicator and os.path.exists('{}/SCHEDULED'.format(rundir)):
-          print("Skipping experiment folder '{:s}' (scheduled).".format(rundir)); lskip = True
+          if self.lreport: print("Skipping experiment folder '{:s}' (scheduled).".format(rundir))
+          lskip = True
         elif self.lindicator and os.path.exists('{}/IN_PROGRESS'.format(rundir)):
-          print("Skipping experiment folder '{:s}' (in progress).".format(rundir)); lskip = True
+          if self.lreport: print("Skipping experiment folder '{:s}' (in progress).".format(rundir))
+          lskip = True
         elif self.lindicator and os.path.exists('{}/COMPLETED'.format(rundir)):
-          print("Skipping experiment folder '{:s}' (completed).".format(rundir)); lskip = True
+          if self.lreport: print("Skipping experiment folder '{:s}' (completed).".format(rundir))
+          lskip = True
         elif self.lindicator and os.path.exists('{}/FAILED'.format(rundir)):
           if self.lrunfailed:            
-            print("Re-using failed experiment folder '{:s}'.".format(rundir)); lskip = False
+            if self.lreport: print("Re-using failed experiment folder '{:s}'.".format(rundir))
+            lskip = False
           else: 
-            print("Skipping experiment folder '{:s}' (failed).".format(rundir)); lskip = True
+            if self.lreport: print("Skipping experiment folder '{:s}' (failed).".format(rundir))
+            lskip = True
       else:
-        print("Creating new experiment folder '{:s}'.".format(rundir)); lskip = False
+        if self.lreport: print("Creating new experiment folder '{:s}'.".format(rundir))
+        lskip = False
       if not lskip:
         self.rundirs.append(rundir)
         # isolate HGS constructor arguments
@@ -219,9 +243,10 @@ class EnsHGS(object):
     return ec
     
   def runSimulations(self, inner_list=None, outer_list=None, lsetup=True, lgrok=False, 
-                     lparallel=True, NP=None, runtime_override=None, **allargs):
+                     lparallel=True, NP=None, runtime_override=None, callback=reportBack, **allargs):
     ''' execute HGS for each ensemble member and report results; set up run dirs as execute Grok,
         if necessary; note that Grok will be executed in runHGS, just prior to HGS '''
+    if not self.lreport: callback = None # suppress output
     ec = 0 # cumulative exit code (sum of all members)
     # check and run setup and configuration
     if lsetup:
@@ -232,7 +257,7 @@ class EnsHGS(object):
     # run HGS
     if runtime_override is not None: self.setRuntime(time=runtime_override)
     kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.runHGS).args if arg in allargs}
-    ecs = self.runHGS(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
+    ecs = self.runHGS(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, callback=callback, **kwargs)
     if any(ecs) or not all(self.HGSOK): 
       raise HGSError("Grok configuration failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
     ec += sum(ecs)

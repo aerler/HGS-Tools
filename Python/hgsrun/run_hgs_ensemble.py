@@ -75,7 +75,8 @@ USAGE
     try:
         # Setup argument parser
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
-        parser.add_argument("-v", "--verbose", dest="verbose", action="store_true", help="set verbosity level [default: %(default)s]")
+        parser.add_argument("--debug", dest="debug", action="store_true", help="print debug output [default: %(default)s]")
+        parser.add_argument("-q", "--quiet", dest="quiet", action="store_true", help="do not print status reports [default: %(default)s]")
         #parser.add_argument("-v", "--verbose", dest="verbose", action="count", help="set verbosity level [default: %(default)s]")
         parser.add_argument("--ignore-indicator", dest="noindicator", action='store_true', help="run all simulations, ignoring indicator files [default: %(default)s]")
         parser.add_argument("--overwrite", dest="overwrite", action='store_true', help="overwrite all run folders, ignoring indicator files [default: %(default)s]")
@@ -100,7 +101,8 @@ USAGE
         # Process arguments
         args = parser.parse_args()
         
-        lverbose = args.verbose
+        ldebug = args.debug
+        lquiet = args.quiet
         lnoindicator = args.noindicator
         loverwrite = args.overwrite
         lrunfailed = args.runfailed
@@ -115,7 +117,7 @@ USAGE
         runtime = args.runtime
         
 
-        if lverbose: print("Verbose mode on")
+        if ldebug: print("Printing Debug Output")
 
         ## load arguments from config file
         if not os.path.exists(yamlfile):
@@ -133,10 +135,11 @@ USAGE
         if lrunfailed: hgs_config['lrunfailed'] = True
         
         # instantiate ensemble
-        if lverbose:
+        if ldebug:
           print("\nYAML Configuration that will be passed to EnsHGS class:")
           print(hgs_config)
         enshgs = EnsHGS(**hgs_config)
+        if lquiet: enshgs.lreport = False
 
         ## here we are actually running the program
         if lnosetup: batch_config['lsetup'] = False
@@ -149,19 +152,22 @@ USAGE
         if runtime is not None: batch_config['runtime_override'] = runtime
         
         # run simulations
-        if lverbose:
+        if ldebug:
           print("\nYAML Configuration for batch execution:")
           print(batch_config)
         ec = enshgs.runSimulations(**batch_config)
         
         # check results
-        if ec == 0 and all(g for g in enshgs.HGSOK):
-          print("\n   ***   All HGS Simulations Completed Successfully!!!   ***\n")
-        elif not any(g for g in enshgs.HGSOK):
-          print("\n   ###   All HGS Simulations Failed!!!   ###\n")
-        else:
-          print("\n   ===   Some HGS Simulations Failed!!!   ===\n")
-          print(  "         {} out of {} completed ".format(sum(g for g in enshgs.HGSOK), len(enshgs)))
+        if not lquiet:
+          print('\n') # two newlines
+          if ec == 0 and all(g for g in enshgs.HGSOK):
+            print("\n   ***   All HGS Simulations Completed Successfully!!!   ***\n")
+          elif not any(g for g in enshgs.HGSOK):
+            print("\n   ###   All HGS Simulations Failed!!!   ###\n")
+          else:
+            print("\n   ===   Some HGS Simulations Failed!!!   ===\n")
+            print(  "         {} out of {} completed ".format(sum(g for g in enshgs.HGSOK), len(enshgs)))
+          print('') # one newline
         
         # return exit code of HGS ensemble
         return ec
