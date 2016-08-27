@@ -4,7 +4,7 @@
 
 # pre-process arguments using getopt
 if [ -z $( getopt -T ) ]; then
-  TMP=$( getopt -o qdn:p:h --long niceness:,project:,source:,dest:,quiet,debug,config:,data-root:,no-yaml,overwrite,help -n "$0" -- "$@" ) # pre-process arguments
+  TMP=$( getopt -o qdn:p:h --long niceness:,project:,source:,dest:,quiet,debug,config:,data-root:,no-yaml,overwrite,zip:,help -n "$0" -- "$@" ) # pre-process arguments
   [ $? != 0 ] && exit 1 # getopt already prints an error message
   eval set -- "$TMP" # reset positional parameters (arguments) to $TMP list
 fi # check if GNU getopt ("enhanced")
@@ -25,6 +25,7 @@ while true; do
          --data-root     )   DATA_ROOT="$2"; shift 2;;
          --no-yaml       )   YAML=''; shift;;
          --overwrite     )   OVERWRITE='OVERWRITE'; shift 2;;
+         --zip           )   ZIPFILE="$2"; shift 2;;
     -h | --help          )   echo -e " \
                             \n\
     -n | --niceness       nicesness of the sub-processes (default: +5)\n\
@@ -38,6 +39,7 @@ while true; do
          --data-root      root folder for data repository\n\
          --no-yaml        do not update YAML configuration files (default: update)\n\
          --overwrite      download new copy of all files (not just update)\n\
+         --zip            store data in zip archive (update archive if zip file exists)\n\
     -h | --help           print this help \n\
                              "; exit 0;; # \n\ == 'line break, next line'; for syntax highlighting
     -- ) shift; break;; # this terminates the argument list, if GNU getopt is used
@@ -102,4 +104,22 @@ if [ $VERBOSITY -gt 0 ]
 		fi
 		echo
 fi # VERBOSITY
+
+# create zip archive
+if [[ -n "$ZIPFILE" ]] && [ $ERR -eq 0 ]
+  then 
+    # navigate to parent directory of project
+    cd "${DST}/../"
+    # update or create new zip archive; add date as comment
+    # exclude climate data and HGS logs to reduce size
+    if [ -f "$ZIPFILE" ]; then 
+      date | zip -qruyz "$ZIPFILE" "$PROJECT" -x \*/climate_forcing/\* \*/log.hgs_run
+    else 
+      date | zip -qryz "$ZIPFILE" "$PROJECT" -x \*/climate_forcing/\* \*/log.hgs_run
+    fi # if zip file already exists
+    # N.B.: read comment with unzip -z $ZIPFILE
+    [ $VERBOSITY -gt 0 ] && echo "Created Zip-file: ${PWD}/${ZIPFILE}" && echo
+fi # zip archive
+
+# exit with appropriate exit code
 exit $ERR
