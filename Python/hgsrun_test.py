@@ -12,8 +12,8 @@ import os, sys, gc, shutil
 
 
 # import modules to be tested
-from hgs_setup import Grok, GrokError, HGS, HGSError
-from hgs_ensemble import EnsHGS, EnsembleError
+from hgsrun.hgs_setup import Grok, GrokError, HGS, HGSError
+from hgsrun.hgs_ensemble import EnsHGS, EnsembleError
 
 # work directory settings ("global" variable)
 data_root = os.getenv('DATA_ROOT', '')

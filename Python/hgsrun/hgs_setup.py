@@ -12,7 +12,7 @@ import numpy as np
 import os, shutil
 import subprocess # launching external programs
 # internal imports
-from input_list import generateInputFilelist, resolveInterval
+from hgsrun.input_list import generateInputFilelist, resolveInterval
 from geodata.misc import ArgumentError
 from utils.misc import tail
 

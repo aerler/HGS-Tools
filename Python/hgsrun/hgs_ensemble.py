@@ -12,7 +12,7 @@ import os, inspect, multiprocessing
 # internal imports
 from utils.misc import expandArgumentList
 from geodata.misc import ArgumentError
-from hgs_setup import HGS, HGSError, GrokError
+from hgsrun.hgs_setup import HGS, HGSError, GrokError
 
 
 # named exception

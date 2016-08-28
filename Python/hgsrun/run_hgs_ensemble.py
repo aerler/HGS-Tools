@@ -19,7 +19,7 @@ import sys, os, yaml
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 # hgsrun imports
-from hgs_ensemble import EnsHGS
+from hgsrun.hgs_ensemble import EnsHGS
 
 # meta data
 __all__ = []
