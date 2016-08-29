@@ -1,4 +1,4 @@
-#!/usr/local/bin/python
+#!/usr/bin/python
 # encoding: utf-8
 '''
 This is the command line interface of HGSrun, a program to manage HGS simulations.
@@ -23,9 +23,9 @@ from hgsrun.hgs_ensemble import EnsHGS
 
 # meta data
 __all__ = []
-__version__ = 0.4
+__version__ = 0.5
 __date__ = '2016-08-16'
-__updated__ = '2016-08-27'
+__updated__ = '2016-08-29'
 
 DEBUG = 0
 TESTRUN = 0

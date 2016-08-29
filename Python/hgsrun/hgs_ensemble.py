@@ -160,11 +160,14 @@ class EnsHGS(object):
           lskip = True
         elif self.lindicator and os.path.exists('{}/FAILED'.format(rundir)):
           if self.lrunfailed:            
-            if self.lreport: print("Re-using failed experiment folder '{:s}'.".format(rundir))
-            lskip = False
+            if self.lreport: print("Overwriting failed experiment folder '{:s}'.".format(rundir))
+            lskip = False # rundir will be deleted
           else: 
             if self.lreport: print("Skipping experiment folder '{:s}' (failed).".format(rundir))
             lskip = True
+        else: # no/unknown indicator file
+          if self.lreport: print("Overwriting existing experiment folder '{:s}'.".format(rundir))
+          lskip = False # rundir will be deleted
       else:
         if self.lreport: print("Creating new experiment folder '{:s}'.".format(rundir))
         lskip = False
