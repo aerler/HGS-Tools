@@ -115,7 +115,7 @@ class GrokTest(unittest.TestCase):
     # convert config file list into string and verify
     output = ''.join(grok._lines) # don't need newlines 
     #print(output)
-    assert '{:.3e}'.format(time) in output, '{:.3e}'.format(time)
+    assert '{:e}'.format(time) in output, '{:e}'.format(time)
     
   def testWrite(self):
     ''' load config file from template and write to rundir (on disk) '''
@@ -372,9 +372,9 @@ if __name__ == "__main__":
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-#     tests += ['Grok']
+    tests += ['Grok']
 #     tests += ['HGS']    
-    tests += ['EnsHGS']
+#     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()

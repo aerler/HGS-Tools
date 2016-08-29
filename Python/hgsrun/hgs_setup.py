@@ -59,13 +59,14 @@ class Grok(object):
   input_folder = '../climate_forcing' # default folder for input data
   runtime = None # run time for the simulations (in seconds)
   length = None # run time in multiples of the interval length
+  restarts = None # how many evenly spaced restart files to write
   _lines = None # list of lines in file
   _sourcefile = None # file that the configuration was read from
   _targetfile = None # file that the configuration is written to
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, 
-               input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
-               input_folder='../climate_forcing', lcheckdir=True):
+               restarts=10, input_mode=None, input_interval=None, input_vars='PET', 
+               input_prefix=None, input_folder='../climate_forcing', lcheckdir=True):
     ''' initialize a Grok configuration object with some settings '''
     if lcheckdir and not os.path.isdir(rundir): raise IOError(rundir)
     # determine end time in seconds (begin == 0) or number of intervals (length)
@@ -76,6 +77,7 @@ class Grok(object):
     self.problem = project if problem is None else problem
     self.runtime = runtime
     self.length = length
+    self.restarts = restarts
     # input configuration
     if input_mode or input_interval:
       self.setInputMode(input_mode=input_mode, input_interval=input_interval,
@@ -116,11 +118,23 @@ class Grok(object):
   def setParam(self, param, value, formatter=None, after=None, start=0):
     ''' edit a single parameter, based on the assumption that the parameter value follows in the 
         line below the one where the parameter name appears (case in-sensitive); format is a
-        regular format string used to write the value '''
-    if formatter: value = formatter.format(value) # apply appropriate formatting
-    else: value = str(value)
+        regular format string used to write the value
+        N.B.: the method is not able to detect nested lists/vector-valued parameters; it is only possible to 
+              manipulate inner-most lists, because the insertion is terminated at the first 'end' '''
     start = self._lines.index(after, start) if after else start # search offset for primary paramerter
-    self._lines[self._lines.index(param.lower())+1] = value # replace value in list of lines
+    formatter = str if formatter is None else formatter.format # apply appropriate formatting
+    if isinstance(value,(tuple,list)):
+      # vector-valued parameter
+      values = [formatter(val) for val in value] # apply formatter to list items
+      start = self._lines.index(param.lower(), start) # find begin of vector statement
+      end = self._lines.index('end', start) # 'end' marks the end of a vector statement
+      # insert list of vector entries into file, line by line
+      self._lines = self._lines[:start+1] + values + self._lines[end:]
+      # N.B.: the Grok class is not able to detect nested lists/vector-valued parameters; it is only possible to 
+      #       manipulate inner-most lists, because the insertion is terminated at the first 'end'
+    else:
+      # single-valued parameter
+      self._lines[self._lines.index(param.lower())+1] = formatter(value) # replace value in list of lines
 
   def getParam(self, param, dtype=None, after=None, start=0):
     ''' read a single parameter, based on the assumption that the parameter value follows in the 
@@ -148,11 +162,16 @@ class Grok(object):
     for param,value in params.iteritems():
       self.editParam(param, value, format=None)
       
-  def setRuntime(self, time):
+  def setRuntime(self, time, restarts=None):
     ''' set the run time of the simulations (model time in seconds) '''
+    if restarts is not None: self.restarts = restarts
+    else: restarts = self.restarts
     self.runtime = time
     if self._lines:
-      self.setParam('output times', time, formatter='{:.3e}', )
+      # figure out restart times
+      times = [time * float(r) / float(restarts) for r in xrange(1,restarts+1)]
+      # change grok file
+      self.setParam('output times', times, formatter='{:e}', )
   
   def setInputMode(self, input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
                    input_folder='../climate_forcing'):
