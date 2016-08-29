@@ -262,7 +262,7 @@ class EnsHGSTest(unittest.TestCase):
     self.NP = NP
     # create 2-member ensemble
     self.enshgs = EnsHGS(rundir=self.rundir + "/{A}/", project=self.hgs_testcase, runtime=self.runtime,
-                         input_mode=self.input_mode, input_interval=self.input_interval, 
+                         restarts=2, input_mode=self.input_mode, input_interval=self.input_interval, 
                          input_prefix=self.test_prefix, input_folder=self.test_data,
                          NP=self.NP, A=['A1','A2'], outer_list=['A'], template_folder=self.hgs_template,
                          loverwrite=True)
@@ -372,9 +372,9 @@ if __name__ == "__main__":
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-    tests += ['Grok']
+#     tests += ['Grok']
 #     tests += ['HGS']    
-#     tests += ['EnsHGS']
+    tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()

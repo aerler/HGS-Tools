@@ -277,14 +277,14 @@ class HGS(Grok):
   pidx_file = 'parallelindx.dat' # file with parallel execution settings 
   lindicators = True # use indicator files (default: True)
   
-  def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, 
+  def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, restarts=10,
                input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
                input_folder='../climate_forcing', template_folder=None, NP=1, lindicator=True):
     ''' initialize HGS instance with a few more parameters: number of processors... '''
     # call parent constructor (Grok)
     super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
+                             restarts=restarts, input_vars=input_vars, input_prefix=input_prefix,
                              input_mode=input_mode, input_interval=input_interval,
-                             input_vars=input_vars, input_prefix=input_prefix, 
                              input_folder=input_folder, length=length, lcheckdir=False)
     self.template_folder = template_folder # where to get the templates
     self.NP = NP # number of processors
