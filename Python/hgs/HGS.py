@@ -14,7 +14,7 @@ import os, functools
 # internal imports
 from datasets.common import data_root, BatchLoad
 from geodata.base import Dataset, Variable, Axis
-from geodata.misc import ArgumentError, VariableError
+from geodata.misc import ArgumentError, VariableError, AxisError
 from datasets.WSC import getGageStation, GageStationError
 
 ## WSC (Water Survey Canada) Meta-data
@@ -64,8 +64,8 @@ def date_parser(seconds, year=1979, month=1, day=1, **kwargs):
 ## function to load HGS station timeseries
 def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=None, title=None,
                   start_date=1979, end_date=None, period=15, date_parser=date_parser, 
-                  basin=None, WSC_station=None, basin_list=None, 
-                  filename=station_file, prefix=None, resampling='1M', **kwargs):
+                  basin=None, WSC_station=None, basin_list=None, prefix=None, 
+                  filename=station_file, resampling='1M', lpad=False, **kwargs):
   ''' Get a properly formatted HGS dataset with a regular time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None or ( filename is None and station is None ): raise ArgumentError
@@ -134,6 +134,14 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
       flowatts = variable_attributes[flowvar.lower()]
       # convert variables and put into dataset (monthly time series)
       data = data_frame[flowvar].values
+      if data.size < len(time): 
+        if lpad:
+          assert data.shape == (data.size,), data.shape
+          pad = np.zeros((len(time)-data.size,), dtype=data.dtype) * np.NaN        
+          data = np.append(data, pad, axis=0) # pad with NaNs
+        else: 
+          raise AxisError(("Available data does not span the requested time period ({}).".format(period)
+                           + "\nSet 'lpad=False' to extends timeseries with NaN."))
       if flowatts['units'] == 'kg/s': data *= 1000 # convert from m^3/s to kg/s
       dataset += Variable(data=data, axes=(time,), **flowatts)
       if fluxvar and 'shp_area' in metadata:
