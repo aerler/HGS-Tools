@@ -14,14 +14,13 @@ import os, functools
 # internal imports
 from datasets.common import data_root, BatchLoad
 from geodata.base import Dataset, Variable, Axis
-from geodata.misc import ArgumentError, VariableError, AxisError
+from geodata.misc import ArgumentError, VariableError
 from datasets.WSC import getGageStation, GageStationError
 
 ## WSC (Water Survey Canada) Meta-data
 
 dataset_name = 'HGS'
 root_folder = '{:s}/{:s}/'.format(data_root,dataset_name) # the dataset root folder
-folder_pattern = '{ROOT_FOLDER:}/{PROJECT:s}/{GRID:s}/{EXPERIMENT:s}_{DOMAIN:s}/{CLIM_MODE:s}/{TASK:s}/'
 station_file = '{PREFIX:s}o.hydrograph.Station_{STATION:s}.dat' # general HGS naming convention
 prefix_file = 'batch.pfx' # text file that contians the HGS problem prefix (also HGS convention)
 
@@ -64,24 +63,16 @@ def date_parser(seconds, year=1979, month=1, day=1, **kwargs):
 ## function to load HGS station timeseries
 def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=None, title=None,
                   start_date=1979, end_date=None, period=15, date_parser=date_parser, 
-                  basin=None, WSC_station=None, basin_list=None, prefix=None, 
-                  filename=station_file, resampling='1M', lpad=False, **kwargs):
-  ''' Get a properly formatted HGS dataset with a regular time-series at station locations; as in
+                  basin=None, WSC_station=None, basin_list=None, 
+                  filename=station_file, prefix=None, resampling='1M', **kwargs):
+  ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None or ( filename is None and station is None ): raise ArgumentError
-  # determine start data for date_parser and period argument
-  start_year,start_month,start_day = convertDate(start_date)
-  if end_date is not None: end_year,end_month,end_day = convertDate(end_date)
-  elif period is not None: end_year = start_year + period; end_month = end_day = 1
-  else: raise ArgumentError("Need to specify either 'end_date' or 'period'.")
-  if start_day != 1 or end_day != 1: 
-    raise NotImplementedError('Currently only monthly data is supported.')
-  period = end_year - start_year # for folder expansion
   # prepare name expansion arguments (all capitalized)
   expargs = dict(ROOT_FOLDER=root_folder, STATION=station, NAME=name, TITLE=title,
                  PREFIX=prefix, BASIN=basin, WSC_STATION=WSC_station) 
   # exparg preset keys will get overwritten if capitalized versions are defined
-  for key,value in kwargs.items():
+  for key,value in kwargs:
     KEY = key.upper() # we only use capitalized keywords, and non-capitalized keywords are only used/converted
     if KEY == key or KEY not in kwargs: expargs[KEY] = value # if no capitalized version is defined
   # read folder and infer prefix, if necessary
@@ -114,7 +105,13 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   if title is not None: title = title.format(**expargs) # name expansion with capitalized keyword arguments
   else: title = '{long_name:s} (HGS, {problem:s})'.format(**metadata) if title is None else title
   metadata['long_name'] = metadata['title'] = title
-  # set up date parser with peoper start dates
+  # now determine start data for date_parser
+  start_year,start_month,start_day = convertDate(start_date)
+  if end_date is not None: end_year,end_month,end_day = convertDate(end_date)
+  elif period is not None: end_year = start_year + period; end_month = end_day = 1
+  else: raise ArgumentError("Need to specify either 'end_date' or 'period'.")
+  if start_day != 1 or end_day != 1: 
+    raise NotImplementedError('Currently only monthly data is supported.')
   date_parser = functools.partial(date_parser, year=start_year, month=start_month, day=start_day)
   # now load data using pandas ascii reader
   data_frame = pd.read_table(filepath, sep='\s+', header=2, dtype=np.float64, index_col=['time'], 
@@ -134,14 +131,6 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
       flowatts = variable_attributes[flowvar.lower()]
       # convert variables and put into dataset (monthly time series)
       data = data_frame[flowvar].values
-      if data.size < len(time): 
-        if lpad:
-          assert data.shape == (data.size,), data.shape
-          pad = np.zeros((len(time)-data.size,), dtype=data.dtype) * np.NaN        
-          data = np.append(data, pad, axis=0) # pad with NaNs
-        else: 
-          raise AxisError(("Available data does not span the requested time period ({}).".format(period)
-                           + "\nSet 'lpad=False' to extends timeseries with NaN."))
       if flowatts['units'] == 'kg/s': data *= 1000 # convert from m^3/s to kg/s
       dataset += Variable(data=data, axes=(time,), **flowatts)
       if fluxvar and 'shp_area' in metadata:

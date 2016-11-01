@@ -118,7 +118,7 @@ if [[ -n "$ZIPFILE" ]] && [ $ERR -eq 0 ]
       date | zip -qryz "$ZIPFILE" "$PROJECT" -x \*/climate_forcing/\* \*/log.hgs_run
     fi # if zip file already exists
     # N.B.: read comment with unzip -z $ZIPFILE
-    [ $VERBOSITY -gt 0 ] && echo "Created Zip-file: ${PWD}/${ZIPFILE}" && echo
+    [ $VERBOSITY -gt 0 ] && echo "Created Zip-file: ${ZIPFILE}" && echo
 fi # zip archive
 
 # exit with appropriate exit code
