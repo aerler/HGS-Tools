@@ -72,7 +72,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   expargs = dict(ROOT_FOLDER=root_folder, STATION=station, NAME=name, TITLE=title,
                  PREFIX=prefix, BASIN=basin, WSC_STATION=WSC_station) 
   # exparg preset keys will get overwritten if capitalized versions are defined
-  for key,value in kwargs:
+  for key,value in kwargs.items():
     KEY = key.upper() # we only use capitalized keywords, and non-capitalized keywords are only used/converted
     if KEY == key or KEY not in kwargs: expargs[KEY] = value # if no capitalized version is defined
   # read folder and infer prefix, if necessary
@@ -168,7 +168,8 @@ if __name__ == '__main__':
   basin_name = 'GRW'
   name = 'HGS-{BASIN:s}' # will be expanded
   WSC_station = 'Grand River_Brantford'
-  hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
+#   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
+  hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/g-ensemble-2050_d01/annual_15/hgs_run'
   hgs_station = 'GR_Brantford'
   
   # load dataset
