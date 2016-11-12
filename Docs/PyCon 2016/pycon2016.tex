@@ -354,8 +354,8 @@ ensemble = [m.operation(*args, **kwargs) for m in ensemble]
           %reduce boilerplate code and add more functionality
           \smallskip
           \begin{itemize}
-            \item Redirect method calls to ensemble members \\ \smallskip
-            \item Emulate Container Type
+            \item Emulate Container Type \smallskip
+            \item Redirect method calls to ensemble members
           \end{itemize}
         \end{myGreenBox}}
     \end{column}
@@ -391,8 +391,8 @@ member_key = ensemble[key] # .. or by name/key
           %reduce boilerplate code and add more functionality
           \smallskip
           \begin{itemize}
-            \item Redirect method calls to ensemble members \\ \smallskip
-            \item Emulate Container Type
+            \item Emulate Container Type \smallskip
+            \item Redirect method calls to ensemble members
           \end{itemize}
         \end{myGreenBox}}
     \end{column}
@@ -754,16 +754,18 @@ ensemble.operation(arg1=arg_list1, arg2=arg_list2,
 \begin{frame}[fragile=singleslide]{\hspace*{0.03\textwidth}{\color{darkred} Argument Expansion}\\ \hspace*{0.03\textwidth} via Outer Product}
   \begin{columns}
     \begin{column}{0.45\textwidth}
-%       \medskip \\
+      \smallskip \\
       { \large Recursive Implementation \\ \smallskip of {\usebeamercolor[fg]{frametitle} \textbf{Outer Product}}:} \\
       \small
       \begin{enumerate}
         \item Separate expansion arguments from others
-        \item<2-> Recursively expand argument list, using \textbf{Outer Product} rules
+        \item<2-> Recursively expand argument list %, using \textbf{Outer Product} rules
         \item<2-> Generate argument set for each ensemble member
       \end{enumerate}
-      \medskip
-      \textit{Argument expansion is also be useful outside of} Ensemble \textit{class}
+      \onslide<3->{\begin{myGreenBox}{0.85\textwidth}{Decorator Class}
+          Argument Expansion is most useful as a Decorator class
+        \end{myGreenBox}}
+%       \textit{Argument expansion is also be useful outside of} Ensemble \textit{class}
     \end{column}
     \begin{column}{0.55\textwidth}
       \vspace*{-1.5cm}
@@ -796,16 +798,62 @@ def expandArgsList(args_list,
 \begin{frame}[fragile=singleslide]{\hspace*{0.03\textwidth}{\color{darkred} Argument Expansion}\\ \hspace*{0.03\textwidth} via Outer Product}
   \begin{columns}
     \begin{column}{0.45\textwidth}
-      %       \medskip \\
+      \smallskip \\
       { \large Recursive Implementation \\ \smallskip of {\usebeamercolor[fg]{frametitle} \textbf{Outer Product}}:} \\
       \small
       \begin{enumerate}
         \item Separate expansion arguments from others
-        \item Recursively expand argument list, using \textbf{Outer Product} rules
-        \item Generate argument set for each ensemble member
+        \item<1-> Recursively expand argument list %, using \textbf{Outer Product} rules
+        \item<1-> Generate argument set for each ensemble member
       \end{enumerate}
-      \medskip
-      \textit{Argument expansion is also be useful outside of} Ensemble \textit{class}
+      \onslide<2->{\begin{myGreenBox}{0.85\textwidth}{Decorator Class}
+          Argument Expansion is most useful as a Decorator class
+        \end{myGreenBox}}
+%       \textit{Argument expansion is also be useful outside of} Ensemble \textit{class}
+    \end{column}
+    \begin{column}{0.55\textwidth}
+      \vspace*{-1.5cm}
+      \begin{myCode}{1.\textwidth}{Implementation of Recursion}
+        \small
+        \begin{minted}{python}
+def expandArgsList(args_list,
+            exp_args, kwargs):
+  # check recursion condition
+  if len(exp_args) > 0:
+    # expand arguments
+    now_arg = exp_args.pop(0)
+    new_list = [] # new arg list
+    for narg in kwargs[now_arg]:
+      for arg_list in args_list:
+        arg_list.append(narg)
+        new_list.append(arg_list)
+    # next recursion level
+    args_list = expandArgsList(
+      new_list, exp_args, kwargs)
+  ...
+  # terminate: return arg lists
+  return args_list
+        \end{minted}
+      \end{myCode}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[fragile=singleslide]{\hspace*{0.03\textwidth}{\color{darkred} Argument Expansion}\\ \hspace*{0.03\textwidth} via Outer Product}
+  \begin{columns}
+    \begin{column}{0.45\textwidth}
+      \smallskip \\
+      { \large Recursive Implementation \\ \smallskip of {\usebeamercolor[fg]{frametitle} \textbf{Outer Product}}:} \\
+      \small
+      \begin{enumerate}
+        \item Separate expansion arguments from others
+        \item<1-> Recursively expand argument list %, using \textbf{Outer Product} rules
+        \item<1-> Generate argument set for each ensemble member
+      \end{enumerate}
+      \onslide<1->{\begin{myGreenBox}{0.85\textwidth}{Decorator Class}
+          Argument Expansion is most useful as a Decorator class
+        \end{myGreenBox}}
+%       \textit{Argument expansion is also be useful outside of} Ensemble \textit{class}
     \end{column}
     \begin{column}{0.55\textwidth}
       \vspace*{-1.5cm}
@@ -844,12 +892,14 @@ def expandArgsList(args_list,
   \bigskip
   {\Large \color{teal} \textbf{The Ensemble Class} }\smallskip
   \begin{itemize}
-    \item Functions like a \textbf{container} and exposes \\(parallelized) \textbf{member methods}
+    \item Functions like a \textbf{container type} and redirects \\
+    calls to (parallelized) \textbf{member methods}
   \end{itemize}
    \medskip
   {\Large \usebeamercolor[fg]{frametitle} \textbf{Argument Expansion} }\smallskip
   \begin{itemize}
-    \item Systematic expansion of argument lists from \\ \textbf{inner} or \textbf{outer product}
+    \item Systematic expansion of argument lists from \\
+    \textbf{inner} or \textbf{outer product} (with decorator)
   \end{itemize}
   \medskip
   \begin{myRedBox}{0.9\textwidth}{Sprint Project: Publish Ensemble Class}
