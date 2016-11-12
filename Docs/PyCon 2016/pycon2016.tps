@@ -23,4 +23,3 @@ Cursor=27432
 [SessionInfo]
 FrameCount=1
 ActiveFrame=0
-
