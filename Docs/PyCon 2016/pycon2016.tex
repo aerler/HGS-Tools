@@ -152,7 +152,7 @@
 \graphicspath{{figures/fullsize/}}
 % \graphicspath{{figures/small/}}
 
-\title[Large Ensembles and Batch Execution with Python]{A Class to manage Large Ensembles and \\ Batch Execution in Python}
+\title[Large Ensembles and Batch Execution with Python]{A Class to Manage Large Ensembles and \\ Batch Execution in Python}
 \subtitle{\bigskip PyCon Canada}
 \author[\href{http://www.physics.utoronto.ca/~aerler/}{Andre R. Erler} (\href{mailto:A.R.Erler@gmail.com}{A.R.Erler@gmail.com})]{Andre R. Erler}
 \institute{\includegraphics[width=0.35\textwidth]{aquanty-Logo_transparent}\\ \bigskip}
@@ -197,25 +197,25 @@
  \begin{columns}
    \begin{column}{0.6\textwidth}
      \small \medskip\\
-     To reach conclusive results, scientific experiments usually have to be repeated many times; either to establish statistical significance, or to test a range of parameter values.\\ 
-     \bigskip 
+     To reach conclusive results, scientific experiments usually have to be repeated many times; either to establish statistical significance, or to test a range of parameter values for optimization.\\
+     \bigskip
      \hspace*{-1cm}
      \includegraphics[width=1.2\textwidth]{GC_SampleTray}
    \end{column}
    \begin{column}{0.4\textwidth}
      \vspace*{-1.cm}\\%\hspace*{-0.5cm}
      \includegraphics[width=1.2\textwidth]{geo_samples}\\
-    \bigskip 
+    \bigskip
      \small Experiments are planned and conducted in large batches or so-called \textit{ensembles}.\\ \smallskip
-     \begin{myGreenBox}[shadow=true]{0.85\textwidth}{Automation}
+     \onslide<2->{\begin{myGreenBox}[shadow=true]{0.85\textwidth}{Automation}
        \small It is therefore desirable to automate the most repetitive tasks, and to create tools for this purpose.
-     \end{myGreenBox}
+     \end{myGreenBox}}
   \end{column}
  \end{columns}
 \end{frame}
 
 
-\subsection*{What I do}
+\subsection{What I do}
 
 \begin{frame}{\hspace{0.55\textwidth} Coupling Climate Models\\ \hspace*{0.55\textwidth} with Hydrologic Models}
   \begin{columns}
@@ -223,8 +223,8 @@
       \vspace*{-1.5cm}
       \includegraphics[width=\textwidth]{Ts_annual_ortho_ndl}\\
       {\scriptsize Surface Temperature in a Global and a nested Regional Climate Model}
-      \begin{myBox}{0.9\textwidth}{}
-        \footnotesize I run Climate and Hydrologic Models to the impact of climate change on water resources and generate projections of future hydro-climate.
+      \begin{myBox}{0.95\textwidth}{}
+        \footnotesize I run Climate and Hydrologic Models to study the impact of climate change on water resources and generate projections of future hydro-climate.
       \end{myBox}
     \end{column}
     \begin{column}{0.5\textwidth}
@@ -243,6 +243,7 @@
     \begin{itemize}
      \item 4 days on 128 cores and 300GB of storage per model year
      \item 36 ensemble members, 15 years each
+     % about 750 core years
     \end{itemize}
   \medskip %\pause
   \item Surface-Subsurface Hydrologic Simulations:\\ \smallskip
@@ -276,21 +277,20 @@
     \begin{column}{0.5\textwidth}
       \vspace*{-1.5cm}
         \onslide<2->{\begin{myRedBox}{0.9\textwidth}{\textbf{Boilerplate Code}}
-          Python simplifies scripting a lot, but we still have a lot of boilerplate code! 
+          Python simplifies scripting a lot, but we still have a lot of boilerplate code!
           This can be simplified further.
         \end{myRedBox}}
     \end{column}
   \end{columns}
         \small
       \begin{myCode}{\textwidth}{\textbf{Python is an Ideal Scripting Language}}
-        \footnotesize
         \begin{minted}{python}
-ensemble = [...] # a list of objects
+ensemble = [...] # a list of objects ``members''
 
 # for loop iterating over list
 tmp = [] # store results
 for member in ensemble: # iterate over list
-    tmp.append( result = member.operation(*args, **kwargs) ) 
+    tmp.append( result = member.operation(*args, **kwargs) )
 ensemble = tmp
 
 # list comprehension is already much shorter!
@@ -309,27 +309,26 @@ ensemble = [m.operation(*args, **kwargs) for m in ensemble]
     \begin{column}{0.5\textwidth}
       \vspace*{-1.5cm}
         \onslide<1->{\begin{myRedBox}{0.9\textwidth}{\textbf{Boilerplate Code}}
-          Python simplifies scripting a lot, but we still have a lot of boilerplate code! 
+          Python simplifies scripting a lot, but we still have a lot of boilerplate code!
           This can be simplified further.
         \end{myRedBox}}
     \end{column}
   \end{columns}
-        \small
-      \begin{myCode}{\textwidth}{\textbf{Python is an Ideal Scripting Language}}
-        \footnotesize
-        \begin{minted}{python}
-ensemble = [...] # a list of objects
+  \small
+  \begin{myCode}{\textwidth}{\textbf{Python is an Ideal Scripting Language}}
+    \begin{minted}{python}
+ensemble = [...] # a list of objects ``members''
 
 # for loop iterating over list
 tmp = [] # store results
 for member in ensemble: # iterate over list
-    tmp.append( result = member.operation(*args, **kwargs) ) 
+    tmp.append( result = member.operation(*args, **kwargs) )
 ensemble = tmp
 
 # list comprehension is already much shorter!
 ensemble = [m.operation(*args, **kwargs) for m in ensemble]
-        \end{minted}
-      \end{myCode}
+    \end{minted}
+  \end{myCode}
 \end{frame}
 
 
@@ -350,20 +349,19 @@ ensemble = [m.operation(*args, **kwargs) for m in ensemble]
     \end{column}
     \begin{column}{0.5\textwidth}
       \vspace*{-1.5cm}
-        \onslide<1->{\begin{myGreenBox}{0.9\textwidth}{\textbf{The Ensemble Class}}
-          %A container class on which member methods can be called can 
+        \onslide<2->{\begin{myGreenBox}{0.9\textwidth}{\textbf{The Ensemble Class}}
+          %A container class on which member methods can be called can
           %reduce boilerplate code and add more functionality
           \smallskip
           \begin{itemize}
             \item Redirect method calls to ensemble members \\ \smallskip
-            \item Container Protocol
+            \item Emulate Container Type
           \end{itemize}
         \end{myGreenBox}}
     \end{column}
   \end{columns}
         \small
       \begin{myCode}{\textwidth}{\textbf{And Ideal Use-case Example}}
-        \footnotesize
         \begin{minted}{python}
 ensemble = Ensemble(*[...]) # create Ensemble object
 
@@ -379,8 +377,45 @@ member_key = ensemble[key] # .. or by name/key
       \end{myCode}
 \end{frame}
 
+\begin{frame}[fragile=singleslide]{\hspace*{0.5cm} Motivation: \\ \hspace*{0.5cm} Batch Processing}
+  \begin{columns}
+    \begin{column}{0.5\textwidth}
+      \begin{itemize}
+        \item<1-> In Computational Sciences repetitive tasks can be automated/scripted \smallskip
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \vspace*{-1.5cm}
+      \onslide<1->{\begin{myGreenBox}{0.9\textwidth}{\textbf{The Ensemble Class}}
+          %A container class on which member methods can be called can
+          %reduce boilerplate code and add more functionality
+          \smallskip
+          \begin{itemize}
+            \item Redirect method calls to ensemble members \\ \smallskip
+            \item Emulate Container Type
+          \end{itemize}
+        \end{myGreenBox}}
+    \end{column}
+  \end{columns}
+  \small
+  \begin{myCode}{\textwidth}{\textbf{And Ideal Use-case Example}}
+    \begin{minted}{python}
+ensemble = Ensemble(*[...]) # create Ensemble object
 
-\subsection[Ensemble Class]{The Ensemble Class}
+# apply member methods to entire ensemble
+ensemble = ensemble.operation_1(*args, **kwargs)
+...
+ensemble = ensemble.operation_N(*args, **kwargs)
+
+member_N = ensemble[n] # access elements by index
+member_key = ensemble[key] # .. or by name/key
+...
+    \end{minted}
+  \end{myCode}
+\end{frame}
+
+
+\subsection[\ Ensemble Class]{The Ensemble Class}
 
 \begin{frame}[fragile=singleslide]{\hspace*{0.65\textwidth}The Ensemble Class}
   \begin{columns}
@@ -392,55 +427,99 @@ member_key = ensemble[key] # .. or by name/key
 class Ensemble(object):
   _members = None # members
   ...
-  
+
   def __getitem__(self, i):
     # get individual members
     if isinstance(i, int):
-      # access like list/tuple 
+      # access like list/tuple
       return self._members[i]
     elif isinstance(i, string):
       ...
-      
+
   def __iter__(self):
     # iterate over members
     mm = self._members
     return mm.__iter__()
-    ...
-    
+  ...
+
         \end{minted}
       \end{myBox}
     \end{column}
     \begin{column}{0.45\textwidth}
       \medskip \\
-      { \large Emulating the Python \\ \smallskip \textbf{\color{darkred} Container Type}:} \\ 
+      { \large Emulating the Python \\ \smallskip \textbf{\color{darkred} Container Type}:} \\
       \small
       \begin{enumerate}
         \item Support several built-in methods, such as \texttt{\_\_len\_\_}, \texttt{\_\_contains\_\_}, \texttt{\_\_iter\_\_} \medskip
         \item Item assignment like \texttt{list} or \texttt{dict} using \texttt{\_\_getitem\_\_} and \texttt{\_\_setitem\_\_}\medskip
         %\item Methods like \texttt{\_\_add\_\_} or \texttt{\_\_iadd\_\_} can also be implemented
       \end{enumerate}
-      \begin{myBox}{0.85\textwidth}{Return Values}
+      \onslide<2->{\begin{myBox}{0.85\textwidth}{Return Values}
         Calls to member methods return a new container or Ensemble with the results
-       \end{myBox}
+      \end{myBox}}
     \end{column}
   \end{columns}
 \end{frame}
+
+\begin{frame}[fragile=singleslide]{\hspace*{0.65\textwidth}The Ensemble Class}
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \vspace*{-1.cm}
+      \begin{myBox}{1.\textwidth}{Implementation Snippet}
+        \small
+        \begin{minted}{python}
+class Ensemble(object):
+  _members = None # members
+  ...
+
+  def __getitem__(self, i):
+    # get individual members
+    if isinstance(i, int):
+      # access like list/tuple
+      return self._members[i]
+    elif isinstance(i, string):
+      ...
+
+  def __iter__(self):
+    # iterate over members
+    mm = self._members
+    return mm.__iter__()
+  ...
+        \end{minted}
+      \end{myBox}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \medskip \\
+      { \large Emulating the Python \\ \smallskip \textbf{\color{darkred} Container Type}:} \\
+      \small
+      \begin{enumerate}
+        \item Support several built-in methods, such as \texttt{\_\_len\_\_}, \texttt{\_\_contains\_\_}, \texttt{\_\_iter\_\_} \medskip
+        \item Item assignment like \texttt{list} or \texttt{dict} using \texttt{\_\_getitem\_\_} and \texttt{\_\_setitem\_\_}\medskip
+        %\item Methods like \texttt{\_\_add\_\_} or \texttt{\_\_iadd\_\_} can also be implemented
+      \end{enumerate}
+      \onslide<1->{\begin{myBox}{0.85\textwidth}{Return Values}
+          Calls to member methods return a new container or Ensemble with the results
+        \end{myBox}}
+    \end{column}
+  \end{columns}
+\end{frame}
+
 
 
 \begin{frame}[fragile=singleslide]{The Ensemble Class}
   \begin{columns}
     \begin{column}{0.45\textwidth}
       \medskip \\
-      { \large Implementation of \\ \smallskip \textbf{\color{darkred} Member Methods}:} \\ 
+      { \large Implementation of \\ \smallskip \textbf{\color{darkred} Method Redirection}:} \\
       \small
       \begin{enumerate}
         \item Redirect calls to member methods/attributes by overloading \texttt{\_\_getattr\_\_} \medskip
         \item Execute call on all Ensemble members \medskip
         \item Return a new container or Ensemble with results
       \end{enumerate}
-      \begin{myRedBox}{1.\textwidth}{Ensemble Wrapper}
+      \onslide<2->{\begin{myRedBox}{.9\textwidth}{Ensemble Wrapper}
         Methods require helper Class \texttt{EnsWrap} to apply arguments
-       \end{myRedBox}
+      \end{myRedBox}}
     \end{column}
     \begin{column}{0.55\textwidth}
       \vspace*{-1.cm}
@@ -450,10 +529,10 @@ class Ensemble(object):
 class Ensemble(object):
   _members = None # members
   ...
-  
+
   def __getattr__(self, attr):
     # check if callable
-    mem0 = self._members[0] 
+    mem0 = self._members[0]
     # assuming homogeneity...
     f = getattr(mem0,attr)
     if callable(f):
@@ -462,9 +541,51 @@ class Ensemble(object):
     else:
       # just return values
       v = [getattr(m,attr) \
-        for m in self._members]
+         for m in self._members]
     return v
-    
+        \end{minted}
+      \end{myBox}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[fragile=singleslide]{The Ensemble Class}
+  \begin{columns}
+    \begin{column}{0.45\textwidth}
+      \medskip \\
+      { \large Implementation of \\ \smallskip \textbf{\color{darkred} Method Redirection}:} \\
+      \small
+      \begin{enumerate}
+        \item Redirect calls to member methods/attributes by overloading \texttt{\_\_getattr\_\_} \medskip
+        \item Execute call on all Ensemble members \medskip
+        \item Return a new container or Ensemble with results
+      \end{enumerate}
+      \onslide<1->{\begin{myRedBox}{.9\textwidth}{Ensemble Wrapper}
+        Methods require helper Class \texttt{EnsWrap} to apply arguments
+      \end{myRedBox}}
+    \end{column}
+    \begin{column}{0.55\textwidth}
+      \vspace*{-1.cm}
+      \begin{myBox}{1.\textwidth}{Implementation Snippet}
+        \small
+        \begin{minted}{python}
+class Ensemble(object):
+  _members = None # members
+  ...
+
+  def __getattr__(self, attr):
+    # check if callable
+    mem0 = self._members[0]
+    # assuming homogeneity...
+    f = getattr(mem0,attr)
+    if callable(f):
+      # return Ensemble Wrapper
+      v = EnsWrap(self,attr)
+    else:
+      # just return values
+      v = [getattr(m,attr) \
+         for m in self._members]
+    return v
         \end{minted}
       \end{myBox}
     \end{column}
@@ -472,9 +593,9 @@ class Ensemble(object):
 \end{frame}
 
 
-\subsection*{Ensemble Wrapper}
+\subsection[Ensemble Wrapper]{A Helper Class}
 
-\begin{frame}[fragile=singleslide]{\hspace*{0.65\textwidth}The Ensemble Class}
+\begin{frame}[fragile=singleslide]{\hspace*{0.65\textwidth}A Helper Class}
   \begin{columns}
     \begin{column}{0.55\textwidth}
       \vspace*{-1.cm}
@@ -483,71 +604,111 @@ class Ensemble(object):
         \begin{minted}{python}
 class EnsWrap(object):
   ...
-  
+
   def __init__(self, ens, attr):
     _ensemble = ens # members
     _attr = attr # member method
-      
+
   def __call__(self, **kwargs):
     # iterate over members
     new = Ensemble()
     for m in self._ensemble:
       f = getattr(m,self.attr)
       # execute member method
-      new.append(f(**kwargs))      
+      new.append(f(**kwargs))
     # return new ensemble
     return new
-    ...
-    
+  ...
         \end{minted}
       \end{myBox}
     \end{column}
     \begin{column}{0.45\textwidth}
       \medskip \\
-      { \large Implementation of the \\ \smallskip \textbf{\color{darkred} Ensemble Wrapper}:} \\ 
+      { \large Implementation of the \\ \smallskip \textbf{\color{darkred} Ensemble Wrapper}:} \\
       \small
       \begin{enumerate}
-        \item Initialize with ensemble members and called attribute \medskip
+        \item Initialize with ensemble members and the called attribute/method \medskip
         \item Use \texttt{\_\_call\_\_} method to execute member method with arguments
       \end{enumerate}
-      \begin{myGreenBox}{0.95\textwidth}{Parallelization}
+      \onslide<2->{\begin{myGreenBox}{0.9\textwidth}{Parallelization}
         Simple parallelization using \texttt{multiprocessing.Pool}'s \texttt{apply\_async} can be applied
-       \end{myGreenBox}
+      \end{myGreenBox}}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[fragile=singleslide]{\hspace*{0.65\textwidth}A Helper Class}
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \vspace*{-1.cm}
+      \begin{myBox}{1.\textwidth}{Implementation Snippet}
+        \small
+        \begin{minted}{python}
+class EnsWrap(object):
+  ...
+
+  def __init__(self, ens, attr):
+    _ensemble = ens # members
+    _attr = attr # member method
+
+  def __call__(self, **kwargs):
+    # iterate over members
+    new = Ensemble()
+    for m in self._ensemble:
+      f = getattr(m,self.attr)
+      # execute member method
+      new.append(f(**kwargs))
+    # return new ensemble
+    return new
+  ...
+        \end{minted}
+      \end{myBox}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \medskip \\
+      { \large Implementation of the \\ \smallskip \textbf{\color{darkred} Ensemble Wrapper}:} \\
+      \small
+      \begin{enumerate}
+        \item Initialize with ensemble members and the called attribute/method \medskip
+        \item Use \texttt{\_\_call\_\_} method to execute member method with arguments
+      \end{enumerate}
+      \onslide<1->{\begin{myGreenBox}{0.9\textwidth}{Parallelization}
+          Simple parallelization using \texttt{multiprocessing.Pool}'s \texttt{apply\_async} can be applied
+        \end{myGreenBox}}
     \end{column}
   \end{columns}
 \end{frame}
 
 
-
 % ################################################################################################
 
 
-\section{Argument Expansion}
+\section{\ Argument Expansion}
 
 
 \subsection*{Motivation}
 
 \begin{frame}[fragile=singleslide]{How can we use Ensembles with Argument Lists}
+  \vspace*{-.25cm}
   \begin{myCode}{\textwidth}{A Trivial Case}
-    \footnotesize
+    \small
     \begin{minted}{python}
 # this defeats the purpose
 members = [member.operation(arg1=arg) for arg in arg_list]
 Ensemble(*members) # initialize new ensemble
-    
+
 # a better solution: pass list directly
 ensemble.operation(arg1=arg_list, inner_list=['arg1'])
     \end{minted}
   \end{myCode}
-  \bigskip
-  
+  \vspace*{-.25cm}
   \begin{columns}
     \begin{column}{0.4\textwidth}
-    Argument lists can easily be implemented in the \texttt{\_\_call\_\_} method of the ensemble wrapper EnsWrap by creating a list of arguments for each member
+      Argument lists can easily be implemented in the \texttt{\_\_call\_\_} method of the ensemble wrapper EnsWrap by creating a list of arguments for each member
     \end{column}
     \begin{column}{0.6\textwidth}
-      \vspace*{-1.cm}
-      \begin{myBox}{1.\textwidth}{}
+      \vspace*{-.25cm}
+      \begin{myCode}{1.\textwidth}{}
         \small
         \begin{minted}{python}
 # construct argument list
@@ -557,9 +718,9 @@ ens = self._ensemble
 for m,args in zip(ens,args_list):
   f = getattr(m,self.attr)
   # execute member method with args
-  new.append(f(**args))      
+  new.append(f(**args))
         \end{minted}
-      \end{myBox}
+      \end{myCode}
     \end{column}
   \end{columns}
 \end{frame}
@@ -567,84 +728,128 @@ for m,args in zip(ens,args_list):
 
 \begin{frame}[fragile=singleslide]{How can we use Ensembles with Argument Lists}
   \begin{myCode}{\textwidth}{A More Complex Case: the Outer Product List}
-    \footnotesize
+    \small
     \begin{minted}{python}
 # again, this defeats the purpose
 arg_list = []
 for arg1 in arg_list1: # construct arg_list from two lists
-  for arg2 in arg_list2: # i.e. all possible combinations 
+  for arg2 in arg_list2: # i.e. all possible combinations
     arg_list.append(dict(arg1=arg1, arg2=arg2))
 # apply list to ensemble
 ensemble.operation(arg1=arg_list, inner_list=['arg1'])
 
 # a better solution is to expand the lists internally
-ensemble.operation(arg1=arg_list1, arg2=arg_list2, 
-                    outer_list=['arg1','arg2'])
+ensemble.operation(arg1=arg_list1, arg2=arg_list2,
+                        outer_list=['arg1','arg2'])
     \end{minted}
   \end{myCode}
-  \myskip
-  The \textbf{Outer Product} expansion of multiple argument lists creates argument lists with all possible combinations.
-  \textbf{Outer Product} expansion, on the other hand, works like Python's \texttt{zip} function.
+  \smallskip
+  The \textbf{Outer Product} expansion of multiple argument lists creates argument lists with all possible combinations of arguments.
+  \textbf{Inner Product} expansion works like Python's \texttt{zip} function.
 \end{frame}
 
 
-\subsection*{Implementation}
+\subsection[Implementation]{Outer Product Implementation}
 
-\begin{frame}[fragile=singleslide]{\hspace*{0.03\textwidth}Outer Product\\ \hspace*{0.03\textwidth}Argument expansion}
+\begin{frame}[fragile=singleslide]{\hspace*{0.03\textwidth}{\color{darkred} Argument Expansion}\\ \hspace*{0.03\textwidth} via Outer Product}
   \begin{columns}
     \begin{column}{0.45\textwidth}
-      \medskip \\
-      { \large Recursive Implementation \\ \smallskip of {\usebeamercolor[fg]{frametitle} Outer Product}:} \\ 
+%       \medskip \\
+      { \large Recursive Implementation \\ \smallskip of {\usebeamercolor[fg]{frametitle} \textbf{Outer Product}}:} \\
       \small
       \begin{enumerate}
         \item Separate expansion arguments from others
-        \item Recursively expand argument list
-        \item Generate argument set for each ensemble member
+        \item<2-> Recursively expand argument list, using \textbf{Outer Product} rules
+        \item<2-> Generate argument set for each ensemble member
       \end{enumerate}
+      \medskip
+      \textit{Argument expansion is also be useful outside of} Ensemble \textit{class}
     \end{column}
     \begin{column}{0.55\textwidth}
-      \vspace*{-1.cm}
-      \begin{myBox}{1.\textwidth}{Implementation Snippet}
+      \vspace*{-1.5cm}
+      \begin{myCode}{1.\textwidth}{Implementation of Recursion}
         \small
         \begin{minted}{python}
-class Ensemble(object):
-  _members = None # members
+def expandArgsList(args_list,
+            exp_args, kwargs):
+  # check recursion condition
+  if len(exp_args) > 0:
+    # expand arguments
+    now_arg = exp_args.pop(0)
+    new_list = [] # new arg list
+    for narg in kwargs[now_arg]:
+      for arg_list in args_list:
+        arg_list.append(narg)
+        new_list.append(arg_list)
+    # next recursion level
+    args_list = expandArgsList(
+      new_list, exp_args, kwargs)
   ...
-  
-  def __getattr__(self, attr):
-    # check if callable
-    mem0 = self._members[0] 
-    # assuming homogeneity...
-    f = getattr(mem0,attr)
-    if callable(f):
-      # return Ensemble Wrapper
-      v = EnsWrap(self,attr)
-    else:
-      # just return values
-      v = [getattr(m,attr) \
-        for m in self._members]
-    return v
-    
+  # terminate: return arg lists
+  return args_list
         \end{minted}
-      \end{myBox}
+      \end{myCode}
     \end{column}
   \end{columns}
 \end{frame}
 
+\begin{frame}[fragile=singleslide]{\hspace*{0.03\textwidth}{\color{darkred} Argument Expansion}\\ \hspace*{0.03\textwidth} via Outer Product}
+  \begin{columns}
+    \begin{column}{0.45\textwidth}
+      %       \medskip \\
+      { \large Recursive Implementation \\ \smallskip of {\usebeamercolor[fg]{frametitle} \textbf{Outer Product}}:} \\
+      \small
+      \begin{enumerate}
+        \item Separate expansion arguments from others
+        \item Recursively expand argument list, using \textbf{Outer Product} rules
+        \item Generate argument set for each ensemble member
+      \end{enumerate}
+      \medskip
+      \textit{Argument expansion is also be useful outside of} Ensemble \textit{class}
+    \end{column}
+    \begin{column}{0.55\textwidth}
+      \vspace*{-1.5cm}
+      \begin{myCode}{1.\textwidth}{Implementation of Recursion}
+        \small
+        \begin{minted}{python}
+def expandArgsList(args_list,
+            exp_args, kwargs):
+  # check recursion condition
+  if len(exp_args) > 0:
+    # expand arguments
+    now_arg = exp_args.pop(0)
+    new_list = [] # new arg list
+    for narg in kwargs[now_arg]:
+      for arg_list in args_list:
+        arg_list.append(narg)
+        new_list.append(arg_list)
+    # next recursion level
+    args_list = expandArgsList(
+      new_list, exp_args, kwargs)
+  ...
+  # terminate: return arg lists
+  return args_list
+        \end{minted}
+      \end{myCode}
+    \end{column}
+  \end{columns}
+\end{frame}
 
 % ################################################################################################
 
 
-\begin{frame}{Summary \& Conclusion}  
+\section[\ \ \ ]{Summary \& Conclusion}
+
+\begin{frame}{\hspace*{0.35\textwidth}Summary \& Conclusion}
   \bigskip
   {\Large \color{teal} \textbf{The Ensemble Class} }\smallskip
   \begin{itemize}
-    \item Functions like a \textbf{container} and exposes (parallelized) \textbf{member methods}
+    \item Functions like a \textbf{container} and exposes \\(parallelized) \textbf{member methods}
   \end{itemize}
    \medskip
   {\Large \usebeamercolor[fg]{frametitle} \textbf{Argument Expansion} }\smallskip
   \begin{itemize}
-    \item Systematic expansion of argument lists from \textbf{inner} or \textbf{outer product}
+    \item Systematic expansion of argument lists from \\ \textbf{inner} or \textbf{outer product}
   \end{itemize}
   \medskip
   \begin{myRedBox}{0.9\textwidth}{Sprint Project: Publish Ensemble Class}
@@ -653,68 +858,21 @@ class Ensemble(object):
 \end{frame}
 
 \begin{frame}
- \vfill
- \begin{center}
- \LARGE
- Thank You!\hspace{1.5cm}  $\sim$ \hspace{1.5cm} Questions?
- \end{center}
- \vfill
+  \vspace*{0.2\textheight}
+  \begin{center}
+    \LARGE
+    Thank You!\hspace{1.5cm}  $\sim$ \hspace{1.5cm} Questions?
+  \end{center}
+  \begin{columns}[T]
+   \begin{column}{0.4\textwidth}
+     \vspace*{0.1\textheight}
+   \end{column}
+   \begin{column}{0.4\textwidth}
+     \vspace*{0.25\textheight}
+     \hfill \includegraphics[width=\textwidth]{aquanty-Logo_transparent}
+   \end{column}
+ \end{columns}
 \end{frame}
-
-
-%\appendix
-%
-%
-%\subsection[Example]{The Ensemble in Operation}
-%
-%\begin{frame}[fragile=singleslide]{The Ensemble in Operation}
-  %\begin{columns}
-    %\begin{column}{0.5\textwidth}
-      %Dataset/GCM specific parameters: \smallskip
-      %\begin{itemize}
-        %\item Input file types/names\smallskip
-        %\item Interpolation tables/grid \smallskip
-        %\item Variables / frequency \smallskip
-      %\end{itemize}
-        %\begin{myBox}{0.9\textwidth}{Multiple Datasets}
-          %\begin{itemize}
-            %\item \textit{\color{purple} Inheritance} for common procedures \smallskip
-            %\item \textit{\color{teal} Polymorphism} for different procedures
-          %\end{itemize}
-        %\end{myBox}
-    %\end{column}
-    %\begin{column}{0.5\textwidth}
-      %\vspace*{-1.25cm}
-      %\begin{myBox}{1.0\textwidth}{}
-                 \renewcommand{\theFancyVerbLine}{\sffamily\textcolor[rgb]{0.5,0.5,0.5}{\scriptsize\arabic{FancyVerbLine}}}
-        %\footnotesize
-        %\begin{minted}{python}
-%class Dataset(object):
-  %prefix = ''  # file prefix
-  %vtable = 'Vtable'
-  %gribname = 'GRIBFILE' # input
-  %ungrib_exe = 'ungrib.exe'
-  %ungrib_log = 'ungrib.exe.log'
-  %...
-  %def __init__(self, ...):
-    %# type checking
-    %...
-  %def setup(self, src, ...):
-    %...
-  %def cleanup(self, tgt):
-    %...
-  %def extractDate(self, fname):
-    %# match valid filenames
-    %...
-  %def ungrib(self, date, mytag):
-    %# generate file for metgrid
-    %...
-        %\end{minted}
-      %\end{myBox}
-    %\end{column}
-  %\end{columns}
-%\end{frame}
-
 
 
 \end{document}
