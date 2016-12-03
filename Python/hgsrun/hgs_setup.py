@@ -268,6 +268,7 @@ class HGS(Grok):
     otherwise the same as Grok.
   '''
   template_folder = None # temlate for rundir setup
+  linked_folders = None # list of folders that should be linked rather than copied
   hgs_bin   = './hgs_premium.x' # default HGS executable
   rundirOK  = None # indicate if rundir setup was successfule
   configOK  = None # indicate if Grok configuration was successful
@@ -279,7 +280,7 @@ class HGS(Grok):
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, restarts=10,
                input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
-               input_folder='../climate_forcing', template_folder=None, NP=1, lindicator=True):
+               input_folder='../climate_forcing', template_folder=None, linked_folders=None, NP=1, lindicator=True):
     ''' initialize HGS instance with a few more parameters: number of processors... '''
     # call parent constructor (Grok)
     super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
@@ -287,6 +288,8 @@ class HGS(Grok):
                              input_mode=input_mode, input_interval=input_interval,
                              input_folder=input_folder, length=length, lcheckdir=False)
     self.template_folder = template_folder # where to get the templates
+    self.linked_folders = ('etprop/','gb/','icbc/','prop/','soil/',) if linked_folders is None else linked_folders 
+    # N.B.: these folders just contain static data and do not need to be replicated
     self.NP = NP # number of processors
     self.lindicators = lindicator # use indicator files
     
@@ -298,9 +301,16 @@ class HGS(Grok):
     # clear existing directory
     if loverwrite and os.path.isdir(self.rundir): shutil.rmtree(self.rundir)
     # copy folder tree
-    if not os.path.isdir(self.rundir): shutil.copytree(template_folder, self.rundir, symlinks=True)
+    if not os.path.isdir(self.rundir): shutil.copytree(template_folder, self.rundir, symlinks=True,
+                                                       ignore=shutil.ignore_patterns(*self.linked_folders))
     # place link to template
     os.symlink(template_folder, '{}/template'.format(self.rundir))
+    # symlinks to static folder that are not copied (linked_folders)
+    if self.linked_folders:
+      for lf in self.linked_folders:
+        if lf[-1] == '/': lf = lf[:-1] # trim slash
+        #print('linking {}: {}'.format(lf,'{}/{}'.format(self.rundir,lf)))
+        os.symlink('{}/{}/'.format(template_folder,lf), '{}/{}'.format(self.rundir,lf))
     # put links to executables in place
     for exe in (self.hgs_bin, self.grok_bin):
       local_exe = '{}/{}'.format(self.rundir,exe)
