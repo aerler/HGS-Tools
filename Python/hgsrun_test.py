@@ -369,8 +369,9 @@ if __name__ == "__main__":
 #     specific_tests += ['ParallelIndex']
 #     specific_tests += ['RunEns']
 #     specific_tests += ['RunGrok']
+#     specific_tests += ['RunHGS']
 #     specific_tests += ['SetTime']
-    specific_tests += ['Setup']
+#     specific_tests += ['Setup']
 #     specific_tests += ['SetupExp']
 #     specific_tests += ['SetupRundir']
 #     specific_tests += ['Write']
@@ -380,8 +381,8 @@ if __name__ == "__main__":
     tests = [] 
     # list of variable tests
 #     tests += ['Grok']
-    tests += ['HGS']    
-#     tests += ['EnsHGS']
+#     tests += ['HGS']    
+    tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()

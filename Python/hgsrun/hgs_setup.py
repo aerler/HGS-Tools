@@ -381,7 +381,7 @@ class HGS(Grok):
     os.chdir(pwd) # return to previous working directory
     return 0 if self.pidxOK else 1
     
-  def runHGS(self, executable=None, logfile='log.hgs_run', lerror=True, 
+  def runHGS(self, executable=None, logfile='log.hgs_run', lerror=True, lcompress=True,
              skip_config=False, skip_grok=False, skip_pidx=False, ldryrun=False):
     ''' check if all inputs are in place and run the HGS executable in the run directory '''
     pwd = os.getcwd() # save present workign directory to return later    
@@ -409,7 +409,7 @@ class HGS(Grok):
     ## run executable while logging output
     with open(logfile, 'w+') as lf: # output and error log
       if ldryrun:
-        lf.write('Dry-run --- no execution')
+        lf.write('\nDry-run --- no execution\n')
         lec = True # pretend everything works
       else:
         # run HGS as subprocess
@@ -417,6 +417,23 @@ class HGS(Grok):
         # parse log file for errors
         lec = ( tail(lf, n=2)[0].strip() == '---- NORMAL EXIT ----' )
         # i.e. -2, second line from the end (and different capitalization from Grok!)
+    # compress binary 3D output fields
+    if lcompress and lec:
+      with open(logfile, 'a') as lf: # output and error log
+        try:  
+          # compress, using tar; appending to HGS log
+          tar_file = 'binary_fields.tgz'; bin_regex = '*.[0-9][0-9][0-9][0-9]'
+          ec = subprocess.call('tar czf {} {}'.format(tar_file,bin_regex), shell=True, stdout=lf, stderr=lf)
+          if ec == 0 and os.path.isfile(tar_file):
+            lf.write('\nBinary 3D output has been compressed: \'{:s}\'\n'.format(tar_file))
+            # if tarring was, remove the binary fields 
+            ec = subprocess.call('rm {}'.format(bin_regex), shell=True, stdout=lf, stderr=lf)
+            if ec == 0: lf.write('All binary 3D output files (\'{:s}\') have been removed.\n'.format(bin_regex))
+            else: lf.write('Cleanup of binary 3D output files (\'{:s}\') failed.\n'.format(bin_regex))
+          else:
+            lf.write('\nBinary output compression failed; tar exit code: {}\n'.format(ec))
+        except:
+          lf.write('\nBinary output compression failed for unknown reasons; is \'tar\' availalbe?.\n'.format(ec))
     os.chdir(pwd) # return to previous working directory
     if lerror and not lec: 
       raise HGSError("HGS failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
