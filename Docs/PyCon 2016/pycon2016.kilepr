@@ -1,4 +1,50 @@
 [General]
+def_graphic_ext=png
+img_extIsRegExp=false
+img_extensions=.eps .jpg .jpeg .png .pdf .ps .fig .gif
 kileprversion=2
 kileversion=2.1.3
+lastDocument=pycon2016.tex
+masterDocument=
 name=PyCon2016
+pkg_extIsRegExp=false
+pkg_extensions=.cls .sty .bbx .cbx .lbx
+src_extIsRegExp=false
+src_extensions=.tex .ltx .latex .dtx .ins
+
+[Tools]
+MakeIndex=
+QuickBuild=
+
+[document-settings,item:pycon2016.tex]
+Bookmarks=
+Encoding=UTF-8
+Highlighting=LaTeX
+Indentation Mode=latex
+Mode=LaTeX
+
+[item:pycon2016.kilepr]
+archive=true
+column=0
+encoding=
+highlight=
+line=0
+mode=
+open=false
+order=-1
+
+[item:pycon2016.tex]
+archive=true
+column=0
+encoding=UTF-8
+highlight=LaTeX
+line=174
+mode=LaTeX
+open=true
+order=0
+
+[view-settings,view=0,item:pycon2016.tex]
+CursorColumn=0
+CursorLine=174
+JumpList=
+ViMarks=.,901,60,[,901,60,],901,60
