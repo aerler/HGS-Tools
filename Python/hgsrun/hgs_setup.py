@@ -288,7 +288,10 @@ class HGS(Grok):
                              input_mode=input_mode, input_interval=input_interval,
                              input_folder=input_folder, length=length, lcheckdir=False)
     self.template_folder = template_folder # where to get the templates
-    self.linked_folders = ('etprop/','gb/','icbc/','prop/','soil/',) if linked_folders is None else linked_folders 
+    # prepare linked folders
+    if linked_folders is None: linked_folders = ('etprop','gb','icbc','prop','soil',)
+    linked_folders = tuple(lf[:-1] if lf[-1] == '/' else lf for lf in linked_folders) # trim slash
+    self.linked_folders = linked_folders
     # N.B.: these folders just contain static data and do not need to be replicated
     self.NP = NP # number of processors
     self.lindicators = lindicator # use indicator files
@@ -308,7 +311,6 @@ class HGS(Grok):
     # symlinks to static folder that are not copied (linked_folders)
     if self.linked_folders:
       for lf in self.linked_folders:
-        if lf[-1] == '/': lf = lf[:-1] # trim slash
         #print('linking {}: {}'.format(lf,'{}/{}'.format(self.rundir,lf)))
         os.symlink('{}/{}/'.format(template_folder,lf), '{}/{}'.format(self.rundir,lf))
     # put links to executables in place

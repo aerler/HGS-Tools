@@ -10,6 +10,11 @@ import unittest
 import numpy as np
 import os, sys, gc, shutil
 
+# WindowsError is not defined on Linux - need a dummy
+try: 
+    WindowsError
+except NameError:
+    WindowsError = None
 
 # import modules to be tested
 from hgsrun.hgs_setup import Grok, GrokError, HGS, HGSError
