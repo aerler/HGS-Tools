@@ -49,6 +49,7 @@ class Grok(object):
   '''
   grok_bin = './grok_premium.x' # default Grok executable
   batchpfx = 'batch.pfx' # a file that defines the HGS problem name for Grok
+  grok_dbg = 'grok.dbg' # Grok debug output
   rundir = None # folder where the experiment is set up and executed
   project = None # a project designator used for file names
   problem = None # the HGS problem name (defaults to project)
@@ -235,14 +236,14 @@ class Grok(object):
     # return exit code
     return ec
   
-  def runGrok(self, executable=None, logfile='log.grok', batchpfx=None, lerror=True, ldryrun=False):
+  def runGrok(self, executable=None, logfile='log.grok', batchpfx=None, lerror=True, lcompress=True, ldryrun=False):
     ''' run the Grok executable in the run directory '''
     pwd = os.getcwd() # save present workign directory to return later
     os.chdir(self.rundir) # go into run Grok/HGS folder
     self.grok_bin = executable if executable is not None else self.grok_bin
     self.batchpfx = batchpfx if batchpfx is not None else self.batchpfx
     if not os.path.isfile(self.grok_bin): 
-      raise IOError("Grok executable '{}' not found.".format(self.grok_bin))
+      raise IOError("Grok executable '{}' not found.\n".format(self.grok_bin))
     # create batch.pfx file with problem name for batch processing
     with open(self.batchpfx, 'w+') as bp: bp.write(self.problem) # just one line...
     # run executable while logging output
@@ -256,9 +257,23 @@ class Grok(object):
         # parse log file for errors
         lec = ( tail(lf, n=3)[0].strip() == '---- Normal exit ----' )
         # i.e. -3, third line from the end (different from HGS)
+    # compress grok debug output
+    if lcompress and lec:
+      with open(logfile, 'a') as lf: # output and error log
+        try:
+          if not os.path.exists(self.grok_dbg):
+            # compress using gzip (single file; no shell expansion necessary)
+            subprocess.call(['gzip',self.grok_dbg], stdout=lf, stderr=lf)
+            if os.path.exists(self.grok_dbg+'.gz'): 
+              lf.write('\nCompressed Grok debug output ({}.gz).\n'.format(self.grok_dbg))
+            else: raise IOError # just trigger exception (see below)
+          else:
+            lf.write('\nNo Grok debug output found ({}).\n'.format(self.grok_dbg))
+        except:
+          lf.write('\nGrok debug output compression failed ({}).\n'.format(self.grok_dbg))
     os.chdir(pwd) # return to previous working directory
     if lerror and not lec: 
-      raise GrokError("Grok failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
+      raise GrokError("Grok failed; inspect log-file: {}\n  ('{}')\n".format(logfile,self.rundir))
     return 0 if lec else 1
             
       
@@ -434,6 +449,7 @@ class HGS(Grok):
             lf.write('\nBinary output compression failed; tar exit code: {}\n'.format(ec))
         except:
           lf.write('\nBinary output compression failed for unknown reasons; is \'tar\' availalbe?.\n'.format(ec))
+          raise
     os.chdir(pwd) # return to previous working directory
     if lerror and not lec: 
       raise HGSError("HGS failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
