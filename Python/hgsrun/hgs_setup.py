@@ -451,13 +451,15 @@ class HGS(Grok):
           lf.write('\nBinary output compression failed for unknown reasons; is \'tar\' availalbe?.\n'.format(ec))
           raise
     os.chdir(pwd) # return to previous working directory
-    if lerror and not lec: 
-      raise HGSError("HGS failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
     self.HGSOK = lec # set Grok flag
     # set indicator file to indicate result
     if self.lindicators:
       if lec: shutil.move('{}/IN_PROGRESS'.format(self.rundir),'{}/COMPLETED'.format(self.rundir))  
-      else: shutil.move('{}/IN_PROGRESS'.format(self.rundir),'{}/FAILED'.format(self.rundir))  
+      else: shutil.move('{}/IN_PROGRESS'.format(self.rundir),'{}/FAILED'.format(self.rundir))
+    # after indicators are set, we can raise an error  
+    if lerror and not lec: 
+      raise HGSError("HGS failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
+    # return a regular (POSIX) exit code
     return 0 if lec else 1
   
   

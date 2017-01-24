@@ -159,6 +159,7 @@ class EnsHGS(object):
           if self.lreport: print("Skipping experiment folder '{:s}' (completed).".format(rundir))
           lskip = True
         elif self.lindicator and os.path.exists('{}/FAILED'.format(rundir)):
+          # this should be the last option, so as to prevent overwriting data
           if self.lrunfailed:            
             if self.lreport: print("Overwriting failed experiment folder '{:s}'.".format(rundir))
             lskip = False # rundir will be deleted
