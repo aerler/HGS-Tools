@@ -124,8 +124,8 @@ class EnsHGS(object):
         using the inner_list/outer_list arguments; the expanded argument lists are used to initialize
         the individual ensemble members; note that a string substitution is applied to all folder 
         variables (incl. 'rundir') prior to constructing the HGS instance, i.e. rundir.format(**kwargs) '''
-    self.lreport= kwargs.get('lreport',self.lreport)
-    self.loverwrite= kwargs.get('loverwrite',self.loverwrite)
+    self.lreport    = kwargs.get('lreport',self.lreport)
+    self.loverwrite = kwargs.get('loverwrite',self.loverwrite)
     self.lindicator = kwargs.get('lindicator',self.lindicator)
     self.lrunfailed = kwargs.get('lrunfailed',self.lrunfailed)
     # expand argument list (plain, nothing special)
@@ -254,7 +254,11 @@ class EnsHGS(object):
     ec = 0 # cumulative exit code (sum of all members)
     # check and run setup and configuration
     if lsetup:
-      ec = self.setupExperiments(inner_list=inner_list, outer_list=outer_list, lgrok=lgrok, lparallel=lparallel, NP=NP)
+      arglist = set(inspect.getargspec(HGS.setupRundir).args)
+      arglist.union(inspect.getargspec(HGS.setupConfig).args)
+      if lgrok: arglist.union(inspect.getargspec(HGS.runGrok).args)
+      kwargs = {arg:allargs[arg] for arg in arglist if arg in allargs}
+      ec = self.setupExperiments(inner_list=inner_list, outer_list=outer_list, lgrok=lgrok, lparallel=lparallel, NP=NP, **kwargs)
       if ec > 0 or not all(self.configOK): 
         rundirs = [rundir for rundir,OK in zip(self.rundirs,self.configOK) if not OK]
         raise GrokError("Experiment setup failed in {0} cases:\n{1}".format(ec,rundirs))

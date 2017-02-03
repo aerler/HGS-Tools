@@ -24,6 +24,11 @@ from hgsrun.hgs_ensemble import EnsHGS, EnsembleError
 data_root = os.getenv('DATA_ROOT', '')
 # test folder either RAM disk or data directory
 RAM = bool(os.getenv('RAMDISK', '')) # whether or not to use a RAM disk
+RAM = False
+loverwrite =  WindowsError is None
+# WARNING: loverwrite removes folders that contain symlinks; at least on Windows shutil's
+#          rmtree recurses into the symlinked folder and deletes all of its contents!!!
+
 # N.B.: the environment variable RAMDISK contains the path to the RAM disk
 workdir = os.getenv('RAMDISK', '') if RAM else '{:s}/test/'.format(data_root)
 if not os.path.isdir(workdir): raise IOError(workdir)
@@ -325,7 +330,7 @@ class EnsHGSTest(unittest.TestCase):
     # check license
     print('\nHGSDIR: {}'.format(self.hgsdir))
     # setup run folders and run Grok
-    enshgs.runSimulations(lsetup=True, lgrok=False, skip_grok=True, lparallel=True, NP=2, 
+    enshgs.runSimulations(lsetup=True, lgrok=False, loverwrite=loverwrite, skip_grok=True, lparallel=True, NP=2, 
                           runtime_override=120, ldryrun=not lbin) # set runtime to 2 minutes
     assert not lbin or all(g for g in enshgs.HGSOK), enshgs.HGSOK
     for rundir in enshgs.rundirs:
@@ -339,7 +344,7 @@ class EnsHGSTest(unittest.TestCase):
     enshgs = self.enshgs
     assert all(not g for g in enshgs.GrokOK), enshgs.GrokOK
     # setup run folders and run Grok
-    enshgs.setupExperiments(lgrok=lbin, lparallel=True)
+    enshgs.setupExperiments(lgrok=lbin, loverwrite=loverwrite, lparallel=True)
     assert not lbin or all(g for g in enshgs.GrokOK), enshgs.GrokOK
     for rundir in enshgs.rundirs:
       assert os.path.isdir(rundir), rundir
@@ -352,7 +357,7 @@ class EnsHGSTest(unittest.TestCase):
     enshgs = self.enshgs
     assert all(not g for g in enshgs.GrokOK), enshgs.GrokOK
     # setup run folders
-    enshgs.setupExperiments(lgrok=False, lparallel=True)
+    enshgs.setupExperiments(lgrok=False, loverwrite=loverwrite, lparallel=True)
     for rundir in enshgs.rundirs:
       assert os.path.isdir(rundir), rundir
       grok_bin = '{0}/{1}'.format(rundir,self.grok_bin)
@@ -380,8 +385,8 @@ if __name__ == "__main__":
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-#     tests += ['Grok']
-#     tests += ['HGS']    
+    tests += ['Grok']
+    tests += ['HGS']    
     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above

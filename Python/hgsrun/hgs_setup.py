@@ -261,7 +261,7 @@ class Grok(object):
     if lcompress and lec:
       with open(logfile, 'a') as lf: # output and error log
         try:
-          if not os.path.exists(self.grok_dbg):
+          if os.path.exists(self.grok_dbg):
             # compress using gzip (single file; no shell expansion necessary)
             subprocess.call(['gzip',self.grok_dbg], stdout=lf, stderr=lf)
             if os.path.exists(self.grok_dbg+'.gz'): 
@@ -317,7 +317,9 @@ class HGS(Grok):
     if template_folder is None: raise ValueError("Need to specify a template path.")
     if not os.path.isdir(template_folder): raise IOError(template_folder)
     # clear existing directory
-    if loverwrite and os.path.isdir(self.rundir): shutil.rmtree(self.rundir)
+    if loverwrite and os.path.isdir(self.rundir):
+      shutil.rmtree(self.rundir) 
+    # N.B.: rmtree is dangerous, because if follows symbolic links and deletes contents of target directories!
     # copy folder tree
     if not os.path.isdir(self.rundir): shutil.copytree(template_folder, self.rundir, symlinks=True,
                                                        ignore=shutil.ignore_patterns(*self.linked_folders))
@@ -363,10 +365,10 @@ class HGS(Grok):
     self.configOK = True if ec == 0 else False
     return ec
     
-  def runGrok(self, executable=None, logfile='log.grok', lerror=False, lconfig=True, linput=True, ldryrun=False):
+  def runGrok(self, executable=None, logfile='log.grok', lerror=False, lconfig=True, linput=True, ldryrun=False, lcompress=True):
     ''' run the Grok executable in the run directory and set flag indicating success '''
     if lconfig: self.writeConfig()
-    ec = super(HGS,self).runGrok(executable=executable, logfile=logfile, lerror=lerror, ldryrun=ldryrun)
+    ec = super(HGS,self).runGrok(executable=executable, logfile=logfile, lerror=lerror, ldryrun=ldryrun, lcompress=lcompress)
     self.GrokOK = True if ec == 0 else False # set Grok flag
     return ec
   
@@ -411,7 +413,7 @@ class HGS(Grok):
       if lerror and ec != 0: raise GrokError('Grok configuration did not complete properly.')
     # Grok run
     if not skip_grok and not self.GrokOK: 
-      ec = self.runGrok(lerror=lerror, ldryrun=ldryrun) # run grok (will raise exception if failed)
+      ec = self.runGrok(lerror=lerror, ldryrun=ldryrun, lcompress=lcompress) # run grok (will raise exception if failed)
       if lerror and ec != 0: raise GrokError('Grok did not run or complete properly.')
     # parallelindex configuration
     if not skip_pidx and not self.pidxOK:

@@ -11,7 +11,7 @@ HGSrun is capable of running single simulations or entire ensembles of simulatio
 @license:    GPL v3
 
 @contact:    aerler@aquanty.com
-@deffield    updated: 16/08/2016
+@deffield    updated: 02/02/2017
 '''
 
 # external imports
@@ -23,9 +23,9 @@ from hgsrun.hgs_ensemble import EnsHGS
 
 # meta data
 __all__ = []
-__version__ = 0.5
+__version__ = 0.8
 __date__ = '2016-08-16'
-__updated__ = '2016-08-29'
+__updated__ = '2017-02-02'
 
 DEBUG = 0
 TESTRUN = 0
@@ -56,12 +56,15 @@ def main(argv=None): # IGNORE:C0111
     program_shortdesc = __import__('__main__').__doc__
     program_license = '''  This is the command line interface of HGSrun, a program to manage HGS simulations.
   HGSrun is capable of running single simulations or entire ensembles of simulations.
+  The program is controlled through a YAML configuration file which has two major sections:
+    HGS_parameters: parameters to initialize the HGS Ensemble (passed to EnsHGS.__init__)
+    batch_config: run-time parameters for parallel batch execution (passed to EnsHGS.runSimulations)
 
   Created by Andre R. Erler on 16/08/2016
   Copyright 2016 Aquanty Inc. All rights reserved.
 
   Licensed under the GNU General Public License 3.0
-  http://www.apache.org/licenses/LICENSE-2.0
+  https://www.gnu.org/licenses/gpl.html
 
   Distributed on an "AS IS" basis without warranties
   or conditions of any kind, either express or implied.
@@ -119,11 +122,15 @@ def main(argv=None): # IGNORE:C0111
     ## load arguments from config file
     if not os.path.exists(yamlfile):
         raise CLIError("Configuration file '{:s}' not found!".format(yamlfile))          
-    # read file 
+    
+    # read YAML configuration file 
     with open(yamlfile) as f: 
       config = yaml.load(f, Loader=yaml.Loader)
-    hgs_config = config['HGS_parameters'] # HGS configuration
-    batch_config = config['batch_config'] # patch run parameters
+    # parameters to initialize the HGS Ensemble (passed to EnsHGS.__init__)
+    hgs_config = config['HGS_parameters']
+    # run-time parameters for parallel batch execution (passed to EnsHGS.runSimulations)
+    batch_config = config['batch_config']
+    
     # add data_root, if not already present
     if data_root not in hgs_config: hgs_config['DATA_ROOT'] = data_root
     # override some settings with command-line arguments
