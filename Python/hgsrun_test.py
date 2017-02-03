@@ -24,10 +24,8 @@ from hgsrun.hgs_ensemble import EnsHGS, EnsembleError
 data_root = os.getenv('DATA_ROOT', '')
 # test folder either RAM disk or data directory
 RAM = bool(os.getenv('RAMDISK', '')) # whether or not to use a RAM disk
-RAM = False
-loverwrite =  WindowsError is None
-# WARNING: loverwrite removes folders that contain symlinks; at least on Windows shutil's
-#          rmtree recurses into the symlinked folder and deletes all of its contents!!!
+RAM = WindowsError is None # RAMDISK may not exist on Windows...
+loverwrite = RAM # copying folders on disk takes long...
 
 # N.B.: the environment variable RAMDISK contains the path to the RAM disk
 workdir = os.getenv('RAMDISK', '') if RAM else '{:s}/test/'.format(data_root)
@@ -54,7 +52,6 @@ class GrokTest(unittest.TestCase):
     ''' initialize a Grok instance '''
     if not os.path.isdir(self.hgs_template): 
       raise IOError("HGS Template for testing not found:\n '{}'".format(self.hgs_template))
-    #if os.path.isdir(self.rundir): shutil.rmtree(self.rundir)
     #os.mkdir(self.rundir)
     if not os.path.isdir(self.rundir): os.mkdir(self.rundir)
     # grok test files
@@ -78,7 +75,6 @@ class GrokTest(unittest.TestCase):
     self.grok.writeConfig()
     del self.grok
     gc.collect()
-    #shutil.rmtree(self.rundir)
  
   def testClass(self):
     ''' test instantiation of class '''    
@@ -152,7 +148,6 @@ class HGSTest(GrokTest):
     ''' initialize an HGS intance '''
     if not os.path.isdir(self.hgs_template): 
       raise IOError("HGS Template for testing not found:\n '{}'".format(self.hgs_template))
-    #if os.path.isdir(self.rundir): shutil.rmtree(self.rundir)
     #os.mkdir(self.rundir)
     if not os.path.isdir(self.rundir): os.mkdir(self.rundir)
     # grok test files
@@ -231,7 +226,7 @@ class HGSTest(GrokTest):
     if not os.path.isdir(self.hgs_template): raise IOError(self.hgs_template)
     # run setup
     try: 
-      hgs.setupRundir(template_folder=self.hgs_template, bin_folder=None)
+      hgs.setupRundir(template_folder=self.hgs_template, loverwrite=loverwrite, bin_folder=None)
       # check that all items are there
       assert os.path.isdir(self.rundir), self.rundir
       for exe in (self.hgs_bin, self.grok_bin):
@@ -259,7 +254,6 @@ class EnsHGSTest(unittest.TestCase):
     ''' initialize an HGS ensemble '''
     if not os.path.isdir(self.hgs_template): 
       raise IOError("HGS Template for testing not found:\n '{}'".format(self.hgs_template))
-    #if os.path.isdir(self.rundir): shutil.rmtree(self.rundir)
     #os.mkdir(self.rundir)
     if not os.path.isdir(self.rundir): os.mkdir(self.rundir)
     # grok test files
@@ -284,8 +278,7 @@ class EnsHGSTest(unittest.TestCase):
   def tearDown(self):
     ''' clean up '''
     gc.collect()
-    #shutil.rmtree(self.rundir)
-
+    
   def testInitEns(self):
     ''' initialize the an HGS ensemble using list expansion '''
     # define simple rundir pattern

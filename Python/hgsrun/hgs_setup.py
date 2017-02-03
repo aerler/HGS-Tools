@@ -318,8 +318,10 @@ class HGS(Grok):
     if not os.path.isdir(template_folder): raise IOError(template_folder)
     # clear existing directory
     if loverwrite and os.path.isdir(self.rundir):
-      shutil.rmtree(self.rundir) 
-    # N.B.: rmtree is dangerous, because if follows symbolic links and deletes contents of target directories!
+      ec = subprocess.call(['rm','-r',self.rundir], stdout=None, stderr=None)
+      if ec > 0: raise IOError("The command rm -r {} to remove the existing directory failed; exit code {}".format(self.rundir,ec))
+      #shutil.rmtree(self.rundir) 
+      # N.B.: rmtree is dangerous, because if follows symbolic links and deletes contents of target directories!
     # copy folder tree
     if not os.path.isdir(self.rundir): shutil.copytree(template_folder, self.rundir, symlinks=True,
                                                        ignore=shutil.ignore_patterns(*self.linked_folders))
