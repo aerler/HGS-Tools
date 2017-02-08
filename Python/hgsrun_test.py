@@ -385,7 +385,7 @@ if __name__ == "__main__":
     # construct dictionary of test classes defined above
     test_classes = dict()
     local_values = locals().copy()
-    for key,val in local_values.iteritems():
+    for key,val in local_values.items():
       if key[-4:] == 'Test':
         test_classes[key[:-4]] = val
 

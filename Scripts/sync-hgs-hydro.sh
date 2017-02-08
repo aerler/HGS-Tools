@@ -4,7 +4,7 @@
 
 # pre-process arguments using getopt
 if [ -z $( getopt -T ) ]; then
-  TMP=$( getopt -o qdn:p:h --long niceness:,project:,source:,dest:,quiet,debug,config:,data-root:,no-yaml,overwrite,zip:,help -n "$0" -- "$@" ) # pre-process arguments
+  TMP=$( getopt -o qdn:p:ah --long niceness:,project:,source:,dest:,quiet,debug,config:,data-root:,no-yaml,overwrite,zip:,all,help -n "$0" -- "$@" ) # pre-process arguments
   [ $? != 0 ] && exit 1 # getopt already prints an error message
   eval set -- "$TMP" # reset positional parameters (arguments) to $TMP list
 fi # check if GNU getopt ("enhanced")
@@ -12,6 +12,7 @@ fi # check if GNU getopt ("enhanced")
 VERBOSITY=1
 NICENESS=0
 YAML='*.yaml' # --include comes later
+ALL=0 # download all files (default=False)
 #while getopts 'fs' OPTION; do # getopts version... supports only short options
 while true; do
   case "$1" in
@@ -26,6 +27,7 @@ while true; do
          --no-yaml       )   YAML=''; shift;;
          --overwrite     )   OVERWRITE='OVERWRITE'; shift 2;;
          --zip           )   ZIPFILE="$2"; shift 2;;
+    -a | --all           )   ALL=1; shift;;
     -h | --help          )   echo -e " \
                             \n\
     -n | --niceness       nicesness of the sub-processes (default: +5)\n\
@@ -39,7 +41,8 @@ while true; do
          --data-root      root folder for data repository\n\
          --no-yaml        do not update YAML configuration files (default: update)\n\
          --overwrite      download new copy of all files (not just update)\n\
-         --zip            store data in zip archive (update archive if zip file exists)\n\
+         --zip            store data in this zip archive (update archive if zip file exists)\n\
+    -a | --all            download all files, including 3D binary fields\n\
     -h | --help           print this help \n\
                              "; exit 0;; # \n\ == 'line break, next line'; for syntax highlighting
     -- ) shift; break;; # this terminates the argument list, if GNU getopt is used
@@ -83,13 +86,22 @@ echo nice --adjustment=${NICENESS} rsync --links ${ROPT} ${YINC} ${YAML}
 fi # DEBUG
 
 ## execute rsync command
-nice --adjustment=${NICENESS} rsync --links ${ROPT} ${YINC} ${YAML} \
-      --exclude '*/gb/' --exclude '*/soil/' --include '*/' --include '*.hydrograph.*.dat' \
-      --include 'parallelindx.dat' --include 'progress.dat' --include 'log.*' --include '*.grok' \
-      --include 'SCHEDULED' --include 'IN_PROGRESS' --include 'COMPLETED' \
-      --include 'batch.pfx' --include '*.log' --exclude '*' --prune-empty-dirs \
-      "${HOST}:${SRC}" "${DST}" # remote and local host/folders
-ERR=$?
+if [ $ALL -eq 0 ]
+  then
+    # copy only a specific subset of files that aren't too big
+		nice --adjustment=${NICENESS} rsync --links ${ROPT} ${YINC} ${YAML} \
+		      --exclude '*/gb/' --exclude '*/soil/' --include '*/' --include '*.hydrograph.*.dat' \
+		      --include 'parallelindx.dat' --include 'progress.dat' --include 'log.*' --include '*.grok' \
+		      --include 'SCHEDULED' --include 'IN_PROGRESS' --include 'COMPLETED' \
+		      --include 'batch.pfx' --include '*.log' --exclude '*' --prune-empty-dirs \
+		      "${HOST}:${SRC}" "${DST}" # remote and local host/folders
+		ERR=$?
+else
+    # copy the entire run folder (but do not dereference links)
+    nice --adjustment=${NICENESS} rsync --links ${ROPT} "${HOST}:${SRC}" "${DST}" # just copy everything
+    ERR=$? # capture exit code
+fi # ALL
+    
 # N.B.: this synchronizes all the hydrograph files, but also configuration and log files,
 #       including the YAML configuration files and logs of the driver script
 [ $VERBOSITY -gt 0 ] && echo && echo "Destination folder: ${DST}"
@@ -112,12 +124,9 @@ if [[ -n "$ZIPFILE" ]] && [ $ERR -eq 0 ]
     cd "${DST}/../"
     # update or create new zip archive; add date as comment
     # exclude climate data and HGS logs to reduce size
-    if [ -f "$ZIPFILE" ]; then 
-      date | zip -qruyz "$ZIPFILE" "$PROJECT" -x \*/climate_forcing/\* \*/log.hgs_run
-    else 
-      date | zip -qryz "$ZIPFILE" "$PROJECT" -x \*/climate_forcing/\* \*/log.hgs_run
-    fi # if zip file already exists
-    # N.B.: read comment with unzip -z $ZIPFILE
+    if [ -f "$ZIPFILE" ]; then ZARGS='-qruyz'; else ZARGS='-qryz'; fi # determine options
+    date | zip $ZARGS "$ZIPFILE" "$PROJECT" -i \*.hydrograph.\*.dat \*.grok \*.inc -x \*.Bc.\*.dat 
+    # N.B.: date is piped to zip as a comment; read comment with unzip -z $ZIPFILE
     [ $VERBOSITY -gt 0 ] && echo "Created Zip-file: ${ZIPFILE}" && echo
 fi # zip archive
 

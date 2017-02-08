@@ -117,7 +117,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   data_frame = pd.read_table(filepath, sep='\s+', header=2, dtype=np.float64, index_col=['time'], 
                              date_parser=date_parser, names=ascii_varlist)
   # resample to monthly data
-  data_frame = data_frame.resample(resampling).mean()
+  data_frame = data_frame.resample(resampling).agg(np.mean)
   # construct time axis
   start_time = 12*(start_year - 1979) + start_month -1
   end_time = 12*(end_year - 1979) + end_month -1
