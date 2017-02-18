@@ -16,6 +16,7 @@ from datasets.common import data_root, BatchLoad
 from geodata.base import Dataset, Variable, Axis
 from geodata.misc import ArgumentError, VariableError
 from datasets.WSC import getGageStation, GageStationError
+import datetime as dt
 
 ## WSC (Water Survey Canada) Meta-data
 
@@ -68,6 +69,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None or ( filename is None and station is None ): raise ArgumentError
+  if varlist: raise NotImplementedError
   # prepare name expansion arguments (all capitalized)
   expargs = dict(ROOT_FOLDER=root_folder, STATION=station, NAME=name, TITLE=title,
                  PREFIX=prefix, BASIN=basin, WSC_STATION=WSC_station) 
@@ -113,24 +115,49 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   if start_day != 1 or end_day != 1: 
     raise NotImplementedError('Currently only monthly data is supported.')
   date_parser = functools.partial(date_parser, year=start_year, month=start_month, day=start_day)
-  # now load data using pandas ascii reader
-  data_frame = pd.read_table(filepath, sep='\s+', header=2, dtype=np.float64, index_col=['time'], 
-                             date_parser=date_parser, names=ascii_varlist)
-  # resample to monthly data
-  data_frame = data_frame.resample(resampling).agg(np.mean)
+#   # now load data using pandas ascii reader
+#   data_frame = pd.read_table(filepath, sep='\s+', header=2, dtype=np.float64, index_col=['time'], 
+#                              date_parser=date_parser, names=ascii_varlist)
+#   # resample to monthly data
+#   data_frame = data_frame.resample(resampling).agg(np.mean)
+  # load data as tab separated values
+  data = np.genfromtxt(filepath, dtype=np.float64, delimiter=None, skip_header=3, usecols = (0,1,))
+  assert data.shape[1] == 2, data.shape
+  time_series = data[:,0]; srfc_flow = data[:,1]
+  time_diff = time_series.copy(); time_diff[1:] = np.diff(time_series) # time period between time steps
+  # integrate flow before resampling
+  srfc_flow[1:] -= np.diff(srfc_flow)/2. # get average flow between time steps
+  srfc_flow *= time_diff # integrate flow in time interval by multiplying average flow with time period
+  srfc_flow = np.cumsum(srfc_flow) # integrate by summing up total flow per time interval
+  # generate regular monthly time steps
+  start_datetime = np.datetime64(dt.datetime(year=start_year, month=start_month, day=start_day), 'M')
+  end_datetime = np.datetime64(dt.datetime(year=end_year, month=end_month, day=end_day), 'M')
+  end1_datetime = end_datetime + np.timedelta64(1, 'M')
+  time_monthly = np.arange(start_datetime, end1_datetime, dtype='datetime64[M]').astype('datetime64[s]')
+  assert time_monthly[0] == start_datetime, time_monthly[0]
+  assert time_monthly[-1] == end_datetime, time_monthly[-1] 
+  # convert to regular array of seconds since start date
+  time_monthly = ( time_monthly - start_datetime.astype('datetime64[s]') ) / np.timedelta64(1,'s')
+  assert time_monthly[0] == 0, time_monthly[0]
+  srfc_flow = np.interp(x=time_monthly, xp=time_series, fp=srfc_flow, )
+  data = np.diff(srfc_flow) / np.diff(time_monthly)
+  data = dict(discharge=data)
   # construct time axis
   start_time = 12*(start_year - 1979) + start_month -1
   end_time = 12*(end_year - 1979) + end_month -1
   time = Axis(name='time', units='month', atts=dict(long_name='Month since 1979-01'), 
               coord=np.arange(start_time, end_time)) # not including the last, e.g. 1979-01 to 1980-01 is 12 month
+  assert len(time_monthly) == end_time-start_time+1
+  assert len(data['discharge']) == len(time), data.shape
   # construct dataset
   dataset = Dataset(atts=metadata)
   dataset.station = station # add gage station object, if available (else None)
   for flowvar,fluxvar in flow_to_flux.items():
-    if flowvar in data_frame:
+    if flowvar == 'discharge':
       flowatts = variable_attributes[flowvar.lower()]
+      data = data[flowvar]
+#       data = data_frame[flowvar].values
       # convert variables and put into dataset (monthly time series)
-      data = data_frame[flowvar].values
       if flowatts['units'] == 'kg/s': data *= 1000 # convert from m^3/s to kg/s
       dataset += Variable(data=data, axes=(time,), **flowatts)
       if fluxvar and 'shp_area' in metadata:
@@ -174,7 +201,8 @@ if __name__ == '__main__':
   
   # load dataset
   dataset = loadHGS_StnTS(name=name, station=hgs_station, folder=hgs_folder, start_date=1979, 
-                          basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, )
+                          basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, 
+                          varlist=['sfroff'])
   # and print
   print(dataset)
   print('')
@@ -185,3 +213,4 @@ if __name__ == '__main__':
   print('')
   clim = dataset.climMean()
   print(clim)
+  print(clim.sfroff[:]*86400)
