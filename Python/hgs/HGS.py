@@ -10,11 +10,12 @@ Survey of Canada; the data is stored in human-readable text files and tables.
 # external imports
 import numpy as np
 import pandas as pd
-import os, functools
+import scipy.interpolate as si
+import os
 # internal imports
 from datasets.common import data_root, BatchLoad
 from geodata.base import Dataset, Variable, Axis
-from geodata.misc import ArgumentError, VariableError
+from geodata.misc import ArgumentError, VariableError, DataError
 from datasets.WSC import getGageStation, GageStationError
 import datetime as dt
 
@@ -36,7 +37,8 @@ variable_attributes = dict(sfroff = dict(name='sfroff', units='kg/m^2/s', atts=d
 variable_list = variable_attributes.keys() # also includes coordinate fields    
 flow_to_flux = dict(discharge='sfroff', seepage='ugroff', flow='runoff') # relationship between flux and flow variables
 # N.B.: computing surface flux rates from gage flows also requires the drainage area
-ascii_varlist = ['time','discharge','seepage','flow'] # internal use only; needs to have 'time'
+hgs_varlist = ['time','discharge','seepage','flow'] # internal use only; needs to have 'time'
+hgs_variables = {'surface':'discharge','porous media':'seepage','total':'flow'} # mapping of HGS variable names GeoPy conventions
 
 # a function to resolve a data
 def convertDate(date):
@@ -69,7 +71,6 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None or ( filename is None and station is None ): raise ArgumentError
-  if varlist: raise NotImplementedError
   # prepare name expansion arguments (all capitalized)
   expargs = dict(ROOT_FOLDER=root_folder, STATION=station, NAME=name, TITLE=title,
                  PREFIX=prefix, BASIN=basin, WSC_STATION=WSC_station) 
@@ -114,57 +115,86 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   else: raise ArgumentError("Need to specify either 'end_date' or 'period'.")
   if start_day != 1 or end_day != 1: 
     raise NotImplementedError('Currently only monthly data is supported.')
-  date_parser = functools.partial(date_parser, year=start_year, month=start_month, day=start_day)
+#   import functools
+#   date_parser = functools.partial(date_parser, year=start_year, month=start_month, day=start_day)
 #   # now load data using pandas ascii reader
 #   data_frame = pd.read_table(filepath, sep='\s+', header=2, dtype=np.float64, index_col=['time'], 
 #                              date_parser=date_parser, names=ascii_varlist)
 #   # resample to monthly data
 #   data_frame = data_frame.resample(resampling).agg(np.mean)
+#       data = data_frame[flowvar].values
+  # parse header
+  if varlist is None: varlist = variable_list.copy() # default list 
+  with open(filepath, 'r') as f:
+      line = f.readline(); lline = line.lower() # 1st line
+      if not "hydrograph" in lline: raise GageStationError(line)
+      # parse variables and determine columns
+      line = f.readline(); lline = line.lower() # 2nd line
+      if not "variables" in lline: raise GageStationError(line)
+      variable_order = [v.strip('"').lower() for v in line[line.find('"'):].strip().split(',')]
+  # figure out varlist and data columns
+  if variable_order[0] == 'time': del variable_order[0] # only keep variables
+  else: raise GageStationError(variable_order)
+  variable_order = [hgs_variables[v] for v in variable_order] # replace HGS names with GeoPy names
+  vardict = {v:i for i,v in enumerate(variable_order)} # column mapping
+  variable_order = [v for v in variable_order if v in varlist or flow_to_flux[v] in varlist]
+  usecols = tuple(vardict[v] for v in variable_order) # variable columns that need to loaded (except time, which is col 0)
   # load data as tab separated values
-  data = np.genfromtxt(filepath, dtype=np.float64, delimiter=None, skip_header=3, usecols = (0,1,))
-  assert data.shape[1] == 2, data.shape
-  time_series = data[:,0]; srfc_flow = data[:,1]
+  data = np.genfromtxt(filepath, dtype=np.float64, delimiter=None, skip_header=3, usecols = (0,)+usecols)
+  assert data.shape[1] == len(usecols)+1, data.shape
+  time_series = data[:,0]; flow_data = data[:,1:]
+  # original time deltas in seconds
   time_diff = time_series.copy(); time_diff[1:] = np.diff(time_series) # time period between time steps
-  # integrate flow before resampling
-  srfc_flow[1:] -= np.diff(srfc_flow)/2. # get average flow between time steps
-  srfc_flow *= time_diff # integrate flow in time interval by multiplying average flow with time period
-  srfc_flow = np.cumsum(srfc_flow) # integrate by summing up total flow per time interval
+  assert np.all( time_diff > 0 ), time_diff
+  time_diff = time_diff.reshape((len(time_diff),len(variable_order))) # reshape to make sure broadcasting works
+  # integrate flow over time steps before resampling
+  flow_data[1:] -= np.diff(flow_data, axis=0)/2. # get average flow between time steps
+  flow_data *= time_diff # integrate flow in time interval by multiplying average flow with time period
+  flow_data = np.cumsum(flow_data, axis=0) # integrate by summing up total flow per time interval
   # generate regular monthly time steps
   start_datetime = np.datetime64(dt.datetime(year=start_year, month=start_month, day=start_day), 'M')
   end_datetime = np.datetime64(dt.datetime(year=end_year, month=end_month, day=end_day), 'M')
-  end1_datetime = end_datetime + np.timedelta64(1, 'M')
-  time_monthly = np.arange(start_datetime, end1_datetime, dtype='datetime64[M]').astype('datetime64[s]')
+  time_monthly = np.arange(start_datetime, end_datetime+np.timedelta64(1, 'M'), dtype='datetime64[M]')
   assert time_monthly[0] == start_datetime, time_monthly[0]
   assert time_monthly[-1] == end_datetime, time_monthly[-1] 
-  # convert to regular array of seconds since start date
-  time_monthly = ( time_monthly - start_datetime.astype('datetime64[s]') ) / np.timedelta64(1,'s')
+  # convert monthly time series to regular array of seconds since start date
+  time_monthly = ( time_monthly.astype('datetime64[s]') - start_datetime.astype('datetime64[s]') ) / np.timedelta64(1,'s')
   assert time_monthly[0] == 0, time_monthly[0]
-  srfc_flow = np.interp(x=time_monthly, xp=time_series, fp=srfc_flow, )
-  data = np.diff(srfc_flow) / np.diff(time_monthly)
-  data = dict(discharge=data)
+  # interpolate integrated flow to new time axis
+  time_series = np.concatenate(([0],time_series), axis=0) # integrated flow at time zero must be zero...
+  flow_data = np.concatenate(([[0,]*len(usecols)],flow_data), axis=0) # ... this is probably better than interpolation
+  if (time_monthly[-1]-time_series[-1]) > 4*86400.: 
+      raise DataError("Data record ends more than 4 days befor end of period: {} days".format((time_monthly[-1]-time_series[-1])/86400.))
+  flow_interp = si.interp1d(x=time_series, y=flow_data, kind='linear', axis=0, copy=False, 
+                            bounds_error=False, fill_value='extrapolate', assume_sorted=True) 
+  flow_data = flow_interp(time_monthly) # evaluate with call
+  # compute monthly flow rate from interpolated integrated flow
+  flow_data = np.diff(flow_data, axis=0) / np.diff(time_monthly).reshape((len(time_monthly)-1,1))
+  flow_data *= 1000 # convert from m^3/s to kg/s
   # construct time axis
   start_time = 12*(start_year - 1979) + start_month -1
   end_time = 12*(end_year - 1979) + end_month -1
   time = Axis(name='time', units='month', atts=dict(long_name='Month since 1979-01'), 
               coord=np.arange(start_time, end_time)) # not including the last, e.g. 1979-01 to 1980-01 is 12 month
   assert len(time_monthly) == end_time-start_time+1
-  assert len(data['discharge']) == len(time), data.shape
+  assert flow_data.shape == (len(time),len(variable_order)), (flow_data.shape,len(time),len(variable_order))
   # construct dataset
   dataset = Dataset(atts=metadata)
   dataset.station = station # add gage station object, if available (else None)
-  for flowvar,fluxvar in flow_to_flux.items():
-    if flowvar == 'discharge':
-      flowatts = variable_attributes[flowvar.lower()]
-      data = data[flowvar]
-#       data = data_frame[flowvar].values
-      # convert variables and put into dataset (monthly time series)
-      if flowatts['units'] == 'kg/s': data *= 1000 # convert from m^3/s to kg/s
-      dataset += Variable(data=data, axes=(time,), **flowatts)
-      if fluxvar and 'shp_area' in metadata:
+  for i,flowvar in enumerate(variable_order):
+      data = flow_data[:,i]
+      fluxvar = flow_to_flux[flowvar]
+      if flowvar in varlist:
+        flowatts = variable_attributes[flowvar]
+        # convert variables and put into dataset (monthly time series)
+        if flowatts['units'] != 'kg/s': 
+          raise VariableError("Hydrograph data is read as kg/s; flow variable does not match.\n{}".format(flowatts))
+        dataset += Variable(data=data, axes=(time,), **flowatts)
+      if fluxvar in varlist and 'shp_area' in metadata:
         # compute surface flux variable based on drainage area
-        fluxatts = variable_attributes[fluxvar.lower()]
-        if flowatts['units'] == 'kg/s' and fluxatts['units'] != 'kg/m^2/s': raise VariableError(fluxatts)
-        data = data / metadata['shp_area']
+        fluxatts = variable_attributes[fluxvar]
+        if fluxatts['units'] == 'kg/s' and fluxatts['units'] != 'kg/m^2/s': raise VariableError(fluxatts)
+        data = data / metadata['shp_area'] # need to make a copy
         dataset += Variable(data=data, axes=(time,), **fluxatts)
   # return completed dataset
   return dataset
@@ -202,7 +232,7 @@ if __name__ == '__main__':
   # load dataset
   dataset = loadHGS_StnTS(name=name, station=hgs_station, folder=hgs_folder, start_date=1979, 
                           basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, 
-                          varlist=['sfroff'])
+                          varlist=['discharge'])
   # and print
   print(dataset)
   print('')
@@ -213,4 +243,5 @@ if __name__ == '__main__':
   print('')
   clim = dataset.climMean()
   print(clim)
-  print(clim.sfroff[:]*86400)
+  print(clim.discharge[:]*86400)
+#   print(clim.sfroff[:]*86400)
