@@ -124,7 +124,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
 #   data_frame = data_frame.resample(resampling).agg(np.mean)
 #       data = data_frame[flowvar].values
   # parse header
-  if varlist is None: varlist = variable_list.copy() # default list 
+  if varlist is None: varlist = variable_list[:] # default list 
   with open(filepath, 'r') as f:
       line = f.readline(); lline = line.lower() # 1st line
       if not "hydrograph" in lline: raise GageStationError(line)
@@ -136,19 +136,21 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   if variable_order[0] == 'time': del variable_order[0] # only keep variables
   else: raise GageStationError(variable_order)
   variable_order = [hgs_variables[v] for v in variable_order] # replace HGS names with GeoPy names
-  vardict = {v:i for i,v in enumerate(variable_order)} # column mapping
+  vardict = {v:i+1 for i,v in enumerate(variable_order)} # column mapping; +1 because time was removed
   variable_order = [v for v in variable_order if v in varlist or flow_to_flux[v] in varlist]
   usecols = tuple(vardict[v] for v in variable_order) # variable columns that need to loaded (except time, which is col 0)
+  assert 0 not in usecols, usecols
   # load data as tab separated values
   data = np.genfromtxt(filepath, dtype=np.float64, delimiter=None, skip_header=3, usecols = (0,)+usecols)
   assert data.shape[1] == len(usecols)+1, data.shape
   time_series = data[:,0]; flow_data = data[:,1:]
+  assert flow_data.shape == (len(time_series),len(usecols)), flow_data.shape
   # original time deltas in seconds
   time_diff = time_series.copy(); time_diff[1:] = np.diff(time_series) # time period between time steps
   assert np.all( time_diff > 0 ), time_diff
-  time_diff = time_diff.reshape((len(time_diff),len(variable_order))) # reshape to make sure broadcasting works
+  time_diff = time_diff.reshape((len(time_diff),1)) # reshape to make sure broadcasting works
   # integrate flow over time steps before resampling
-  flow_data[1:] -= np.diff(flow_data, axis=0)/2. # get average flow between time steps
+  flow_data[1:,:] -= np.diff(flow_data, axis=0)/2. # get average flow between time steps
   flow_data *= time_diff # integrate flow in time interval by multiplying average flow with time period
   flow_data = np.cumsum(flow_data, axis=0) # integrate by summing up total flow per time interval
   # generate regular monthly time steps
@@ -161,6 +163,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   time_monthly = ( time_monthly.astype('datetime64[s]') - start_datetime.astype('datetime64[s]') ) / np.timedelta64(1,'s')
   assert time_monthly[0] == 0, time_monthly[0]
   # interpolate integrated flow to new time axis
+  #flow_data = np.interp(time_monthly, xp=time_series[:,0], fp=flow_data[:,0],).reshape((len(time_monthly),1))
   time_series = np.concatenate(([0],time_series), axis=0) # integrated flow at time zero must be zero...
   flow_data = np.concatenate(([[0,]*len(usecols)],flow_data), axis=0) # ... this is probably better than interpolation
   if (time_monthly[-1]-time_series[-1]) > 4*86400.: 
@@ -169,7 +172,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
                             bounds_error=False, fill_value='extrapolate', assume_sorted=True) 
   flow_data = flow_interp(time_monthly) # evaluate with call
   # compute monthly flow rate from interpolated integrated flow
-  flow_data = np.diff(flow_data, axis=0) / np.diff(time_monthly).reshape((len(time_monthly)-1,1))
+  flow_data = np.diff(flow_data, axis=0) / np.diff(time_monthly, axis=0).reshape((len(time_monthly)-1,1))
   flow_data *= 1000 # convert from m^3/s to kg/s
   # construct time axis
   start_time = 12*(start_year - 1979) + start_month -1
@@ -226,13 +229,13 @@ if __name__ == '__main__':
   name = 'HGS-{BASIN:s}' # will be expanded
   WSC_station = 'Grand River_Brantford'
 #   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
-  hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/g-ensemble-2050_d01/annual_15/hgs_run'
+  hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/NRCan/clim_15/hgs_run'
   hgs_station = 'GR_Brantford'
   
   # load dataset
   dataset = loadHGS_StnTS(name=name, station=hgs_station, folder=hgs_folder, start_date=1979, 
                           basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, 
-                          varlist=['discharge'])
+                          varlist=None)
   # and print
   print(dataset)
   print('')
@@ -243,5 +246,5 @@ if __name__ == '__main__':
   print('')
   clim = dataset.climMean()
   print(clim)
-  print(clim.discharge[:]*86400)
+  print(clim.discharge[:])
 #   print(clim.sfroff[:]*86400)
