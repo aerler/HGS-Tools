@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import scipy.interpolate as si
 import os
+from warnings import warn
 # internal imports
 from datasets.common import data_root, BatchLoad
 from geodata.base import Dataset, Variable, Axis
@@ -65,9 +66,8 @@ def date_parser(seconds, year=1979, month=1, day=1, **kwargs):
 
 ## function to load HGS station timeseries
 def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=None, title=None,
-                  start_date=1979, end_date=None, period=15, date_parser=date_parser, 
-                  basin=None, WSC_station=None, basin_list=None, 
-                  filename=station_file, prefix=None, resampling='1M', **kwargs):
+                  start_date=1979, end_date=None, run_period=15, period=None, lskipNaN=False, lcheckComplete=True,
+                  basin=None, WSC_station=None, basin_list=None, filename=station_file, prefix=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None or ( filename is None and station is None ): raise ArgumentError
@@ -111,7 +111,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   # now determine start data for date_parser
   start_year,start_month,start_day = convertDate(start_date)
   if end_date is not None: end_year,end_month,end_day = convertDate(end_date)
-  elif period is not None: end_year = start_year + period; end_month = end_day = 1
+  elif run_period is not None: end_year = start_year + run_period; end_month = end_day = 1
   else: raise ArgumentError("Need to specify either 'end_date' or 'period'.")
   if start_day != 1 or end_day != 1: 
     raise NotImplementedError('Currently only monthly data is supported.')
@@ -143,11 +143,13 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   # load data as tab separated values
   data = np.genfromtxt(filepath, dtype=np.float64, delimiter=None, skip_header=3, usecols = (0,)+usecols)
   assert data.shape[1] == len(usecols)+1, data.shape
+  if lskipNaN:
+      data = data[np.isnan(data).sum(axis=1)==0,:]
   time_series = data[:,0]; flow_data = data[:,1:]
   assert flow_data.shape == (len(time_series),len(usecols)), flow_data.shape
   # original time deltas in seconds
   time_diff = time_series.copy(); time_diff[1:] = np.diff(time_series) # time period between time steps
-  assert np.all( time_diff > 0 ), time_diff
+  assert np.all( time_diff > 0 ), filepath
   time_diff = time_diff.reshape((len(time_diff),1)) # reshape to make sure broadcasting works
   # integrate flow over time steps before resampling
   flow_data[1:,:] -= np.diff(flow_data, axis=0)/2. # get average flow between time steps
@@ -166,8 +168,13 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   #flow_data = np.interp(time_monthly, xp=time_series[:,0], fp=flow_data[:,0],).reshape((len(time_monthly),1))
   time_series = np.concatenate(([0],time_series), axis=0) # integrated flow at time zero must be zero...
   flow_data = np.concatenate(([[0,]*len(usecols)],flow_data), axis=0) # ... this is probably better than interpolation
-  if (time_monthly[-1]-time_series[-1]) > 4*86400.: 
-      raise DataError("Data record ends more than 4 days befor end of period: {} days".format((time_monthly[-1]-time_series[-1])/86400.))
+  if ( time_monthly[-1] - time_series[-1] ) > 3*86400. and lcheckComplete: 
+      warn("Data record ends more than 3 days befor end of period: {} days".format((time_monthly[-1]-time_series[-1])/86400.))
+  elif (time_monthly[-1]-time_series[-1]) > 5*86400.: 
+      if lcheckComplete: 
+        raise DataError("Data record ends more than 5 days befor end of period: {} days".format((time_monthly[-1]-time_series[-1])/86400.))
+      else:
+        warn("Data record ends more than 5 days befor end of period: {} days".format((time_monthly[-1]-time_series[-1])/86400.))
   flow_interp = si.interp1d(x=time_series, y=flow_data, kind='linear', axis=0, copy=False, 
                             bounds_error=False, fill_value='extrapolate', assume_sorted=True) 
   flow_data = flow_interp(time_monthly) # evaluate with call
@@ -199,6 +206,9 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
         if fluxatts['units'] == 'kg/s' and fluxatts['units'] != 'kg/m^2/s': raise VariableError(fluxatts)
         data = data / metadata['shp_area'] # need to make a copy
         dataset += Variable(data=data, axes=(time,), **fluxatts)
+  # apply analysis period
+  if period is not None:
+      dataset = dataset(years=period)
   # return completed dataset
   return dataset
 
@@ -206,14 +216,13 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
 # wrapper to load HGS ensembles, otherwise the same
 @BatchLoad
 def loadHGS_StnEns(station=None, varlist=None, varatts=None, folder=None, name=None, title=None,
-                   start_date=1979, end_date=None, period=15, date_parser=date_parser, 
-                   basin=None, WSC_station=None, basin_list=None, 
-                   filename=station_file, prefix=None, resampling='1M', **kwargs):
+                   start_date=1979, end_date=None, run_period=15, period=None, lskipNaN=False, lcheckComplete=True, 
+                   basin=None, WSC_station=None, basin_list=None, filename=station_file, prefix=None, **kwargs):
   ''' a wrapper for loadHGS_StnTS that supports full inner and outer product expansion of arguments  '''
-  return loadHGS_StnTS(station=station, varlist=varlist, varatts=varatts, folder=folder, name=name, 
-                       title=name, start_date=start_date, end_date=end_date, period=period, 
-                       date_parser=date_parser, basin=basin, WSC_station=WSC_station, prefix=prefix,
-                       basin_list=basin_list, filename=filename, resampling=resampling, **kwargs)
+  return loadHGS_StnTS(station=station, varlist=varlist, varatts=varatts, folder=folder, name=name,title=name, 
+                       start_date=start_date, end_date=end_date, run_period=run_period, period=period, basin=basin, 
+                       WSC_station=WSC_station, prefix=prefix, lskipNaN=lskipNaN, lcheckComplete=lcheckComplete, 
+                       basin_list=basin_list, filename=filename, **kwargs)
   
 
 ## abuse for testing
@@ -229,13 +238,15 @@ if __name__ == '__main__':
   name = 'HGS-{BASIN:s}' # will be expanded
   WSC_station = 'Grand River_Brantford'
 #   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
-  hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/NRCan/clim_15/hgs_run'
+#   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/NRCan/annual_15/hgs_run'
+  hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/t-ens-C_d01/clim_15/hgs_run'
   hgs_station = 'GR_Brantford'
   
   # load dataset
   dataset = loadHGS_StnTS(name=name, station=hgs_station, folder=hgs_folder, start_date=1979, 
                           basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, 
-                          varlist=None)
+                          lskipNaN=True, lcheckComplete=True,
+                          varlist=None, period=(1984,1994))
   # and print
   print(dataset)
   print('')
@@ -246,5 +257,5 @@ if __name__ == '__main__':
   print('')
   clim = dataset.climMean()
   print(clim)
-  print(clim.discharge[:])
-#   print(clim.sfroff[:]*86400)
+#   print(clim.discharge[:])
+  print(clim.sfroff[:]*86400)
