@@ -168,6 +168,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   #flow_data = np.interp(time_monthly, xp=time_series[:,0], fp=flow_data[:,0],).reshape((len(time_monthly),1))
   time_series = np.concatenate(([0],time_series), axis=0) # integrated flow at time zero must be zero...
   flow_data = np.concatenate(([[0,]*len(usecols)],flow_data), axis=0) # ... this is probably better than interpolation
+  # N.B.: we are adding zeros here so we don't have to extrapolate to the left; on the right we just fill in NaN's
   if ( time_monthly[-1] - time_series[-1] ) > 3*86400. and lcheckComplete: 
       warn("Data record ends more than 3 days befor end of period: {} days".format((time_monthly[-1]-time_series[-1])/86400.))
   elif (time_monthly[-1]-time_series[-1]) > 5*86400.: 
@@ -176,7 +177,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
       else:
         warn("Data record ends more than 5 days befor end of period: {} days".format((time_monthly[-1]-time_series[-1])/86400.))
   flow_interp = si.interp1d(x=time_series, y=flow_data, kind='linear', axis=0, copy=False, 
-                            bounds_error=False, fill_value='extrapolate', assume_sorted=True) 
+                            bounds_error=False, fill_value=np.NaN, assume_sorted=True) 
   flow_data = flow_interp(time_monthly) # evaluate with call
   # compute monthly flow rate from interpolated integrated flow
   flow_data = np.diff(flow_data, axis=0) / np.diff(time_monthly, axis=0).reshape((len(time_monthly)-1,1))
