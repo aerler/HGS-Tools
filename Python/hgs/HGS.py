@@ -15,9 +15,9 @@ import os
 from warnings import warn
 # internal imports
 from datasets.common import data_root, BatchLoad
-from geodata.base import Dataset, Variable, Axis
+from geodata.base import Dataset, Variable, Axis, concatDatasets
 from geodata.misc import ArgumentError, VariableError, DataError
-from datasets.WSC import getGageStation, GageStationError
+from datasets.WSC import getGageStation, GageStationError, loadGageStation_TS
 import datetime as dt
 
 ## WSC (Water Survey Canada) Meta-data
@@ -103,10 +103,10 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   metadata['problem'] = prefix
   metadata['station_name'] = metadata['long_name']
   if name is not None: name = name.format(**expargs) # name expansion with capitalized keyword arguments
-  else: name = 'HGS_{:s}'.format(station_name) if name is None else name
-  metadata['name'] = name
-  if title is not None: title = title.format(**expargs) # name expansion with capitalized keyword arguments
-  else: title = '{long_name:s} (HGS, {problem:s})'.format(**metadata) if title is None else title
+  else: name = 'HGS_{:s}'.format(station_name)
+  metadata['name'] = name; expargs['Name'] = name.title() # name in title format
+  if title is None: title = '{{Name:s}} (HGS, {problem:s})'.format(**metadata)
+  title = title.format(**expargs) # name expansion with capitalized keyword arguments
   metadata['long_name'] = metadata['title'] = title
   # now determine start data for date_parser
   start_year,start_month,start_day = convertDate(start_date)
@@ -214,49 +214,121 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   return dataset
 
 
-# wrapper to load HGS ensembles, otherwise the same
+# an enhanced ensemble loader that supports argument expansion and construction of ensemble datasets
 @BatchLoad
-def loadHGS_StnEns(station=None, varlist=None, varatts=None, folder=None, name=None, title=None,
-                   start_date=1979, end_date=None, run_period=15, period=None, lskipNaN=False, lcheckComplete=True, 
-                   basin=None, WSC_station=None, basin_list=None, filename=station_file, prefix=None, **kwargs):
-  ''' a wrapper for loadHGS_StnTS that supports full inner and outer product expansion of arguments  '''
-  return loadHGS_StnTS(station=station, varlist=varlist, varatts=varatts, folder=folder, name=name,title=name, 
-                       start_date=start_date, end_date=end_date, run_period=run_period, period=period, basin=basin, 
-                       WSC_station=WSC_station, prefix=prefix, lskipNaN=lskipNaN, lcheckComplete=lcheckComplete, 
-                       basin_list=basin_list, filename=filename, **kwargs)
-  
+def loadHGS_StnEns(ensemble=None, station=None, varlist=None, varatts=None, name=None, title=None, 
+                   period=None, run_period=15, folder=None, obs_period=None, filename=station_file,  
+                   ensemble_list=None, ensemble_args=None, observation_list=None, # ensemble and obs lists for project
+                   load_HGS_StnTS=loadHGS_StnTS, loadGageStation_TS=loadGageStation_TS, # these can also be overloaded
+                   prefix=None, WSC_station=None, basin=None, basin_list=None, **kwargs):
+  ''' a wrapper for the regular HGS loader that can also load gage stations and assemble ensembles '''
+  if observation_list is None: observation_list = ('obs','observations')
+  if ensemble_list is None: ensemble_list = dict() # empty, i.e. no ensembles
+  elif not isinstance(ensemble_list, dict): raise TypeError(ensemble_list)
+  # decide what to do, based on inputs
+  if ensemble.lower() in observation_list:
+      # translate parameters
+      station = station if WSC_station is None else WSC_station
+      period = period if obs_period is None else obs_period
+      filetype = 'monthly'
+      # load gage station with slightly altered parameters
+      dataset = loadGageStation_TS(station=station, name=name, title=title, basin=basin, basin_list=basin_list, 
+                                   varlist=varlist, varatts=varatts, period=period, filetype=filetype)
+  elif ensemble.lower() in ensemble_list:
+      if ensemble_args is None: ensemble_args = dict()
+      # loop over list of experiments in ensemble
+      ens = []
+      for exp in ensemble_list[ensemble]:
+          # load individual HGS simulation
+          ds = loadHGS_StnTS(station=station, varlist=varlist, varatts=varatts, name=name, title=title, period=period, 
+                             ENSEMBLE=exp, run_period=run_period, folder=folder, prefix=prefix, WSC_station=WSC_station, 
+                             basin=basin, basin_list=basin_list, **kwargs)
+          ens.append(ds)
+      # construct ensemble by concatenating time-series
+      ensemble_args.setdefault('name',ds.name.replace(exp,ensemble).replace(exp.title(),ensemble.title()))
+      ensemble_args.setdefault('title',ds.title.replace(exp,ensemble).replace(exp.title(),ensemble.title())) 
+      # N.B.: the ensemble name is constructed by replacing the experiment name in specific dataset names with the ensemble name
+      ensemble_args.setdefault('axis','time')
+      dataset = concatDatasets(ens, **ensemble_args)
+  else:
+      # load HGS simulation
+      dataset = loadHGS_StnTS(station=station, varlist=varlist, varatts=varatts, name=name, title=title, period=period, 
+                              ENSEMBLE=ensemble, run_period=run_period, folder=folder, prefix=prefix, 
+                              WSC_station=WSC_station, basin=basin, basin_list=basin_list, **kwargs)
+  return dataset
+
 
 ## abuse for testing
 if __name__ == '__main__':
 
-  from projects.WSC_basins import basin_list
-#   basin_list = dict(GRW=BasinSet(name='GRW', long_name='Grand River Watershed', rivers=['Grand River'], 
-#                                  data_source='Aquanty', stations={'Grand River':['Brantford']}, 
-#                                  subbasins=['WholeGRW','UpperGRW','LowerGRW','NorthernGRW','SouthernGRW','WesternGRW']))
+#   from projects.WSC_basins import basin_list
+  from datasets.WSC import BasinSet
+  basin_list = dict(GRW=BasinSet(name='GRW', long_name='Grand River Watershed', rivers=['Grand River'], 
+                                 data_source='Aquanty', stations={'Grand River':['Brantford']}, 
+                                 subbasins=['WholeGRW','UpperGRW','LowerGRW','NorthernGRW','SouthernGRW','WesternGRW']))
 
   # settings
   basin_name = 'GRW'
-  name = 'HGS-{BASIN:s}' # will be expanded
   WSC_station = 'Grand River_Brantford'
-#   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
-#   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/NRCan/annual_15/hgs_run'
-  hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/t-ens-C_d01/clim_15/hgs_run'
   hgs_station = 'GR_Brantford'
-  
-  # load dataset
-  dataset = loadHGS_StnTS(name=name, station=hgs_station, folder=hgs_folder, start_date=1979, 
-                          basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, 
-                          lskipNaN=True, lcheckComplete=True,
-                          varlist=None, period=(1984,1994))
-  # and print
-  print(dataset)
-  print('')
-  print(dataset.name)
-  print(dataset.prettyPrint(short=True))
-  
-  # some common operations
-  print('')
-  clim = dataset.climMean()
-  print(clim)
-#   print(clim.discharge[:])
-  print(clim.sfroff[:]*86400)
+
+#   test_mode = 'gage_station'
+#   test_mode = 'dataset'
+  test_mode = 'ensemble'
+
+
+  if test_mode == 'gage_station':
+    
+    # load single dataset
+    ds = loadGageStation_TS(station=WSC_station, basin=basin_name, period=(1974,2004), 
+                            basin_list=basin_list, filetype='monthly')
+    print(ds)
+    
+  elif test_mode == 'dataset':
+
+    hgs_name = 'HGS-{BASIN:s}' # will be expanded
+    #   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
+    #   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/NRCan/annual_15/hgs_run'
+    hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{CLIM:s}/hgs_run'
+
+    # load dataset
+    dataset = loadHGS_StnTS(name=hgs_name, station=hgs_station, folder=hgs_folder, run_period=15, 
+                            basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, 
+                            lskipNaN=True, lcheckComplete=True, varlist=None, period=(2050,2060),
+                            EXP='g-ensemble', PRD='-2050', DOM=2, CLIM='clim_15')
+    # N.B.: there is not record of actual calendar time in HGS, so periods are anchored through start_date/run_period
+    # and print
+    print(dataset)
+    print('')
+    print(dataset.name)
+    print(dataset.prettyPrint(short=True))
+    
+    # some common operations
+    print('')
+    clim = dataset.climMean()
+    print(clim)
+  #   print(clim.discharge[:])
+    print(clim.sfroff[:]*86400)
+
+    
+  elif test_mode == 'ensemble':
+    
+    ens_name = '{ENSEMBLE:s}{PRDSTR:s}'
+    ens_folder = '{ROOT_FOLDER:s}/GRW/grw2/{ENSEMBLE:s}{PRDSTR:s}_d{DOM:02d}/{CLIM:s}/hgs_run'
+    # actual ensemble definition
+    ensemble_list = {'g-mean':('g-ctrl','g-ens-A','g-ens-B','g-ens-C'),
+                     't-mean':('t-ctrl','t-ens-A','t-ens-B','t-ens-C')}
+
+    # load an esemble of datasets
+    ens = loadHGS_StnEns(ensemble=['g-mean','t-mean'], DOM=1, CLIM='clim_15', run_period=15,
+                         period=[(1984,1994),(2050,2060),(2090,2100)], PRDSTR=['','-2050','-2100'],
+                         station=hgs_station, name=ens_name, basin=basin_name,
+                         WSC_station=WSC_station, basin_list=basin_list, folder=ens_folder,
+                         lskipNaN=True, lcheckComplete=True, varlist=None, obs_period=(1974,2004),
+                         ens_name='HGS Ensemble', ens_title='HGS Ensemble based on WRF Ensemble',
+                         ensemble_list=ensemble_list,
+                         outer_list=['ensemble',('period','PRDSTR')], lensemble=True)
+    # N.B.: all need to have unique names... whihc is a problem with obs...
+    print(ens)
+    print('\n')
+    print(ens[0])
