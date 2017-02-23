@@ -219,7 +219,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
 def loadHGS_StnEns(ensemble=None, station=None, varlist=None, varatts=None, name=None, title=None, 
                    period=None, run_period=15, folder=None, obs_period=None, filename=station_file,  
                    ensemble_list=None, ensemble_args=None, observation_list=None, # ensemble and obs lists for project
-                   load_HGS_StnTS=loadHGS_StnTS, loadGageStation_TS=loadGageStation_TS, # these can also be overloaded
+                   loadHGS_StnTS=loadHGS_StnTS, loadGageStation_TS=loadGageStation_TS, # these can also be overloaded
                    prefix=None, WSC_station=None, basin=None, basin_list=None, **kwargs):
   ''' a wrapper for the regular HGS loader that can also load gage stations and assemble ensembles '''
   if observation_list is None: observation_list = ('obs','observations')
