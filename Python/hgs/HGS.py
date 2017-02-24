@@ -145,6 +145,8 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   assert data.shape[1] == len(usecols)+1, data.shape
   if lskipNaN:
       data = data[np.isnan(data).sum(axis=1)==0,:]
+  elif np.any( np.isnan(data) ):
+      raise DataError("Missing values (NaN) encountered in hydrograph file; use 'lskipNaN' to ignore.\n('{:s}')".format(filepath))    
   time_series = data[:,0]; flow_data = data[:,1:]
   assert flow_data.shape == (len(time_series),len(usecols)), flow_data.shape
   # original time deltas in seconds
@@ -225,6 +227,7 @@ def loadHGS_StnEns(ensemble=None, station=None, varlist=None, varatts=None, name
   if observation_list is None: observation_list = ('obs','observations')
   if ensemble_list is None: ensemble_list = dict() # empty, i.e. no ensembles
   elif not isinstance(ensemble_list, dict): raise TypeError(ensemble_list)
+  if ensemble is None: raise ArgumentError("Mandatory argument 'ensemble' is not defined!")
   # decide what to do, based on inputs
   if ensemble.lower() in observation_list:
       # translate parameters
