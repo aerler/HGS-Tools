@@ -1,0 +1,6 @@
+ - copy folder
+ - delete already completed "output times" (until last output time)
+ - copy last valid output time to "initial time" (and delete also)
+ - comment out "restart file for heads" (and value)
+ - in "use domain type" "porous media" add "initial heads from output file" and add path to *.head_pm.00??
+ - in "use zone type" "surface" add "initial heads from output file" with path to *.head_olf.00??

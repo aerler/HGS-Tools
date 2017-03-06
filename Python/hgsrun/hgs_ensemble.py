@@ -234,7 +234,8 @@ class EnsHGS(object):
     kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.setupConfig).args if arg in allargs}
     ecs = self.setupConfig(inner_list=None, outer_list=None, lparallel=lparallel, NP=NP, **kwargs)
     if any(ecs) or not all(self.configOK): 
-      raise GrokError("Grok configuration failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
+      raise GrokError("Grok configuration failed in {0} cases:\n{1}".format(sum(ecs),
+                                                                            [rd for rd,e in zip(self.rundirs,ecs) if e > 0]))
     ec += sum(ecs)
     # run Grok
     if lgrok: 

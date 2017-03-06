@@ -9,6 +9,8 @@ Unittests for hgsrun components.
 import unittest
 import numpy as np
 import os, sys, gc, shutil
+import subprocess
+from subprocess import STDOUT
 
 # WindowsError is not defined on Linux - need a dummy
 try: 
@@ -24,7 +26,7 @@ from hgsrun.hgs_ensemble import EnsHGS, EnsembleError
 data_root = os.getenv('DATA_ROOT', '')
 # test folder either RAM disk or data directory
 RAM = bool(os.getenv('RAMDISK', '')) # whether or not to use a RAM disk
-RAM = WindowsError is None # RAMDISK may not exist on Windows...
+# RAM = WindowsError is None # RAMDISK may not exist on Windows...
 loverwrite = RAM # copying folders on disk takes long...
 
 # N.B.: the environment variable RAMDISK contains the path to the RAM disk
@@ -52,8 +54,9 @@ class GrokTest(unittest.TestCase):
     ''' initialize a Grok instance '''
     if not os.path.isdir(self.hgs_template): 
       raise IOError("HGS Template for testing not found:\n '{}'".format(self.hgs_template))
-    #os.mkdir(self.rundir)
-    if not os.path.isdir(self.rundir): os.mkdir(self.rundir)
+    if os.path.isdir(self.rundir):
+      subprocess.call(['rm','-r',self.rundir],) # ignore errors... somehow this is unreliable on Windows...
+    os.mkdir(self.rundir) # don't try to create if remove failed...
     # grok test files
     self.grok_input  = '{}/{}.grok'.format(self.hgs_template,self.hgs_testcase)
     self.grok_output = '{}/{}.grok'.format(self.rundir,self.hgs_testcase)
@@ -148,8 +151,9 @@ class HGSTest(GrokTest):
     ''' initialize an HGS intance '''
     if not os.path.isdir(self.hgs_template): 
       raise IOError("HGS Template for testing not found:\n '{}'".format(self.hgs_template))
-    #os.mkdir(self.rundir)
-    if not os.path.isdir(self.rundir): os.mkdir(self.rundir)
+    if os.path.isdir(self.rundir):
+      subprocess.call(['rm','-r',self.rundir],) # ignore errors... somehow this is unreliable on Windows...
+    os.mkdir(self.rundir) # don't try to create if remove failed...
     # grok test files
     self.grok_input  = '{}/{}.grok'.format(self.hgs_template,self.hgs_testcase)
     self.grok_output = '{}/{}.grok'.format(self.rundir,self.hgs_testcase)
@@ -162,13 +166,20 @@ class HGSTest(GrokTest):
     # create Grok instance
     self.hgs = HGS(rundir=self.rundir, project=self.hgs_testcase, runtime=self.runtime,
                    input_mode=self.input_mode, input_interval=self.input_interval, 
-                   input_prefix=self.test_prefix, input_folder=self.test_data ,NP=self.NP)
+                   input_prefix=self.test_prefix, input_folder=self.test_data ,
+                   template_folder=self.hgs_template, NP=self.NP)
     self.grok = self.hgs
     # load a config file from template
     if not os.path.isfile(self.grok_input):
       raise IOError("Grok configuration file for testing not found:\n '{}'".format(self.grok_input))
     self.grok.readConfig(folder=self.hgs_template)
     assert isinstance(self.hgs._lines, list), self.hgs._lines
+
+  def tearDown(self):
+    ''' clean up '''
+    self.grok.writeConfig()
+    del self.grok, self.hgs
+    gc.collect()
 
   def testParallelIndex(self):
     ''' test writing of parallelindex file '''
@@ -254,8 +265,9 @@ class EnsHGSTest(unittest.TestCase):
     ''' initialize an HGS ensemble '''
     if not os.path.isdir(self.hgs_template): 
       raise IOError("HGS Template for testing not found:\n '{}'".format(self.hgs_template))
-    #os.mkdir(self.rundir)
-    if not os.path.isdir(self.rundir): os.mkdir(self.rundir)
+    if os.path.isdir(self.rundir):
+      subprocess.call(['rm','-r',self.rundir],) # ignore errors... somehow this is unreliable on Windows...
+    os.mkdir(self.rundir) # create new test folder
     # grok test files
     self.grok_input  = '{}/{}.grok'.format(self.hgs_template,self.hgs_testcase)
     self.grok_output = '{}/{}.grok'.format(self.rundir,self.hgs_testcase)
@@ -277,6 +289,7 @@ class EnsHGSTest(unittest.TestCase):
 
   def tearDown(self):
     ''' clean up '''
+    del self.enshgs
     gc.collect()
     
   def testInitEns(self):

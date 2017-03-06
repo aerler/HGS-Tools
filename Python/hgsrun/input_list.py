@@ -141,6 +141,7 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
                           listformat=list_format, lvalidate=True, units='seconds', l365=True, lFortran=True, 
                           interval='monthly', length=0, end_time=0, mode='climatology', period='yearly'):
   ''' a function to generate a list of climate data input files for HGS '''
+  if folder: filename = '{}/{}'.format(folder,filename) 
   # determine end time in seconds (begin == 0) or number of intervals (length)
   length, end_time = resolveInterval(length=length, end_time=end_time, interval=interval)
   # construct time and file name lists
@@ -166,7 +167,6 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
       raise NotImplementedError(interval)
   # write time/filepath list based on iterators
   listformat = listformat+'\n' # need *two* end of line character
-  os.chdir(folder) # move into run folder
   if os.path.exists(filename): os.remove(filename) # remove old file
   with open(filename, 'w') as openfile: # open file list
     list_time = 0 # in case there is no iteration (needed below)
@@ -188,6 +188,8 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
       openfile.write(listformat.format(T=list_time,F=filepath))
     if list_time < end_time: # add another line until the end of the simulation
       openfile.write(listformat.format(T=end_time,F=filepath))
+  # check results and return file status
+  return os.path.isfile(filename)
     
     
 # abuse for testing

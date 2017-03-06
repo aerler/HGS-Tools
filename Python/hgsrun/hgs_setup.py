@@ -228,11 +228,11 @@ class Grok(object):
       input_pattern = '{0}_{1}.asc'.format(wrfvar,input_pattern)
       if input_prefix is not None: input_pattern = '{0}_{1}'.format(input_prefix,input_pattern)
       # write file list
-      generateInputFilelist(filename=filename, folder=self.rundir, input_folder=self.input_folder, 
-                            input_pattern=input_pattern, lcenter=lcenter, 
-                            lvalidate=lvalidate, units='seconds', l365=l365, lFortran=lFortran, 
-                            interval=self.input_interval, end_time=self.runtime, mode=self.input_mode)
-      ec += 0 if os.path.isfile(filename) else 1    
+      lec = generateInputFilelist(filename=filename, folder=self.rundir, input_folder=self.input_folder, 
+                                  input_pattern=input_pattern, lcenter=lcenter, lvalidate=lvalidate, 
+                                  units='seconds', l365=l365, lFortran=lFortran, interval=self.input_interval, 
+                                  end_time=self.runtime, mode=self.input_mode)
+      ec += 0 if lec else 1          
     # return exit code
     return ec
   
@@ -318,8 +318,11 @@ class HGS(Grok):
     if not os.path.isdir(template_folder): raise IOError(template_folder)
     # clear existing directory
     if loverwrite and os.path.isdir(self.rundir):
-      ec = subprocess.call(['rm','-r',self.rundir], stdout=None, stderr=None)
-      if ec > 0: raise IOError("The command rm -r {} to remove the existing directory failed; exit code {}".format(self.rundir,ec))
+#       ec = subprocess.call(['rm','-r',self.rundir], stdout=subprocess.STDOUT, stderr=subprocess.STDOUT)
+      p = subprocess.Popen(['rm','-r',self.rundir], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+      stdout, stderr = p.communicate(); ec = p.poll()
+      if ec > 0: 
+        raise IOError("The command rm -r {} to remove the existing directory failed; exit code {}\n{}".format(self.rundir,ec,stderr))
       #shutil.rmtree(self.rundir) 
       # N.B.: rmtree is dangerous, because if follows symbolic links and deletes contents of target directories!
     # copy folder tree
@@ -332,11 +335,13 @@ class HGS(Grok):
       for lf in self.linked_folders:
         #print('linking {}: {}'.format(lf,'{}/{}'.format(self.rundir,lf)))
         os.symlink('{}/{}/'.format(template_folder,lf), '{}/{}'.format(self.rundir,lf))
-    # put links to executables in place
+    # copy or put links to executables in place
     for exe in (self.hgs_bin, self.grok_bin):
       local_exe = '{}/{}'.format(self.rundir,exe)
       if bin_folder is not None:
         os.symlink('{}/{}'.format(bin_folder,exe), local_exe)
+      else: 
+        os.symlink('{}/{}'.format(template_folder,exe), local_exe)
       # check executables
       if os.path.islink(local_exe):
         if not os.path.exists(local_exe): 
@@ -352,7 +357,8 @@ class HGS(Grok):
     
   def setupConfig(self, template_folder=None, linput=True, lpidx=True):
     ''' load config file from template and write configuration to rundir '''
-    template_folder = self.rundir if template_folder is None else template_folder
+    if template_folder is None:
+      template_folder = self.rundir if self.template_folder is None else self.template_folder
     ec = 0 # cumulative exit code
     # load config file from template folder
     ec += self.readConfig(folder=template_folder)
