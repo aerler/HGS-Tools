@@ -96,6 +96,26 @@ class GrokTest(unittest.TestCase):
     assert 'precip.inc' in output
     assert 'pet.inc' in output    
     
+  def testRestart(self):
+    ''' load config file from rundir and modify restart time etc. '''
+    grok = self.grok
+    # write to rundir
+    grok.writeConfig() 
+    assert os.path.isfile(self.grok_output), self.grok_output
+    old_times = grok.getParam('output times', dtype='float', llist=True)
+    grok._lines = None # delete already loaded file contents
+    # read from template
+    grok.readConfig(folder=self.rundir)
+    assert isinstance(grok._lines, list), grok._lines
+    new_times = grok.getParam('output times', dtype='float', llist=None)
+    assert all([old == new for old,new in zip(old_times,new_times)]), old_times
+    assert all(np.diff(new_times) > 0), np.diff(new_times)
+    # apply modifications for restart
+    grok.rewriteRestart()
+    # write modified file to rundir
+    grok.writeConfig() 
+    assert os.path.isfile(self.grok_output), self.grok_output
+
   def testRunGrok(self):
     ''' test the Grok runner command (will fail, because other inputs are missing) '''
     grok = self.grok  
@@ -378,6 +398,7 @@ if __name__ == "__main__":
 #     specific_tests += ['InitEns']
 #     specific_tests += ['InputLists']
 #     specific_tests += ['ParallelIndex']
+    specific_tests += ['Restart']
 #     specific_tests += ['RunEns']
 #     specific_tests += ['RunGrok']
 #     specific_tests += ['RunHGS']
@@ -392,8 +413,8 @@ if __name__ == "__main__":
     tests = [] 
     # list of variable tests
     tests += ['Grok']
-    tests += ['HGS']    
-    tests += ['EnsHGS']
+#     tests += ['HGS']    
+#     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()

@@ -137,14 +137,37 @@ class Grok(object):
       # single-valued parameter
       self._lines[self._lines.index(param.lower())+1] = formatter(value) # replace value in list of lines
 
-  def getParam(self, param, dtype=None, after=None, start=0):
+  def getParam(self, param, dtype=None, llist=None, after=None, start=0):
     ''' read a single parameter, based on the assumption that the parameter value follows in the 
         line below the one where the parameter name appears (case in-sensitive); dtype is a 
-        numpy data type to which the value string is cast '''
-    start = self._lines.index(after, start) if after else start # search offset for primary paramerter
-    value = self._lines[self._lines.index(param.lower(), start)+1]
-    if isinstance(dtype,basestring): value = getattr(np,dtype)(value) # convert to given numpy dtype
-    elif dtype: value = dtype(value) # try conversion this way...
+        numpy data type to which the value string is cast; a list can be inferred if values of the 
+        proper type follow in consecutive lines and are terminated by and 'end' '''
+    if after is not None: start = self._lines.index(after, start) # search offset for primary paramerter
+    if isinstance(dtype,basestring): dtype = getattr(np,dtype) # convert to given numpy dtype
+    i = self._lines.index(param.lower(), start)+1
+    # different handling for scalars and lists
+    if llist is False:
+      value = dtype(self._lines[i]) # just a single value
+    else:
+      lterm = False; values = [] # indicate if list is complete
+      while i < len(self._lines) and not lterm:
+        value = self._lines[i].lower()
+        if value == 'end': 
+          lterm = True # proper termination of list
+        elif value == '' and llist is None: 
+          lterm = True # proper termination for a scalar
+        else:
+          try: 
+            value = dtype(value) # convert string and append
+            values.append(value) # append to list
+          except ValueError: 
+            if llist: raise ValueError("Illegal list termination: '{}'".format(value))
+            else: lterm = True # terminate with invalid value
+        i += 1 # increment to next line
+      # check results
+      if value == 'end': value = values # legitimately a list
+      elif llist is None and len(values) == 1: value = values[0] # auto-detect scalar
+      else: raise ValueError()
     return value
 
   def replaceParam(self, old, new, formatter=None, after=None, start=0):
@@ -154,7 +177,7 @@ class Grok(object):
       old = formatter.format(old) # apply appropriate formatting
     else:
       new = str(new); old = str(old)
-    start = self._lines.index(after, start) if after else start # search offset for primary paramerter
+    if after is not None: start = self._lines.index(after, start)# search offset for primary paramerter
     self._lines[self._lines.index(old.lower(), start)] = new # replace value in list of lines
     
   def editParams(self, **params):
@@ -173,6 +196,13 @@ class Grok(object):
       times = [time * float(r) / float(restarts) for r in xrange(1,restarts+1)]
       # change grok file
       self.setParam('output times', times, formatter='{:e}', )
+  
+  def rewriteRestart(self, backup_folder=None):
+    ''' rewrite grok file for a restart based on existing output files '''
+    if backup_folder:
+        if not os.path.isdir(backup_folder): os.mkdir(backup_folderpath)
+        shutil.copy2(self.grok_output, dst)
+    raise NotImplementedError
   
   def setInputMode(self, input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
                    input_folder='../climate_forcing'):
