@@ -50,6 +50,9 @@ class Grok(object):
   grok_bin = './grok_premium.x' # default Grok executable
   batchpfx = 'batch.pfx' # a file that defines the HGS problem name for Grok
   grok_dbg = 'grok.dbg' # Grok debug output
+  grok_file = '{PROBLEM:s}.grok' # the Grok configuration file; default includes problem name
+  pm_files = '{PROBLEM:s}o.head_pm.{{IDX:04d}}' # porous media head output (for restart)
+  olf_files = '{PROBLEM:s}o.head_olf.{{IDX:04d}}' # over-land flow head output (for restart)
   rundir = None # folder where the experiment is set up and executed
   project = None # a project designator used for file names
   problem = None # the HGS problem name (defaults to project)
@@ -76,6 +79,9 @@ class Grok(object):
     self.rundir = rundir
     self.project = project
     self.problem = project if problem is None else problem
+    self.grok_file = self.grok_file.format(PROBLEM=self.problem) # default name
+    self.pm_files = self.pm_files.format(PROBLEM=self.problem) # default name
+    self.olf_files = self.olf_files.format(PROBLEM=self.problem) # default name
     self.runtime = runtime
     self.length = length
     self.restarts = restarts
@@ -87,7 +93,7 @@ class Grok(object):
   
   def readConfig(self, filename=None, folder=None):
     ''' Read a grok configuration file into memory (or a template to start from). '''    
-    filename = filename or '{:s}.grok'.format(self.problem) # or default name
+    filename = filename or self.grok_file; self.grok_file = filename
     filename = '{:s}/{:s}'.format(folder or self.rundir, filename) # prepend folder
     if not os.path.isfile(filename): raise IOError(filename)
     self._sourcefile = filename # use  different file as template
@@ -97,15 +103,13 @@ class Grok(object):
     # strip white spaces and convert to lower case
     self._lines = [line.strip() for line in self._lines]
     # N.B.: converting to lower case creates problems with file/folder path
-    # apply time setting
-    if self.runtime is not None: self.setRuntime(time=self.runtime)
     # return exit code
     return 0 if isinstance(self._lines,list) else 0
       
-  def writeConfig(self, filename=None):
+  def writeConfig(self, filename=None, folder=None):
     ''' Write the grok configuration to a file in run dir. '''    
-    filename = filename or '{:s}.grok'.format(self.problem) # or default name    
-    filename = '{:s}/{:s}'.format(self.rundir,filename) # prepend run dir
+    filename = filename or self.grok_file; self.grok_file = filename # or default name    
+    filename = '{:s}/{:s}'.format(folder or self.rundir,filename) # prepend run dir
     self._targetfile = filename # use  different file as template
     # move existing file to backup
     if os.path.isfile(filename): shutil.move(filename, '{:s}.backup'.format(filename))
@@ -197,12 +201,45 @@ class Grok(object):
       # change grok file
       self.setParam('output times', times, formatter='{:e}', )
   
-  def rewriteRestart(self, backup_folder=None):
+  def rewriteRestart(self, backup_folder=None, lnoOut=True):
     ''' rewrite grok file for a restart based on existing output files '''
-    if backup_folder:
-        if not os.path.isdir(backup_folder): os.mkdir(backup_folderpath)
-        shutil.copy2(self.grok_output, dst)
-    raise NotImplementedError
+    if not backup_folder: backup_folder = '{}/backup/'.format(self.rundir)
+    if not os.path.isdir(backup_folder): os.mkdir(backup_folder)
+    backup_file = '{}/{}'.format(backup_folder,os.path.basename(self._targetfile))
+    shutil.copy2(self._targetfile, backup_file)
+    # read output times and check presence of files
+    out_times = self.getParam('output times', dtype='float', llist=True)
+    last_pm = last_olf = last_time = None
+    for i,out_time in enumerate(out_times):
+        ii = i+1
+        pm_file = '{}/{}'.format(self.rundir,self.pm_files.format(IDX=ii))
+        olf_file = '{}/{}'.format(self.rundir,self.olf_files.format(IDX=ii))
+        if os.path.isfile(pm_file) and os.path.isfile(olf_file):
+            last_time = out_time # candidate for last completed time step
+            # move output to backup folder
+            last_pm = '{}/{}'.format(backup_folder,self.pm_files.format(IDX=ii))
+            last_olf = '{}/{}'.format(backup_folder,self.olf_files.format(IDX=ii))
+            shutil.move(pm_file, last_pm); shutil.move(olf_file, last_olf)                
+        elif os.path.isfile(pm_file):
+            raise IOError("Matching OLF file for output time step {} not found!\n('{}')".format(ii,olf_file))
+        elif os.path.isfile(olf_file):
+            raise IOError("Matching PM file for output time step {} not found!\n('{}')".format(ii,pm_file))
+        else: break # terminate loop
+    # modify grok file accordingly
+    if last_time is None:
+        if lnoOut: 
+            raise IOError("No output files found in run folder!\n('{}')".format(self.rundir))
+    else:
+      if i == len(out_times)-1: 
+          new_times = [] # no more output if this was the last output step
+      else:
+          assert i > 0, i 
+          new_times = out_times[i:] # use the remaining output times
+      self.setParam('output times', new_times, formatter='{:e}', )
+      self.setParam('initial time', last_time, formatter='{:e}', )
+      # merge pm and olf file
+      
+    
   
   def setInputMode(self, input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
                    input_folder='../climate_forcing'):
@@ -350,7 +387,7 @@ class HGS(Grok):
     if loverwrite and os.path.isdir(self.rundir):
 #       ec = subprocess.call(['rm','-r',self.rundir], stdout=subprocess.STDOUT, stderr=subprocess.STDOUT)
       p = subprocess.Popen(['rm','-r',self.rundir], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-      stdout, stderr = p.communicate(); ec = p.poll()
+      stdout, stderr = p.communicate(); ec = p.poll(); del stdout
       if ec > 0: 
         raise IOError("The command rm -r {} to remove the existing directory failed; exit code {}\n{}".format(self.rundir,ec,stderr))
       #shutil.rmtree(self.rundir) 
@@ -392,7 +429,8 @@ class HGS(Grok):
     ec = 0 # cumulative exit code
     # load config file from template folder
     ec += self.readConfig(folder=template_folder)
-    # N.B.: runtime is already set by readConfig
+    # apply time setting
+    if self.runtime is not None: self.setRuntime(time=self.runtime)
     # write input lists to run folder
     if linput: ec += self.generateInputLists(lvalidate=True)
     # write config file to run folder

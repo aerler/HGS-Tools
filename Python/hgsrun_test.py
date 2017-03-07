@@ -71,6 +71,8 @@ class GrokTest(unittest.TestCase):
     if not os.path.isfile(self.grok_input):
       raise IOError("Grok configuration file for testing not found:\n '{}'".format(self.grok_input))
     self.grok.readConfig(folder=self.hgs_template)
+    if self.grok.runtime is not None: # need to set runtime manually here 
+      self.grok.setRuntime(time=self.grok.runtime)
     assert isinstance(self.grok._lines, list), self.grok._lines
       
   def tearDown(self):
@@ -104,6 +106,12 @@ class GrokTest(unittest.TestCase):
     assert os.path.isfile(self.grok_output), self.grok_output
     old_times = grok.getParam('output times', dtype='float', llist=True)
     grok._lines = None # delete already loaded file contents
+    # create fake output files for restart
+    for i in range(5):
+        pm_file = '{}/{}'.format(grok.rundir,grok.pm_files.format(IDX=i+1))
+        open(pm_file,'w').close()
+        olf_file = '{}/{}'.format(grok.rundir,grok.olf_files.format(IDX=i+1))
+        open(olf_file,'w').close()
     # read from template
     grok.readConfig(folder=self.rundir)
     assert isinstance(grok._lines, list), grok._lines
@@ -115,6 +123,16 @@ class GrokTest(unittest.TestCase):
     # write modified file to rundir
     grok.writeConfig() 
     assert os.path.isfile(self.grok_output), self.grok_output
+    # verify grok file
+    grok._lines = None # delete already loaded file contents
+    grok.readConfig(folder=self.rundir)
+    assert isinstance(grok._lines, list), grok._lines
+    new_times = grok.getParam('output times', dtype='float', llist=None)
+    assert len(new_times) == len(old_times)-5, (len(new_times),len(old_times))
+    assert all([old == new for old,new in zip(old_times[5:],new_times)]), old_times
+    assert all(np.diff(new_times) > 0), np.diff(new_times)
+    
+
 
   def testRunGrok(self):
     ''' test the Grok runner command (will fail, because other inputs are missing) '''
@@ -398,7 +416,7 @@ if __name__ == "__main__":
 #     specific_tests += ['InitEns']
 #     specific_tests += ['InputLists']
 #     specific_tests += ['ParallelIndex']
-    specific_tests += ['Restart']
+#     specific_tests += ['Restart']
 #     specific_tests += ['RunEns']
 #     specific_tests += ['RunGrok']
 #     specific_tests += ['RunHGS']
@@ -413,7 +431,7 @@ if __name__ == "__main__":
     tests = [] 
     # list of variable tests
     tests += ['Grok']
-#     tests += ['HGS']    
+    tests += ['HGS']    
 #     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
