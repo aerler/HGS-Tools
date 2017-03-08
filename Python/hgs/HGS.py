@@ -17,7 +17,7 @@ from warnings import warn
 from datasets.common import data_root, BatchLoad
 from geodata.base import Dataset, Variable, Axis, concatDatasets
 from geodata.misc import ArgumentError, VariableError, DataError
-from datasets.WSC import getGageStation, GageStationError, loadGageStation_TS
+from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS
 import datetime as dt
 
 ## WSC (Water Survey Canada) Meta-data
@@ -221,7 +221,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
 def loadHGS_StnEns(ensemble=None, station=None, varlist=None, varatts=None, name=None, title=None, 
                    period=None, run_period=15, folder=None, obs_period=None, filename=station_file,  
                    ensemble_list=None, ensemble_args=None, observation_list=None, # ensemble and obs lists for project
-                   loadHGS_StnTS=loadHGS_StnTS, loadGageStation_TS=loadGageStation_TS, # these can also be overloaded
+                   loadHGS_StnTS=loadHGS_StnTS, loadWSC_StnTS=loadWSC_StnTS, # these can also be overloaded
                    prefix=None, WSC_station=None, basin=None, basin_list=None, **kwargs):
   ''' a wrapper for the regular HGS loader that can also load gage stations and assemble ensembles '''
   if observation_list is None: observation_list = ('obs','observations')
@@ -235,7 +235,7 @@ def loadHGS_StnEns(ensemble=None, station=None, varlist=None, varatts=None, name
       period = period if obs_period is None else obs_period
       filetype = 'monthly'
       # load gage station with slightly altered parameters
-      dataset = loadGageStation_TS(station=station, name=name, title=title, basin=basin, basin_list=basin_list, 
+      dataset = loadWSC_StnTS(station=station, name=name, title=title, basin=basin, basin_list=basin_list, 
                                    varlist=varlist, varatts=varatts, period=period, filetype=filetype)
   elif ensemble.lower() in ensemble_list:
       if ensemble_args is None: ensemble_args = dict()
@@ -276,29 +276,29 @@ if __name__ == '__main__':
   hgs_station = 'GR_Brantford'
 
 #   test_mode = 'gage_station'
-#   test_mode = 'dataset'
-  test_mode = 'ensemble'
+  test_mode = 'dataset'
+#   test_mode = 'ensemble'
 
 
   if test_mode == 'gage_station':
     
     # load single dataset
-    ds = loadGageStation_TS(station=WSC_station, basin=basin_name, period=(1974,2004), 
+    ds = loadWSC_StnTS(station=WSC_station, basin=basin_name, period=(1974,2004), 
                             basin_list=basin_list, filetype='monthly')
     print(ds)
     
   elif test_mode == 'dataset':
 
     hgs_name = 'HGS-{BASIN:s}' # will be expanded
-    #   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
-    #   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/NRCan/annual_15/hgs_run'
-    hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{CLIM:s}/hgs_run'
+#       hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
+#       hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/NRCan/annual_15/hgs_run'
+    hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run'
 
     # load dataset
-    dataset = loadHGS_StnTS(name=hgs_name, station=hgs_station, folder=hgs_folder, run_period=15, 
+    dataset = loadHGS_StnTS(name=hgs_name, station=hgs_station, folder=hgs_folder, run_period=10, 
                             basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, 
-                            lskipNaN=True, lcheckComplete=True, varlist=None, period=(2050,2060),
-                            EXP='g-ensemble', PRD='-2050', DOM=2, CLIM='clim_15')
+                            lskipNaN=True, lcheckComplete=True, varlist=None,
+                            EXP='erai-g', PRD='', DOM=2, CLIM='clim_15', BC='AABC_')
     # N.B.: there is not record of actual calendar time in HGS, so periods are anchored through start_date/run_period
     # and print
     print(dataset)
