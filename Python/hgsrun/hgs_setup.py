@@ -53,6 +53,7 @@ class Grok(object):
   grok_file = '{PROBLEM:s}.grok' # the Grok configuration file; default includes problem name
   pm_files = '{PROBLEM:s}o.head_pm.{{IDX:04d}}' # porous media head output (for restart)
   olf_files = '{PROBLEM:s}o.head_olf.{{IDX:04d}}' # over-land flow head output (for restart)
+  restart_file = '{PROBLEM:s}o.hen' # restart file name
   rundir = None # folder where the experiment is set up and executed
   project = None # a project designator used for file names
   problem = None # the HGS problem name (defaults to project)
@@ -82,6 +83,7 @@ class Grok(object):
     self.grok_file = self.grok_file.format(PROBLEM=self.problem) # default name
     self.pm_files = self.pm_files.format(PROBLEM=self.problem) # default name
     self.olf_files = self.olf_files.format(PROBLEM=self.problem) # default name
+    self.restart_file = self.restart_file.format(PROBLEM=self.problem) # default name
     self.runtime = runtime
     self.length = length
     self.restarts = restarts
@@ -227,6 +229,7 @@ class Grok(object):
         else: break # terminate loop
     # modify grok file accordingly
     if last_time is None:
+        # same restart point as last time... no need to change anything
         if lnoOut: 
             raise IOError("No output files found in run folder!\n('{}')".format(self.rundir))
     else:
@@ -238,7 +241,17 @@ class Grok(object):
       self.setParam('output times', new_times, formatter='{:e}', )
       self.setParam('initial time', last_time, formatter='{:e}', )
       # merge pm and olf file
-      
+      restart_file = '{}/{}'.format(self.rundir, self.restart_file) 
+      if os.path.exists(restart_file):     
+          shutil.move(restart_file,backup_folder)
+      # open new restart file for writing
+      with open(restart_file,'wb') as rf:
+          # open porous media file and dump into restart file
+          with open(last_pm, 'rb') as pm: shutil.copyfileobj(pm, rf)
+          # open over land flow file and dump into restart file
+          with open(last_olf, 'rb') as olf: shutil.copyfileobj(olf, rf)
+    # return name of restart file
+    return restart_file
     
   
   def setInputMode(self, input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 

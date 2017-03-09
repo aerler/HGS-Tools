@@ -119,16 +119,17 @@ class GrokTest(unittest.TestCase):
     assert all([old == new for old,new in zip(old_times,new_times)]), old_times
     assert all(np.diff(new_times) > 0), np.diff(new_times)
     # apply modifications for restart
-    grok.rewriteRestart()
+    restart_file = grok.rewriteRestart()
+    assert os.path.isfile(restart_file), restart_file
     # write modified file to rundir
-    grok.writeConfig() 
+    grok.writeConfig()
     assert os.path.isfile(self.grok_output), self.grok_output
     # verify grok file
     grok._lines = None # delete already loaded file contents
     grok.readConfig(folder=self.rundir)
     assert isinstance(grok._lines, list), grok._lines
     new_times = grok.getParam('output times', dtype='float', llist=None)
-    assert len(new_times) == len(old_times)-5, (len(new_times),len(old_times))
+    assert len(new_times) == max(len(old_times)-5,0), (len(new_times),len(old_times))
     assert all([old == new for old,new in zip(old_times[5:],new_times)]), old_times
     assert all(np.diff(new_times) > 0), np.diff(new_times)
     
@@ -432,7 +433,7 @@ if __name__ == "__main__":
     # list of variable tests
     tests += ['Grok']
     tests += ['HGS']    
-#     tests += ['EnsHGS']
+    tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()
