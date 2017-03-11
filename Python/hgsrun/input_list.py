@@ -197,8 +197,8 @@ if __name__ == '__main__':
     
     # test cases
 #     test_case = 'simple_mean'
-#     test_case = 'climatology'
-    test_case = 'time-series'
+    test_case = 'climatology'
+#     test_case = 'time-series'
     
     ## file settings
     # work directory settings ("global" variable)
@@ -210,33 +210,37 @@ if __name__ == '__main__':
     # path to test file
     testfolder = '{:s}/input_list/'.format(workdir)
     if not os.path.exists(testfolder):os.mkdir(testfolder)
-    testfile = 'test.inc'
-    testfilepath = testfolder+testfile
+    testfile = 'test.inc'; testpattern = 'test_file'; inputfolder = '../test_folder'
     
     ## write test file
     if test_case == 'simple_mean':
       # test simple mean
       generateInputFilelist(filename=testfile, folder=testfolder,
-                            input_folder='../test_folder', input_pattern='test_file.asc', 
+                            input_folder=inputfolder, input_pattern=testpattern+'.asc', 
                             length=100, interval='daily', mode='mean', lvalidate=False)
     
     elif test_case == 'climatology':
       # test simple mean
+#       varname = 'pet' # 'liqwatflx'
+#       testfile = '{:s}.inc'.format(varname); inputfolder = '../climate_forcing'
+#       testpattern = 'can1_{:s}_iTime'.format(varname)
       generateInputFilelist(filename=testfile, folder=testfolder,
-                            input_folder='../test_folder', input_pattern='test_file_{IDX:02d}.asc', 
-                            length=24, mode='climatology', lvalidate=False)
+                            input_folder=inputfolder, input_pattern=testpattern+'_{IDX:02d}.asc', 
+                            length=1200, mode='climatology', lvalidate=False)
     
     elif test_case == 'time-series':
       # test simple mean
       generateInputFilelist(filename=testfile, folder=testfolder,
-                            input_folder='../test_folder', input_pattern='test_file_{IDX:02d}.asc', 
+                            input_folder=inputfolder, input_pattern=testpattern+'_{IDX:02d}.asc', 
                             #length=24, mode='time-series', lvalidate=False)
                             length=10, interval='daily', mode='time-series', lvalidate=False)
 
 
     ## read and print test file
+    testfilepath = testfolder+testfile
     openfile = open(testfilepath, 'r')
     for line in openfile: print(line)
     openfile.close()
+    print('\nFilepath: \'{:s}\''.format(testfilepath))
     
       
