@@ -91,7 +91,7 @@ class GrokTest(unittest.TestCase):
     ''' test writing of input list files with climate forcings '''
     grok = self.grok  
     # write lists for fictional scenario
-    grok.generateInputLists(input_vars='PET', input_prefix=self.test_prefix, 
+    grok.generateInputLists(input_vars='WRFPET', input_prefix=self.test_prefix, 
                             input_folder=self.test_data, lvalidate=self.lvalidate,)
     # convert config file list into string and verify
     output = ''.join(grok._lines) # don't need newlines 

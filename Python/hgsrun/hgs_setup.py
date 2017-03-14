@@ -88,10 +88,9 @@ class Grok(object):
     self.length = length
     self.restarts = restarts
     # input configuration
-    if input_mode or input_interval:
-      self.setInputMode(input_mode=input_mode, input_interval=input_interval,
-                        input_vars=input_vars, input_prefix=input_prefix,
-                        input_folder=input_folder)
+    self.setInputMode(input_mode=input_mode, input_interval=input_interval,
+                      input_vars=input_vars, input_prefix=input_prefix,
+                      input_folder=input_folder)
   
   def readConfig(self, filename=None, folder=None):
     ''' Read a grok configuration file into memory (or a template to start from). '''    
@@ -150,6 +149,7 @@ class Grok(object):
         proper type follow in consecutive lines and are terminated by and 'end' '''
     if after is not None: start = self._lines.index(after, start) # search offset for primary paramerter
     if isinstance(dtype,basestring): dtype = getattr(np,dtype) # convert to given numpy dtype
+    elif dtype is None: dtype = str # read as string data type as default
     i = self._lines.index(param.lower(), start)+1
     # different handling for scalars and lists
     if llist is False:
@@ -270,6 +270,8 @@ class Grok(object):
     else: raise NotImplementedError(input_interval)
     self.input_interval = input_interval
     # set other variables
+    if input_vars.upper() not in ('PET','WRFPET','NET'): raise NotImplementedError(input_vars)
+    # N.B.: the input config NET actually requires changes to the grok file, which is currently not done
     self.input_vars = input_vars
     self.input_prefix = input_prefix
     self.input_folder = input_folder
@@ -283,17 +285,24 @@ class Grok(object):
     # generate default input vars
     if isinstance(input_vars,basestring):
       if input_vars.upper() == 'PET': # liquid water + snowmelt & PET as input
-        input_vars = dict(precip=('rain','liqwatflx'),  
-                          pet=('potential evapotranspiration','pet'))
+        input_vars = dict(precip=('rainfall','rain','liqwatflx'),  
+                          pet=('pet','potential evapotranspiration','pet'))
+      elif input_vars.upper() == 'WRFPET': # liquid water + snowmelt & PET from WRF as input
+        input_vars = dict(precip=('rainfall','rain','liqwatflx'),  
+                          pet=('pet','potential evapotranspiration','pet_wrf'))
       elif input_vars.upper() == 'NET': # liquid water + snowmelt - ET as input
-        input_vars = dict(precip=('rain','waterflx'),)
+        input_vars = dict(precip=('rainfall','rain','waterflx'),)
+        if self.getParam('name', after='potential evapotranspiration') == 'PET':
+            raise NotImplementedError("Cannot use 'NET' input type if 'PET' input is defiend in grok file.")
       else: raise ArgumentError("Invalid or missing input_vars: {}".format(input_vars))
     elif not isinstance(input_vars, dict): raise TypeError(input_vars)
     # iterate over variables and generate corresponding input lists
     ec = 0 # cumulative exit code
     for varname,val in input_vars.iteritems():
-      vartype,wrfvar = val
+      grokname,vartype,wrfvar = val
       filename = '{0}.inc'.format(varname)
+      if self.getParam('name', after=vartype).lower() != grokname:
+            raise GrokError("No entry for boundary condition type '{}'/'{}' found in grok file!".format(vartype,grokname))
       self.setParam('time raster table', 'include {}'.format(filename), after=vartype)
       if self.input_interval == 'monthly':
         if self.input_mode == 'steady-state': input_pattern = 'iTime_{IDX:d}' # IDX will be substituted
