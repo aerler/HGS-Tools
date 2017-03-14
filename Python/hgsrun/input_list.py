@@ -180,7 +180,8 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
       if input_folder is None: filepath = input_file
       else: filepath = '{:s}/{:s}'.format(input_folder,input_file) # assemble current file name
       # check if file actually exists
-      if lvalidate and not os.path.exists(filepath): 
+      abspath = filepath if os.path.isabs(filepath) else '{:s}/{:s}'.format(folder,filepath) 
+      if lvalidate and not os.path.exists(abspath): 
         raise IOError("The input file '{:s}' does not exist.\n(run folder: '{:s}')".format(filepath,folder))
       # write list entry(s)
       if list_idx == 0 and list_time != 0: # add a first line starting at t=0
