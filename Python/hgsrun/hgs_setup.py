@@ -427,7 +427,7 @@ class HGS(Grok):
     # copy or put links to executables in place
     for exe in (self.hgs_bin, self.grok_bin):
       local_exe = '{}/{}'.format(self.rundir,exe)
-      if os.path.exists(local_exe): os.remove(local_exe)
+      if os.path.lexists(local_exe): os.remove(local_exe)
       if bin_folder is not None:
         os.symlink('{}/{}'.format(bin_folder,exe), local_exe)
       else: 
