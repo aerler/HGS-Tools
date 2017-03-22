@@ -16,8 +16,8 @@ from warnings import warn
 # internal imports
 from datasets.common import data_root, BatchLoad
 from geodata.base import Dataset, Variable, Axis, concatDatasets
-from geodata.misc import ArgumentError, VariableError, DataError
-from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS
+from geodata.misc import ArgumentError, VariableError, DataError, isNumber
+from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS, updateScalefactor
 import datetime as dt
 
 ## WSC (Water Survey Canada) Meta-data
@@ -67,7 +67,8 @@ def date_parser(seconds, year=1979, month=1, day=1, **kwargs):
 ## function to load HGS station timeseries
 def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=None, title=None,
                   start_date=1979, end_date=None, run_period=15, period=None, lskipNaN=False, lcheckComplete=True,
-                  basin=None, WSC_station=None, basin_list=None, filename=station_file, prefix=None, **kwargs):
+                  basin=None, WSC_station=None, basin_list=None, filename=station_file, prefix=None, 
+                  scalefactors=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None or ( filename is None and station is None ): raise ArgumentError
@@ -127,7 +128,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   if varlist is None: varlist = variable_list[:] # default list 
   with open(filepath, 'r') as f:
       line = f.readline(); lline = line.lower() # 1st line
-      if not "hydrograph" in lline: raise GageStationError(line)
+      if not "hydrograph" in lline: raise GageStationError(line,filepath)
       # parse variables and determine columns
       line = f.readline(); lline = line.lower() # 2nd line
       if not "variables" in lline: raise GageStationError(line)
@@ -212,6 +213,15 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   # apply analysis period
   if period is not None:
       dataset = dataset(years=period)
+  # adjust scalefactors, if necessary
+  if scalefactors:
+      if isinstance(scalefactors,dict):
+          dataset = updateScalefactor(dataset, varlist=scalefactors, scalefactor=None)
+      elif isNumber(scalefactors):
+          scalelist = ('discharge','seepage','flow')
+          dataset = updateScalefactor(dataset, varlist=scalelist, scalefactor=scalefactors)
+      else: 
+          raise TypeError(scalefactors) 
   # return completed dataset
   return dataset
 
@@ -284,7 +294,7 @@ if __name__ == '__main__':
     
     # load single dataset
     ds = loadWSC_StnTS(station=WSC_station, basin=basin_name, period=(1974,2004), 
-                            basin_list=basin_list, filetype='monthly')
+                            basin_list=basin_list, filetype='monthly', scalefactors=1e-4)
     print(ds)
     
   elif test_mode == 'dataset':
@@ -297,7 +307,7 @@ if __name__ == '__main__':
     # load dataset
     dataset = loadHGS_StnTS(name=hgs_name, station=hgs_station, folder=hgs_folder, run_period=10, 
                             basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, 
-                            lskipNaN=True, lcheckComplete=True, varlist=None,
+                            lskipNaN=True, lcheckComplete=True, varlist=None, scalefactors=1e-4,
                             EXP='erai-g', PRD='', DOM=2, CLIM='clim_15', BC='AABC_')
     # N.B.: there is not record of actual calendar time in HGS, so periods are anchored through start_date/run_period
     # and print
