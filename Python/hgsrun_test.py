@@ -44,6 +44,8 @@ class GrokTest(unittest.TestCase):
   # some Grok test data
   hgs_template = data_root+'/HGS/Templates/GRW-test/' 
   hgs_testcase = 'grw_omafra' # name of test project (for file names)
+#   hgs_template = data_root+'/HGS/Templates/GRW-V2/' 
+#   hgs_testcase = 'GRC' # name of test project (for file names)
   test_data    = data_root+'/HGS/Templates/input/clim/climate_forcing/'
   test_prefix  = 'grw2' # pefix for climate input
   lvalidate    = False # validate input data

@@ -157,7 +157,7 @@ class Grok(object):
     else:
       lterm = False; values = [] # indicate if list is complete
       while i < len(self._lines) and not lterm:
-        value = self._lines[i].lower()
+        value = self._lines[i].strip().lower()
         if value == 'end': 
           lterm = True # proper termination of list
         elif value == '' and llist is None: 
@@ -292,8 +292,8 @@ class Grok(object):
                           pet=('pet','potential evapotranspiration','pet_wrf'))
       elif input_vars.upper() == 'NET': # liquid water + snowmelt - ET as input
         input_vars = dict(precip=('rainfall','rain','waterflx'),)
-        if self.getParam('name', after='potential evapotranspiration') == 'PET':
-            raise NotImplementedError("Cannot use 'NET' input type if 'PET' input is defiend in grok file.")
+        if self.getParam('name', after='potential evapotranspiration', llist=False).upper() == 'PET':
+            raise NotImplementedError("Cannot use 'NET' input type if 'PET' input is defined in grok file.")
       else: raise ArgumentError("Invalid or missing input_vars: {}".format(input_vars))
     elif not isinstance(input_vars, dict): raise TypeError(input_vars)
     # iterate over variables and generate corresponding input lists
@@ -301,7 +301,7 @@ class Grok(object):
     for varname,val in input_vars.iteritems():
       grokname,vartype,wrfvar = val
       filename = '{0}.inc'.format(varname)
-      if self.getParam('name', after=vartype).lower() != grokname:
+      if self.getParam('name', after=vartype, llist=False).lower() != grokname:
             raise GrokError("No entry for boundary condition type '{}'/'{}' found in grok file!".format(vartype,grokname))
       self.setParam('time raster table', 'include {}'.format(filename), after=vartype)
       if self.input_interval == 'monthly':
@@ -393,7 +393,8 @@ class HGS(Grok):
                              input_folder=input_folder, length=length, lcheckdir=False)
     self.template_folder = template_folder # where to get the templates
     # prepare linked folders
-    if linked_folders is None: linked_folders = ('etprop','gb','icbc','prop','soil',)
+    if linked_folders is None: linked_folders = ('etprop','gb','icbc','prop','soil', # original 
+                                                 'grid','init_con','K_maps','landcover','mprops') # extended
     linked_folders = tuple(lf[:-1] if lf[-1] == '/' else lf for lf in linked_folders) # trim slash
     self.linked_folders = linked_folders
     # N.B.: these folders just contain static data and do not need to be replicated
@@ -422,8 +423,10 @@ class HGS(Grok):
     # symlinks to static folder that are not copied (linked_folders)
     if self.linked_folders:
       for lf in self.linked_folders:
-        #print('linking {}: {}'.format(lf,'{}/{}'.format(self.rundir,lf)))
-        os.symlink('{}/{}/'.format(template_folder,lf), '{}/{}'.format(self.rundir,lf))
+        link_source = '{}/{}/'.format(template_folder,lf)
+        if os.path.exists(link_source):
+          #print('linking {}: {}'.format(lf,'{}/{}'.format(self.rundir,lf)))
+          os.symlink(link_source, '{}/{}'.format(self.rundir,lf))
     # copy or put links to executables in place
     for exe in (self.hgs_bin, self.grok_bin):
       local_exe = '{}/{}'.format(self.rundir,exe)
