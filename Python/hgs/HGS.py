@@ -24,7 +24,6 @@ import datetime as dt
 
 dataset_name = 'HGS'
 root_folder = '{:s}/{:s}/'.format(data_root,dataset_name) # the dataset root folder
-station_file = '{PREFIX:s}o.hydrograph.Station_{STATION:s}.dat' # general HGS naming convention
 prefix_file = 'batch.pfx' # text file that contians the HGS problem prefix (also HGS convention)
 
 # variable attributes and name
@@ -66,15 +65,29 @@ def date_parser(seconds, year=1979, month=1, day=1, **kwargs):
 
 ## function to load HGS station timeseries
 def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=None, title=None,
-                  start_date=1979, end_date=None, run_period=15, period=None, lskipNaN=False, lcheckComplete=True,
-                  basin=None, WSC_station=None, basin_list=None, filename=station_file, prefix=None, 
+                  start_date=None, end_date=None, run_period=15, period=None, lskipNaN=False, lcheckComplete=True,
+                  basin=None, WSC_station=None, basin_list=None, filename=None, prefix=None, 
                   scalefactors=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None or ( filename is None and station is None ): raise ArgumentError
+  # try to find meta data for gage station from WSC
+  HGS_station = station
+  if basin is not None and basin_list is not None:
+    station_name = station
+    station = getGageStation(basin=basin, station=station if WSC_station is None else WSC_station, 
+                             basin_list=basin_list) # only works with registered basins
+    if station_name is None: station_name = station.name # backup, in case we don't have a HGS station name
+    metadata = station.getMetaData() # load station meta data
+    if metadata is None: raise GageStationError(name)
+  else: 
+    metadata = dict(); station = None; station_name =  None    
   # prepare name expansion arguments (all capitalized)
-  expargs = dict(ROOT_FOLDER=root_folder, STATION=station, NAME=name, TITLE=title,
-                 PREFIX=prefix, BASIN=basin, WSC_STATION=WSC_station) 
+  expargs = dict(ROOT_FOLDER=root_folder, STATION=HGS_station, NAME=name, TITLE=title,
+                 PREFIX=prefix, BASIN=basin, WSC_STATION=WSC_station)
+  for key,value in metadata.items():
+      if isinstance(value,basestring):
+          expargs['WSC_'+key.upper()] = value # in particular, this includes WSC_ID
   # exparg preset keys will get overwritten if capitalized versions are defined
   for key,value in kwargs.items():
     KEY = key.upper() # we only use capitalized keywords, and non-capitalized keywords are only used/converted
@@ -89,20 +102,11 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   filename = filename.format(**expargs)
   filepath = '{}/{}'.format(folder,filename)
   if not os.path.exists(filepath): IOError(filepath)
-  # try to find meta data for gage station from WSC
-  if basin is not None and basin_list is not None:
-    station_name = station
-    station = getGageStation(basin=basin, station=station if WSC_station is None else WSC_station, 
-                             basin_list=basin_list) # only works with registered basins
-    if station_name is None: station_name = station.name # backup, in case we don't have a HGS station name
-    metadata = station.getMetaData() # load station meta data
-    if metadata is None: raise GageStationError(name)
-  else: 
-    metadata = dict(); station = None
-    station_name = filename[filename.index('hydrograph.Station_')+1:-4] if station is None else station
+  if station_name is None: 
+      station_name = filename[filename.index('hydrograph.')+1:-4] if station is None else station
   # set meta data (and allow keyword expansion of name and title)
   metadata['problem'] = prefix
-  metadata['station_name'] = metadata['long_name']
+  metadata['station_name'] = metadata.get('long_name', station_name)
   if name is not None: name = name.format(**expargs) # name expansion with capitalized keyword arguments
   else: name = 'HGS_{:s}'.format(station_name)
   metadata['name'] = name; expargs['Name'] = name.title() # name in title format
@@ -110,10 +114,16 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   title = title.format(**expargs) # name expansion with capitalized keyword arguments
   metadata['long_name'] = metadata['title'] = title
   # now determine start data for date_parser
+  if end_date is None: 
+      if start_date and run_period: end_date = start_date + run_period 
+      elif period: end_date = period[1]
+      else: raise ArgumentError("Need to specify either 'start_date' & 'run_period' or 'period' to infer 'end_date'.")
+  end_year,end_month,end_day = convertDate(end_date)
+  if start_date is None: 
+      if end_date and run_period: start_date = end_date - run_period 
+      elif period: start_date = period[0]
+      else: raise ArgumentError("Need to specify either 'end_date' & 'run_period' or 'period' to infer 'start_date'.")
   start_year,start_month,start_day = convertDate(start_date)
-  if end_date is not None: end_year,end_month,end_day = convertDate(end_date)
-  elif run_period is not None: end_year = start_year + run_period; end_month = end_day = 1
-  else: raise ArgumentError("Need to specify either 'end_date' or 'period'.")
   if start_day != 1 or end_day != 1: 
     raise NotImplementedError('Currently only monthly data is supported.')
 #   import functools
@@ -229,7 +239,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
 # an enhanced ensemble loader that supports argument expansion and construction of ensemble datasets
 @BatchLoad
 def loadHGS_StnEns(ensemble=None, station=None, varlist=None, varatts=None, name=None, title=None, 
-                   period=None, run_period=15, folder=None, obs_period=None, filename=station_file,  
+                   period=None, run_period=15, folder=None, obs_period=None,  
                    ensemble_list=None, ensemble_args=None, observation_list=None, # ensemble and obs lists for project
                    loadHGS_StnTS=loadHGS_StnTS, loadWSC_StnTS=loadWSC_StnTS, # these can also be overloaded
                    prefix=None, WSC_station=None, basin=None, basin_list=None, **kwargs):
@@ -246,16 +256,17 @@ def loadHGS_StnEns(ensemble=None, station=None, varlist=None, varatts=None, name
       filetype = 'monthly'
       # load gage station with slightly altered parameters
       dataset = loadWSC_StnTS(station=station, name=name, title=title, basin=basin, basin_list=basin_list, 
-                                   varlist=varlist, varatts=varatts, period=period, filetype=filetype)
+                              varlist=varlist, varatts=varatts, period=period, filetype=filetype)
   elif ensemble.lower() in ensemble_list:
       if ensemble_args is None: ensemble_args = dict()
       # loop over list of experiments in ensemble
       ens = []
       for exp in ensemble_list[ensemble]:
           # load individual HGS simulation
-          ds = loadHGS_StnTS(station=station, varlist=varlist, varatts=varatts, name=name, title=title, period=period, 
-                             ENSEMBLE=exp, run_period=run_period, folder=folder, prefix=prefix, WSC_station=WSC_station, 
-                             basin=basin, basin_list=basin_list, **kwargs)
+          ds = loadHGS_StnTS(station=station, varlist=varlist, varatts=varatts, name=name, title=title, 
+                             period=period, ENSEMBLE=exp, run_period=run_period, folder=folder, prefix=prefix, 
+                             WSC_station=WSC_station, basin=basin, basin_list=basin_list, 
+                             **kwargs)
           ens.append(ds)
       # construct ensemble by concatenating time-series
       ensemble_args.setdefault('name',ds.name.replace(exp,ensemble).replace(exp.title(),ensemble.title()))
@@ -284,10 +295,11 @@ if __name__ == '__main__':
   basin_name = 'GRW'
   WSC_station = 'Grand River_Brantford'
   hgs_station = 'GR_Brantford'
+  filename = '{PREFIX:s}o.hydrograph.Station_{STATION:s}.dat'
 
 #   test_mode = 'gage_station'
-  test_mode = 'dataset'
-#   test_mode = 'ensemble'
+#   test_mode = 'dataset'
+  test_mode = 'ensemble'
 
 
   if test_mode == 'gage_station':
@@ -305,7 +317,7 @@ if __name__ == '__main__':
     hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run'
 
     # load dataset
-    dataset = loadHGS_StnTS(name=hgs_name, station=hgs_station, folder=hgs_folder, run_period=10, 
+    dataset = loadHGS_StnTS(name=hgs_name, station=hgs_station, folder=hgs_folder, filename=filename, run_period=10, 
                             basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, 
                             lskipNaN=True, lcheckComplete=True, varlist=None, scalefactors=1e-4,
                             EXP='erai-g', PRD='', DOM=2, CLIM='clim_15', BC='AABC_')
@@ -335,7 +347,7 @@ if __name__ == '__main__':
     # load an esemble of datasets
     ens = loadHGS_StnEns(ensemble=['g-mean','t-mean'], DOM=1, CLIM='clim_15', run_period=15,
                          period=[(1984,1994),(2050,2060),(2090,2100)], PRDSTR=['','-2050','-2100'],
-                         station=hgs_station, name=ens_name, basin=basin_name,
+                         station=hgs_station, name=ens_name, basin=basin_name, filename=filename,
                          WSC_station=WSC_station, basin_list=basin_list, folder=ens_folder,
                          lskipNaN=True, lcheckComplete=True, varlist=None, obs_period=(1974,2004),
                          ens_name='HGS Ensemble', ens_title='HGS Ensemble based on WRF Ensemble',
