@@ -16,7 +16,7 @@ from warnings import warn
 # internal imports
 from datasets.common import data_root, BatchLoad
 from geodata.base import Dataset, Variable, Axis, concatDatasets
-from geodata.misc import ArgumentError, VariableError, DataError, isNumber
+from geodata.misc import ArgumentError, VariableError, DataError, isNumber, DatasetError
 from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS, updateScalefactor
 import datetime as dt
 
@@ -88,6 +88,9 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   for key,value in metadata.items():
       if isinstance(value,basestring):
           expargs['WSC_'+key.upper()] = value # in particular, this includes WSC_ID
+  if 'WSC_ID' in expargs: 
+      if expargs['WSC_ID'][0] == '0': expargs['WSC_ID0'] = expargs['WSC_ID'][1:]
+      else: raise DatasetError('Expected leading zero in WSC station ID: {}'.format(expargs['WSC_ID']))
   # exparg preset keys will get overwritten if capitalized versions are defined
   for key,value in kwargs.items():
     KEY = key.upper() # we only use capitalized keywords, and non-capitalized keywords are only used/converted
@@ -265,8 +268,7 @@ def loadHGS_StnEns(ensemble=None, station=None, varlist=None, varatts=None, name
           # load individual HGS simulation
           ds = loadHGS_StnTS(station=station, varlist=varlist, varatts=varatts, name=name, title=title, 
                              period=period, ENSEMBLE=exp, run_period=run_period, folder=folder, prefix=prefix, 
-                             WSC_station=WSC_station, basin=basin, basin_list=basin_list, 
-                             **kwargs)
+                             WSC_station=WSC_station, basin=basin, basin_list=basin_list, **kwargs)
           ens.append(ds)
       # construct ensemble by concatenating time-series
       ensemble_args.setdefault('name',ds.name.replace(exp,ensemble).replace(exp.title(),ensemble.title()))

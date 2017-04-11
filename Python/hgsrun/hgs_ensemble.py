@@ -175,11 +175,11 @@ class EnsHGS(object):
       if not lskip:
         self.rundirs.append(rundir)
         # isolate HGS constructor arguments
-        hgsargs = inspect.getargspec(HGS.__init__).args
-        hgsargs = {arg:kwargs[arg] for arg in hgsargs if arg in kwargs} # returns args, varargs, kwargs, defaults
+        hgsargs = inspect.getargspec(HGS.__init__).args # returns args, varargs, kwargs, defaults
+        hgsargs = {arg:kwargs[arg] for arg in hgsargs if arg in kwargs} 
         self.hgsargs.append(hgsargs)
         # initialize HGS instance      
-        hgs = HGS(lindicator=self.lindicator, **hgsargs)
+        hgs = HGS(**hgsargs)
         self.members.append(hgs)
     # final check
     if len(self.members) == 0: 
