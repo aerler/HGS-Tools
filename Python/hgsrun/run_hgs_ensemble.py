@@ -11,7 +11,7 @@ HGSrun is capable of running single simulations or entire ensembles of simulatio
 @license:    GPL v3
 
 @contact:    aerler@aquanty.com
-@deffield    updated: 02/02/2017
+@deffield    updated: 18/04/2017
 '''
 
 # external imports
@@ -23,9 +23,9 @@ from hgsrun.hgs_ensemble import EnsHGS
 
 # meta data
 __all__ = []
-__version__ = 0.8
+__version__ = 0.9
 __date__ = '2016-08-16'
-__updated__ = '2017-02-02'
+__updated__ = '2017-04-18'
 
 DEBUG = 0
 TESTRUN = 0
@@ -85,7 +85,8 @@ def main(argv=None): # IGNORE:C0111
     parser.add_argument("--rerun-failed", dest="runfailed", action='store_true', help="rerun failed experiments, ignore completed [default: %(default)s]")
     parser.add_argument('--data-root', nargs='?', const=os.getenv('DATA_ROOT', None), default=None, type=basestring, 
                         help="Set the root folder of the data archive [default: $DATA_ROOT]")
-    parser.add_argument("--no-setup", dest="nosetup", action='store_true', help="skip run folder setup [default: %(default)s]")
+    parser.add_argument("--skip-setup", dest="nosetup", action='store_true', help="skip run folder setup; start simulations immediately [default: %(default)s]")
+    parser.add_argument("--only-setup", dest="nosim", action='store_true', help="only set up run folder; don;t start simulation [default: %(default)s]")
     parser.add_argument("--grok-first", dest="grok", action='store_true', 
                         help="run Grok for all folders during setup [default: %(default)s]")
     parser.add_argument("--skip-grok", dest="skipgrok", action='store_true', help="do not run Grok at all [default: %(default)s]")
@@ -109,6 +110,7 @@ def main(argv=None): # IGNORE:C0111
     yamlfile     = args.config
     data_root    = args.data_root
     lnosetup     = args.nosetup
+    lnosim       = args.nosim
     lgrok        = args.grok
     lskipgrok    = args.skipgrok
     ldryrun      = args.dryrun
@@ -149,8 +151,10 @@ def main(argv=None): # IGNORE:C0111
     if lquiet: enshgs.lreport = False
 
     ## here we are actually running the program
-    if lnosetup: batch_config['lsetup'] = False
-    if lgrok: batch_config['lgrok'] = True
+    if 'lsetup' in batch_config:
+        print("Run folder setup is handled via command line arguments; removing batch option 'lsetup'.")
+        del  batch_config['lsetup']
+    if 'lgrok' in batch_config: del batch_config['lgrok']
     if lskipgrok: batch_config['skip_grok'] = True
     if ldryrun: batch_config['ldryrun'] = True
     if NP is not None: batch_config['NP'] = NP
@@ -158,26 +162,54 @@ def main(argv=None): # IGNORE:C0111
     elif NP > 1: batch_config['lparallel'] = True
     if runtime is not None: batch_config['runtime_override'] = runtime
     
-    # run simulations
-    if not lquiet:
-      print('\n\n   ---             Beginning Batch Execution             ---\n') # two newlines
-    if ldebug:
-      print("\nYAML Configuration for batch execution:")
-      print(batch_config)
-      print('')
-    ec = enshgs.runSimulations(**batch_config)
+    # run setup
+    if lnosetup:
+      
+        # mark experiments as scheduled, before we begin batch execution
+        if not lnoindicator:
+          for m in enshgs:
+              open('{}/SCHEDULED'.format(m.rundir),'a').close()
+              
+    else:
+        
+        # run setup for experiments
+        ec = enshgs.setupExperiments(lschedule=not (lnosim or lnoindicator), lgrok=(lgrok and not lskipgrok), **batch_config) 
+        # don't use indicators, if we don't actuall run a batch execution
+      
+        # report results
+        if ec == 0 and all(g for g in enshgs.rundirOK):
+          if lnosim:
+              print("\n   ***   All HGS Run Folder Setups Completed Successfully!!!   ***\n")
+        elif not any(g for g in enshgs.rundirOK):
+          print("\n   ###           All HGS Setups Failed!!!           ###\n")
+        else:
+          print("\n   ===           Some HGS Setups Failed!!!          ===\n")
+          print(  "         {} out of {} completed ".format(sum(g for g in enshgs.rundirOK), len(enshgs)))
+      
     
-    # check results
-    if not lquiet:
-      print('\n') # two newlines
-      if ec == 0 and all(g for g in enshgs.HGSOK):
-        print("\n   ***   All HGS Simulations Completed Successfully!!!   ***\n")
-      elif not any(g for g in enshgs.HGSOK):
-        print("\n   ###           All HGS Simulations Failed!!!           ###\n")
-      else:
-        print("\n   ===           Some HGS Simulations Failed!!!          ===\n")
-        print(  "         {} out of {} completed ".format(sum(g for g in enshgs.HGSOK), len(enshgs)))
-      print('') # one newline
+    # run simulations
+    if not lnosim:
+        if not lquiet:
+          print('\n\n   ---             Beginning Batch Execution             ---\n') # two newlines
+        if ldebug:
+          print("\nYAML Configuration for batch execution:")
+          print(batch_config)
+          print('')
+        
+        # begin actual batch execution
+        ec = enshgs.runSimulations(lsetup=False, **batch_config) # setup handled above
+    
+        # check results
+        if not lquiet:
+          print('\n') # two newlines
+          if ec == 0 and all(g for g in enshgs.HGSOK):
+            print("\n   ***   All HGS Simulations Completed Successfully!!!   ***\n")
+          elif not any(g for g in enshgs.HGSOK):
+            print("\n   ###           All HGS Simulations Failed!!!           ###\n")
+          else:
+            print("\n   ===           Some HGS Simulations Failed!!!          ===\n")
+            print(  "         {} out of {} completed ".format(sum(g for g in enshgs.HGSOK), len(enshgs)))
+          print('') # one newline
     
     # return exit code of HGS ensemble
     return ec

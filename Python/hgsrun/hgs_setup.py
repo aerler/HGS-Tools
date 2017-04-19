@@ -401,11 +401,11 @@ class HGS(Grok):
     self.NP = NP # number of processors
     self.lindicators = lindicator # use indicator files
     
-  def setupRundir(self, template_folder=None, bin_folder=None, loverwrite=True):
+  def setupRundir(self, template_folder=None, bin_folder=None, loverwrite=True, lschedule=True):
     ''' copy entire run folder from a template folder and link executables '''
     template_folder = self.template_folder if template_folder is None else template_folder
     if template_folder is None: raise ValueError("Need to specify a template path.")
-    if not os.path.isdir(template_folder): raise IOError(template_folder)
+    if not os.path.exists(template_folder): raise IOError(template_folder)
     # clear existing directory
     if loverwrite and os.path.isdir(self.rundir):
 #       ec = subprocess.call(['rm','-r',self.rundir], stdout=subprocess.STDOUT, stderr=subprocess.STDOUT)
@@ -443,7 +443,7 @@ class HGS(Grok):
         raise IOError("Executable file '{}' not found in run folder.\n ('{}') ".format(exe,self.rundir)) 
     # set rundir status
     self.rundirOK = os.path.isdir(self.rundir)
-    if self.lindicators: 
+    if self.lindicators and lschedule: 
       if self.rundirOK: open('{}/SCHEDULED'.format(self.rundir),'a').close()
       else: open('{}/ERROR'.format(self.rundir),'a').close()
     return 0 if self.rundirOK else 1
@@ -515,7 +515,7 @@ class HGS(Grok):
       if lerror and ec != 0: raise GrokError('Grok configuration did not complete properly.')
     # Grok run
     if not skip_grok and not self.GrokOK: 
-      ec = self.runGrok(lerror=lerror, ldryrun=ldryrun, lcompress=lcompress) # run grok (will raise exception if failed)
+      ec = self.runGrok(lconfig=not skip_config, lerror=lerror, ldryrun=ldryrun, lcompress=lcompress) # run grok (will raise exception if failed)
       if lerror and ec != 0: raise GrokError('Grok did not run or complete properly.')
     # parallelindex configuration
     if not skip_pidx and not self.pidxOK:

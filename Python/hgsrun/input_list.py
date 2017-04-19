@@ -171,6 +171,7 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
   with open(filename, 'w') as openfile: # open file list
     list_time = 0 # in case there is no iteration (needed below)
     for idx,time in enumerate(time_iter):
+      #print idx,time
       list_time = time; list_idx = idx # cumulative time/index in list
       # construct filename
       if lperiodic:
