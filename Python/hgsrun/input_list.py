@@ -223,19 +223,22 @@ if __name__ == '__main__':
     
     elif test_case == 'climatology':
       # test simple mean
-#       varname = 'pet' # 'liqwatflx'
-#       testfile = '{:s}.inc'.format(varname); inputfolder = '../climate_forcing'
-#       testpattern = 'can1_{:s}_iTime'.format(varname)
+      grid = 'brd1'; varname = 'pet'; testfile = 'pet.inc'; 
+      inputfolder = '../climate_forcing'; testpattern = '{:s}_{:s}_iTime'.format(grid,varname)
+      testfolder = 'E:/Data/HGS/ASB/brd1/NRCan/timeseries/climate_forcing/'
       generateInputFilelist(filename=testfile, folder=testfolder,
                             input_folder=inputfolder, input_pattern=testpattern+'_{IDX:02d}.asc', 
-                            length=1200, mode='climatology', lvalidate=False)
+                            length=360, mode='climatology', lvalidate=False)
     
     elif test_case == 'time-series':
       # test simple mean
+      grid = 'brd1'; varname = 'liqwatlfx'; testfile = 'precip.inc'; 
+      inputfolder = '../climate_forcing'; testpattern = '{:s}_{:s}_iTime'.format(grid,varname)
+      testfolder = 'E:/Data/HGS/ASB/brd1/NRCan/timeseries/climate_forcing/'
       generateInputFilelist(filename=testfile, folder=testfolder,
                             input_folder=inputfolder, input_pattern=testpattern+'_{IDX:02d}.asc', 
-                            #length=24, mode='time-series', lvalidate=False)
-                            length=10, interval='daily', mode='time-series', lvalidate=False)
+                            length=360, mode='time-series', lvalidate=False)
+#                             length=10, interval='daily', mode='time-series', lvalidate=False)
 
 
     ## read and print test file

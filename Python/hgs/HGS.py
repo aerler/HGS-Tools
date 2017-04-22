@@ -14,16 +14,16 @@ import scipy.interpolate as si
 import os
 from warnings import warn
 # internal imports
-from datasets.common import data_root, BatchLoad
+from datasets.common import BatchLoad, getRootFolder
 from geodata.base import Dataset, Variable, Axis, concatDatasets
 from geodata.misc import ArgumentError, VariableError, DataError, isNumber, DatasetError
 from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS, updateScalefactor
 import datetime as dt
 
-## WSC (Water Survey Canada) Meta-data
+## HGS Meta-data
 
 dataset_name = 'HGS'
-root_folder = '{:s}/{:s}/'.format(data_root,dataset_name) # the dataset root folder
+root_folder = getRootFolder(dataset_name=dataset_name, fallback_name='WRF') # get dataset root folder based on environment variables
 prefix_file = 'batch.pfx' # text file that contians the HGS problem prefix (also HGS convention)
 
 # variable attributes and name
