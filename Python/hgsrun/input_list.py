@@ -8,8 +8,7 @@ A Python module to generate the input file list that contains the atmospheric fo
 
 import numpy as np
 import os
-from geodata.misc import days_per_month, days_per_month_365, seconds_per_month, seconds_per_month_365, abbr_of_month,\
-  ArgumentError
+from geodata.misc import days_per_month, days_per_month_365, seconds_per_month, seconds_per_month_365, abbr_of_month, ArgumentError
 list_format = '{T:18.3f} {F:s}'
 
 

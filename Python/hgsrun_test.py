@@ -65,7 +65,8 @@ class GrokTest(unittest.TestCase):
     # some grok settings
     self.runtime = 5*365*24*60*60 # two years in seconds
     self.input_interval = 'monthly'
-    self.input_mode = 'periodic'
+#     self.input_mode = 'periodic'
+    self.input_mode = 'quasi-transient'
     # create Grok instance
     self.grok = Grok(rundir=self.rundir, project=self.hgs_testcase, runtime=self.runtime,
                      input_mode=self.input_mode, input_interval=self.input_interval)
@@ -93,7 +94,7 @@ class GrokTest(unittest.TestCase):
     ''' test writing of input list files with climate forcings '''
     grok = self.grok  
     # write lists for fictional scenario
-    grok.generateInputLists(input_vars='WRFPET', input_prefix=self.test_prefix, 
+    grok.generateInputLists(input_vars='WRFPET', input_prefix=self.test_prefix, pet_folder=self.test_data,
                             input_folder=self.test_data, lvalidate=self.lvalidate,)
     # convert config file list into string and verify
     output = ''.join(grok._lines) # don't need newlines 
@@ -199,7 +200,7 @@ class HGSTest(GrokTest):
     self.grok_input  = '{}/{}.grok'.format(self.hgs_template,self.hgs_testcase)
     self.grok_output = '{}/{}.grok'.format(self.rundir,self.hgs_testcase)
     # some grok settings
-    self.runtime = 5*365*24*60*60 # two years in seconds
+    self.runtime = 5*365*24*60*60 # five years in seconds
     self.input_interval = 'monthly'
     self.input_mode = 'periodic'
     # HGS settings

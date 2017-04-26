@@ -71,7 +71,7 @@ class Grok(object):
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, 
                restarts=10, input_mode=None, input_interval=None, input_vars='PET', 
-               input_prefix=None, input_folder='../climate_forcing', lcheckdir=True):
+               input_prefix=None, input_folder='../climate_forcing', pet_folder=None, lcheckdir=True):
     ''' initialize a Grok configuration object with some settings '''
     if lcheckdir and not os.path.isdir(rundir): raise IOError(rundir)
     # determine end time in seconds (begin == 0) or number of intervals (length)
@@ -90,7 +90,7 @@ class Grok(object):
     # input configuration
     self.setInputMode(input_mode=input_mode, input_interval=input_interval,
                       input_vars=input_vars, input_prefix=input_prefix,
-                      input_folder=input_folder)
+                      input_folder=input_folder, pet_folder=pet_folder)
   
   def readConfig(self, filename=None, folder=None):
     ''' Read a grok configuration file into memory (or a template to start from). '''    
@@ -255,13 +255,14 @@ class Grok(object):
     
   
   def setInputMode(self, input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
-                   input_folder='../climate_forcing'):
+                   input_folder='../climate_forcing', pet_folder=None):
     ''' set the type of the simulation: mean/steady-state, climatology/periodic, time-series/transient '''
     # resolve type of input data 
     input_mode = input_mode.lower()
     if input_mode in ('mean','steady','steady-state') or input_mode[-5:] == '-mean': input_mode = 'steady-state'
-    elif input_mode[:4] in ('clim','peri','climatology','periodic'): input_mode = 'periodic'
+    elif input_mode in ('clim','peri','climatology','periodic'): input_mode = 'periodic'
     elif input_mode in ('time-series','timeseries','trans','transient'): input_mode = 'transient'
+    elif input_mode in ('quasi-trans','quasi-transient'): input_mode = 'quasi-transient'
     self.input_mode = input_mode
     # set input interval
     input_interval = input_interval.lower()
@@ -271,17 +272,21 @@ class Grok(object):
     self.input_interval = input_interval
     # set other variables
     if input_vars.upper() not in ('PET','WRFPET','NET'): raise NotImplementedError(input_vars)
+    if input_mode == 'quasi-transient' and input_vars.upper() not in ('PET','WRFPET'): 
+        raise ArgumentError("Quasi-transient input requires a PET variable.") 
     # N.B.: the input config NET actually requires changes to the grok file, which is currently not done
     self.input_vars = input_vars
     self.input_prefix = input_prefix
     self.input_folder = input_folder
+    self.pet_folder = input_folder if pet_folder is None else pet_folder
   
-  def generateInputLists(self, input_vars=None, input_prefix=None, input_folder=None,
+  def generateInputLists(self, input_vars=None, input_prefix=None, input_folder=None, pet_folder=None,
                          lvalidate=True, axis='iTime', lcenter=True, l365=True, lFortran=True):
     ''' generate and validate lists of input files and write to appropriate files '''
     input_vars = self.input_vars if input_vars is None else input_vars
     input_prefix = self.input_prefix if input_prefix is None else input_prefix
     input_folder = self.input_folder if input_folder is None else input_folder
+    pet_folder = self.pet_folder if pet_folder is None else pet_folder
     # generate default input vars
     if isinstance(input_vars,basestring):
       if input_vars.upper() == 'PET': # liquid water + snowmelt & PET as input
@@ -303,11 +308,18 @@ class Grok(object):
       filename = '{0}.inc'.format(varname)
       if self.getParam('name', after=vartype, llist=False).lower() != grokname:
             raise GrokError("No entry for boundary condition type '{}'/'{}' found in grok file!".format(vartype,grokname))
-      self.setParam('time raster table', 'include {}'.format(filename), after=vartype)
+      self.setParam('time raster table', 'include {}'.format(filename), after=vartype)      
+      # special handlign for quasi-transient forcing based on variable
+      if self.input_mode == 'quasi-transient':
+          input_mode = 'periodic' if varname == 'pet' else 'transient' 
+          actual_input_folder = pet_folder if varname == 'pet' else input_folder
+      else: 
+          input_mode = self.input_mode; actual_input_folder = input_folder
+      # select interval and output format
       if self.input_interval == 'monthly':
-        if self.input_mode == 'steady-state': input_pattern = 'iTime_{IDX:d}' # IDX will be substituted
-        elif self.input_mode == 'periodic': input_pattern = 'iTime_{IDX:02d}' # IDX will be substituted
-        elif self.input_mode == 'transient': input_pattern = 'iTime_{IDX:03d}' # IDX will be substituted
+        if input_mode == 'steady-state': input_pattern = 'iTime_{IDX:d}' # IDX will be substituted
+        elif input_mode == 'periodic': input_pattern = 'iTime_{IDX:02d}' # IDX will be substituted
+        elif input_mode == 'transient': input_pattern = 'iTime_{IDX:03d}' # IDX will be substituted
         else: raise GrokError(self.input_mode)
         # N.B.: this is a very ugly hack - I don'e have a better idea at the moment, since
         #       we don't know the original length of the time series
@@ -317,10 +329,10 @@ class Grok(object):
       input_pattern = '{0}_{1}.asc'.format(wrfvar,input_pattern)
       if input_prefix is not None: input_pattern = '{0}_{1}'.format(input_prefix,input_pattern)
       # write file list
-      lec = generateInputFilelist(filename=filename, folder=self.rundir, input_folder=self.input_folder, 
+      lec = generateInputFilelist(filename=filename, folder=self.rundir, input_folder=actual_input_folder, 
                                   input_pattern=input_pattern, lcenter=lcenter, lvalidate=lvalidate, 
                                   units='seconds', l365=l365, lFortran=lFortran, interval=self.input_interval, 
-                                  end_time=self.runtime, mode=self.input_mode)
+                                  end_time=self.runtime, mode=input_mode)
       ec += 0 if lec else 1          
     # return exit code
     return ec
