@@ -395,18 +395,18 @@ class HGS(Grok):
   lindicators = True # use indicator files (default: True)
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, restarts=10,
-               input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
+               input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, pet_folder=None,
                input_folder='../climate_forcing', template_folder=None, linked_folders=None, NP=1, lindicator=True):
     ''' initialize HGS instance with a few more parameters: number of processors... '''
     # call parent constructor (Grok)
     super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
                              restarts=restarts, input_vars=input_vars, input_prefix=input_prefix,
-                             input_mode=input_mode, input_interval=input_interval,
+                             input_mode=input_mode, input_interval=input_interval, pet_folder=pet_folder,
                              input_folder=input_folder, length=length, lcheckdir=False)
     self.template_folder = template_folder # where to get the templates
     # prepare linked folders
     if linked_folders is None: linked_folders = ('etprop','gb','icbc','prop','soil', # original 
-                                                 'grid','init_con','K_maps','landcover','mprops') # extended
+                                                 'grid','init_con','K_maps','landcover','mprops','node_lists') # extended
     linked_folders = tuple(lf[:-1] if lf[-1] == '/' else lf for lf in linked_folders) # trim slash
     self.linked_folders = linked_folders
     # N.B.: these folders just contain static data and do not need to be replicated

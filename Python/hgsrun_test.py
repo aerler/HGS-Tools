@@ -65,8 +65,7 @@ class GrokTest(unittest.TestCase):
     # some grok settings
     self.runtime = 5*365*24*60*60 # two years in seconds
     self.input_interval = 'monthly'
-#     self.input_mode = 'periodic'
-    self.input_mode = 'quasi-transient'
+    self.input_mode = 'periodic'
     # create Grok instance
     self.grok = Grok(rundir=self.rundir, project=self.hgs_testcase, runtime=self.runtime,
                      input_mode=self.input_mode, input_interval=self.input_interval)
@@ -202,13 +201,16 @@ class HGSTest(GrokTest):
     # some grok settings
     self.runtime = 5*365*24*60*60 # five years in seconds
     self.input_interval = 'monthly'
-    self.input_mode = 'periodic'
+#     self.input_mode = 'periodic'
+    self.input_mode = 'quasi-transient'
+    input_folder = data_root+'/HGS/Templates/input/timeseries/climate_forcing/'
+    pet_folder = data_root+'/HGS/Templates/input/clim/climate_forcing/'
     # HGS settings
     self.NP = NP
     # create Grok instance
     self.hgs = HGS(rundir=self.rundir, project=self.hgs_testcase, runtime=self.runtime,
                    input_mode=self.input_mode, input_interval=self.input_interval, 
-                   input_prefix=self.test_prefix, input_folder=self.test_data ,
+                   input_prefix=self.test_prefix, input_folder=input_folder, pet_folder=pet_folder,
                    template_folder=self.hgs_template, NP=self.NP)
     self.grok = self.hgs
     # load a config file from template
@@ -222,6 +224,16 @@ class HGSTest(GrokTest):
     self.grok.writeConfig()
     del self.grok, self.hgs
     gc.collect()
+
+  def testInputLists(self):
+    ''' test writing of input list files with climate forcings '''
+    grok = self.grok  
+    # write lists for fictional scenario
+    grok.generateInputLists(lvalidate=self.lvalidate,)
+    # convert config file list into string and verify
+    output = ''.join(grok._lines) # don't need newlines 
+    assert 'precip.inc' in output
+    assert 'pet.inc' in output    
 
   def testParallelIndex(self):
     ''' test writing of parallelindex file '''
@@ -316,13 +328,16 @@ class EnsHGSTest(unittest.TestCase):
     # some grok settings
     self.runtime = 5*365*24*60*60 # two years in seconds
     self.input_interval = 'monthly'
-    self.input_mode = 'periodic'
+#     self.input_mode = 'periodic'
+    self.input_mode = 'quasi-transient'
+    input_folder = data_root+'/HGS/Templates/input/timeseries/climate_forcing/'
+    pet_folder = data_root+'/HGS/Templates/input/clim/climate_forcing/'
     # HGS settings
     self.NP = NP
     # create 2-member ensemble
     self.enshgs = EnsHGS(rundir=self.rundir + "/{A}/", project=self.hgs_testcase, runtime=self.runtime,
                          restarts=2, input_mode=self.input_mode, input_interval=self.input_interval, 
-                         input_prefix=self.test_prefix, input_folder=self.test_data,
+                         input_prefix=self.test_prefix, input_folder=input_folder, pet_folder=pet_folder,
                          NP=self.NP, A=['A1','A2'], outer_list=['A'], template_folder=self.hgs_template,
                          loverwrite=True)
     # load a config file from template
@@ -434,8 +449,8 @@ if __name__ == "__main__":
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-    tests += ['Grok']
-    tests += ['HGS']    
+#     tests += ['Grok']
+#     tests += ['HGS']    
     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above

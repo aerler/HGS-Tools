@@ -134,7 +134,7 @@ class EnsHGS(object):
     self.members = []; self.rundirs = []; self.hgsargs = [] # ensemble lists
     for kwargs in kwargs_list:
       # isolate folder variables and perform variable substitution
-      for folder_type in ('template_folder','input_folder','rundir'):
+      for folder_type in ('template_folder','input_folder','pet_folder','rundir'):
         if folder_type in kwargs:
           folder = kwargs[folder_type]
           if not isinstance(folder,basestring): raise TypeError(folder)
