@@ -198,8 +198,8 @@ if __name__ == '__main__':
     
     # test cases
 #     test_case = 'simple_mean'
-    test_case = 'climatology'
-#     test_case = 'time-series'
+#     test_case = 'climatology'
+    test_case = 'time-series'
     
     ## file settings
     # work directory settings ("global" variable)
@@ -213,6 +213,13 @@ if __name__ == '__main__':
     if not os.path.exists(testfolder):os.mkdir(testfolder)
     testfile = 'test.inc'; testpattern = 'test_file'; inputfolder = '../test_folder'
     
+    # for production
+    grid = 'brd1'; project = 'ASB'; length = 360
+    varname = 'liqwatlfx'; testfile = 'precip.inc'; 
+#     varname = 'pet'; testfile = 'pet.inc'      
+    inputfolder = '../climate_forcing/na12_maritime/'; testpattern = '{:s}_{:s}_iTime'.format(grid,varname)
+    testfolder = 'E:/Data/HGS/{PRJ}/{GRD}/NRCan/'.format(PRJ=project,GRD=grid)
+      
     ## write test file
     if test_case == 'simple_mean':
       # test simple mean
@@ -222,21 +229,17 @@ if __name__ == '__main__':
     
     elif test_case == 'climatology':
       # test simple mean
-      grid = 'brd1'; varname = 'pet'; testfile = 'pet.inc'; 
-      inputfolder = '../climate_forcing'; testpattern = '{:s}_{:s}_iTime'.format(grid,varname)
-      testfolder = 'E:/Data/HGS/ASB/brd1/NRCan/timeseries/climate_forcing/'
+      testfolder += '/clim_30/'
       generateInputFilelist(filename=testfile, folder=testfolder,
                             input_folder=inputfolder, input_pattern=testpattern+'_{IDX:02d}.asc', 
-                            length=360, mode='climatology', lvalidate=False)
+                            length=length, mode='climatology', lvalidate=False)
     
     elif test_case == 'time-series':
       # test simple mean
-      grid = 'brd1'; varname = 'liqwatlfx'; testfile = 'precip.inc'; 
-      inputfolder = '../climate_forcing'; testpattern = '{:s}_{:s}_iTime'.format(grid,varname)
-      testfolder = 'E:/Data/HGS/ASB/brd1/NRCan/timeseries/climate_forcing/'
+      testfolder += '/timeseries/'
       generateInputFilelist(filename=testfile, folder=testfolder,
                             input_folder=inputfolder, input_pattern=testpattern+'_{IDX:02d}.asc', 
-                            length=360, mode='time-series', lvalidate=False)
+                            length=length, mode='time-series', lvalidate=False)
 #                             length=10, interval='daily', mode='time-series', lvalidate=False)
 
 
