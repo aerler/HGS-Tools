@@ -265,7 +265,7 @@ class EnsHGS(object):
         rundirs = [rundir for rundir,OK in zip(self.rundirs,self.configOK) if not OK]
         raise GrokError("Experiment setup failed in {0} cases:\n{1}".format(ec,rundirs))
     # run HGS
-    if runtime_override is not None: self.setRuntime(time=runtime_override)
+    if runtime_override is not None: self.setRuntime(runtime=runtime_override)
     kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.runHGS).args if arg in allargs}
     ecs = self.runHGS(inner_list=inner_list, outer_list=outer_list, lparallel=lparallel, NP=NP, callback=callback, 
                       skip_config=True, **kwargs) # setup already ran (or was skipped intentionally)

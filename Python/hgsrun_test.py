@@ -74,7 +74,7 @@ class GrokTest(unittest.TestCase):
       raise IOError("Grok configuration file for testing not found:\n '{}'".format(self.grok_input))
     self.grok.readConfig(folder=self.hgs_template)
     if self.grok.runtime is not None: # need to set runtime manually here 
-      self.grok.setRuntime(time=self.grok.runtime)
+      self.grok.setRuntime(runtime=self.grok.runtime)
     assert isinstance(self.grok._lines, list), self.grok._lines
       
   def tearDown(self):
@@ -135,8 +135,6 @@ class GrokTest(unittest.TestCase):
     assert all([old == new for old,new in zip(old_times[5:],new_times)]), old_times
     assert all(np.diff(new_times) > 0), np.diff(new_times)
     
-
-
   def testRunGrok(self):
     ''' test the Grok runner command (will fail, because other inputs are missing) '''
     grok = self.grok  
@@ -159,9 +157,14 @@ class GrokTest(unittest.TestCase):
     grok = self.grok
     time = 24*60*60 # in seconds, i.e. one day
     # set run time
-    grok.setRuntime(time)
+    ec = grok.setRuntime(time)
     # test
-    assert grok.runtime == time
+    assert grok.runtime == time and ec == 0
+    # test output times
+    outtimes = grok.getParam('output times', dtype='float', llist=None)
+    assert all(np.diff(outtimes) > 0), outtimes
+    lenot = np.sum(grok.output_interval)-len(grok.output_interval)+1
+    assert len(outtimes) == lenot, grok.output_interval  
     # convert config file list into string and verify
     output = ''.join(grok._lines) # don't need newlines 
     #print(output)
@@ -336,7 +339,7 @@ class EnsHGSTest(unittest.TestCase):
     self.NP = NP
     # create 2-member ensemble
     self.enshgs = EnsHGS(rundir=self.rundir + "/{A}/", project=self.hgs_testcase, runtime=self.runtime,
-                         restarts=2, input_mode=self.input_mode, input_interval=self.input_interval, 
+                         output_interval=(2,12), input_mode=self.input_mode, input_interval=self.input_interval, 
                          input_prefix=self.test_prefix, input_folder=input_folder, pet_folder=pet_folder,
                          NP=self.NP, A=['A1','A2'], outer_list=['A'], template_folder=self.hgs_template,
                          loverwrite=True)
@@ -371,12 +374,14 @@ class EnsHGSTest(unittest.TestCase):
           if Cs == 'C2': assert enshgs.members[i].input_mode == 'periodic'
     
   def testSetTime(self):
-    ''' test the method application mechanism '''
+    ''' mainly just test the method application mechanism '''
     enshgs = self.enshgs
     assert all(rt == self.runtime for rt in enshgs.runtime), enshgs.runtime
+    # load Grok file
+    enshgs.readConfig(folder=self.hgs_template)
     time = 1 # new runtime
     # setter method
-    enshgs.setRuntime(time=time)
+    enshgs.setRuntime(runtime=time)
     assert all(hgs.runtime == time for hgs in enshgs), enshgs.members # EnsHGS supports iteration over members
     assert all(rt == time for rt in enshgs.runtime), enshgs.runtime # EnsHGS supports iteration over members
     #print(enshgs.runtime)
@@ -449,8 +454,8 @@ if __name__ == "__main__":
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-#     tests += ['Grok']
-#     tests += ['HGS']    
+    tests += ['Grok']
+    tests += ['HGS']    
     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above

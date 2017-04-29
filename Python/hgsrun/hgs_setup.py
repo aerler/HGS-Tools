@@ -62,15 +62,16 @@ class Grok(object):
   input_vars = 'PET' # input variable configuration
   input_prefix = None # prefix for input files
   input_folder = '../climate_forcing' # default folder for input data
+  output_interval = None # how many evenly spaced restart files to write (supports multiple nested intervals)
+  starttime = 0 # model time at initialization
   runtime = None # run time for the simulations (in seconds)
   length = None # run time in multiples of the interval length
-  restarts = None # how many evenly spaced restart files to write
   _lines = None # list of lines in file
   _sourcefile = None # file that the configuration was read from
   _targetfile = None # file that the configuration is written to
   
-  def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, 
-               restarts=10, input_mode=None, input_interval=None, input_vars='PET', 
+  def __init__(self, rundir=None, project=None, problem=None, starttime=0, runtime=None, length=None, 
+               output_interval='default', input_mode=None, input_interval=None, input_vars='PET', 
                input_prefix=None, input_folder='../climate_forcing', pet_folder=None, lcheckdir=True):
     ''' initialize a Grok configuration object with some settings '''
     if lcheckdir and not os.path.isdir(rundir): raise IOError(rundir)
@@ -84,13 +85,15 @@ class Grok(object):
     self.pm_files = self.pm_files.format(PROBLEM=self.problem) # default name
     self.olf_files = self.olf_files.format(PROBLEM=self.problem) # default name
     self.restart_file = self.restart_file.format(PROBLEM=self.problem) # default name
+    self.starttime = starttime
     self.runtime = runtime
     self.length = length
-    self.restarts = restarts
     # input configuration
     self.setInputMode(input_mode=input_mode, input_interval=input_interval,
                       input_vars=input_vars, input_prefix=input_prefix,
                       input_folder=input_folder, pet_folder=pet_folder)
+    # output configuration
+    self.resolveOutput(output_interval=output_interval)
   
   def readConfig(self, filename=None, folder=None):
     ''' Read a grok configuration file into memory (or a template to start from). '''    
@@ -192,16 +195,45 @@ class Grok(object):
     for param,value in params.iteritems():
       self.editParam(param, value, format=None)
       
-  def setRuntime(self, time, restarts=None):
-    ''' set the run time of the simulations (model time in seconds) '''
-    if restarts is not None: self.restarts = restarts
-    else: restarts = self.restarts
-    self.runtime = time
+  def resolveOutput(self,output_interval):
+    ''' method to check and determine default output intervals '''
+    # detect output interval
+    if isinstance(output_interval,basestring) and output_interval.lower() == 'default':
+        if self.input_interval == 'monthly':
+            self.output_interval = (int(self.length/12),12)
+        elif self.input_interval == 'daily':
+            self.output_interval = (int(self.length/365),12,30)
+        else: raise NotImplementedError()
+    elif isinstance(output_interval,(int,np.integer)):
+        self.output_interval = (output_interval,)
+    elif isinstance(output_interval,(tuple,list)):
+        self.output_interval = output_interval
+    else:
+        raise TypeError(output_interval)
+      
+  def setRuntime(self, runtime=None, starttime=0, output_interval=None):
+    ''' set the run time of the simulations, as well as the initial time and output times (model time in seconds) '''
+    self.runtime = runtime if runtime is not None else self.runtime
+    self.starttime = starttime if starttime is not None else self.starttime
+    self.output_interval = output_interval if output_interval is not None else self.output_interval
     if self._lines:
-      # figure out restart times
-      times = [time * float(r) / float(restarts) for r in xrange(1,restarts+1)]
+      # set start and run times
+      self.setParam('initial time', self.starttime, formatter='{:e}', )
+      # N.B.: there is no actual "run time" parameter
+      # figure out output/restart times
+      outtimes = []; outinit = self.starttime
+      for nout in self.output_interval:
+          timedelta = self.runtime - outinit
+          tmp = [ outinit + ( timedelta * float(r) / float(nout) ) for r in xrange(1,nout)]
+          outtimes.extend(tmp) # append new/refined list
+          outinit = tmp[-1] # use last value as starting point for next refinement interval
+      outtimes.append(self.runtime) # append final time for output
       # change grok file
-      self.setParam('output times', times, formatter='{:e}', )
+      self.setParam('output times', outtimes, formatter='{:e}', )
+    else: 
+        raise GrokError("No Grok file loaded.")
+    # check
+    return 0 if self.getParam('initial time', float, llist=False) == self.starttime else 1
   
   def rewriteRestart(self, backup_folder=None, lnoOut=True):
     ''' rewrite grok file for a restart based on existing output files '''
@@ -394,13 +426,13 @@ class HGS(Grok):
   pidx_file = 'parallelindx.dat' # file with parallel execution settings 
   lindicators = True # use indicator files (default: True)
   
-  def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, restarts=10,
+  def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, output_interval='default',
                input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, pet_folder=None,
                input_folder='../climate_forcing', template_folder=None, linked_folders=None, NP=1, lindicator=True):
     ''' initialize HGS instance with a few more parameters: number of processors... '''
     # call parent constructor (Grok)
     super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
-                             restarts=restarts, input_vars=input_vars, input_prefix=input_prefix,
+                             output_interval=output_interval, input_vars=input_vars, input_prefix=input_prefix,
                              input_mode=input_mode, input_interval=input_interval, pet_folder=pet_folder,
                              input_folder=input_folder, length=length, lcheckdir=False)
     self.template_folder = template_folder # where to get the templates
@@ -468,7 +500,7 @@ class HGS(Grok):
     # load config file from template folder
     ec += self.readConfig(folder=template_folder)
     # apply time setting
-    if self.runtime is not None: self.setRuntime(time=self.runtime)
+    ec += self.setRuntime()
     # write input lists to run folder
     if linput: ec += self.generateInputLists(lvalidate=True)
     # write config file to run folder
