@@ -214,11 +214,16 @@ if __name__ == '__main__':
     testfile = 'test.inc'; testpattern = 'test_file'; inputfolder = '../test_folder'
     
     # for production
-    grid = 'brd1'; project = 'ASB'; length = 360
+#     grid = 'can1'; project = 'CAN'; length = 360
+#     grid = 'brd1'; project = 'ASB'; length = 360
+    grid = 'asb1'; project = 'ASB'; length = 432
+#     grid = 'grw2'; project = 'GRW'; length = 360
+#     grid = 'snw1'; project = 'SNW'; length = 360
     varname = 'liqwatlfx'; testfile = 'precip.inc'; 
 #     varname = 'pet'; testfile = 'pet.inc'      
-    inputfolder = '../climate_forcing/na12_maritime/'; testpattern = '{:s}_{:s}_iTime'.format(grid,varname)
-    testfolder = 'E:/Data/HGS/{PRJ}/{GRD}/NRCan/'.format(PRJ=project,GRD=grid)
+    inputfolder = '../climate_forcing/'; testpattern = '{:s}_{:s}_iTime'.format(grid,varname)
+#     testfolder = 'D:/Data/HGS/{PRJ}/{GRD}/NRCan/'.format(PRJ=project,GRD=grid)
+    testfolder = '//AQFS1/Data/temp_data_exchange/{PRJ}/{GRD}/'.format(PRJ=project,GRD=grid)
       
     ## write test file
     if test_case == 'simple_mean':
@@ -230,6 +235,7 @@ if __name__ == '__main__':
     elif test_case == 'climatology':
       # test simple mean
       testfolder += '/clim_30/'
+#       testfolder += '/timeseries/'      
       generateInputFilelist(filename=testfile, folder=testfolder,
                             input_folder=inputfolder, input_pattern=testpattern+'_{IDX:02d}.asc', 
                             length=length, mode='climatology', lvalidate=False)
@@ -238,7 +244,7 @@ if __name__ == '__main__':
       # test simple mean
       testfolder += '/timeseries/'
       generateInputFilelist(filename=testfile, folder=testfolder,
-                            input_folder=inputfolder, input_pattern=testpattern+'_{IDX:02d}.asc', 
+                            input_folder=inputfolder, input_pattern=testpattern+'_{IDX:03d}.asc', 
                             length=length, mode='time-series', lvalidate=False)
 #                             length=10, interval='daily', mode='time-series', lvalidate=False)
 
