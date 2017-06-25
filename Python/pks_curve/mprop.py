@@ -103,7 +103,7 @@ class MPROPlines():
     
     def get_gen_table(self,):
         ''' get the code section that controls table generation ''' 
-        code = ( ' ! Parameters to generate van Genuchten table output'
+        code = ( ' ! Parameters to generate van Genuchten table output \n\n'
                  ' residual saturation \n'
                  ' 0.13 \n\n'
                  ' minimum relative permeability \n'
@@ -311,8 +311,7 @@ class MPROPlines():
                                     if not lhasunsat:
                                          
                                         # add unsat function block header
-                                        tmp_cmd = ' {} ! added to output default tables \n\n'.format(unsat_fun_cmd)
-                                        fcopy.write(tmp_cmd)
+                                        fcopy.write(unsat_fun_cmd+' \n\n')
                                         fcopy.write(self.get_gen_table())
                                         fcopy.write(' end ! function \n\n')
                                   
