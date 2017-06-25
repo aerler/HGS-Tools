@@ -119,19 +119,26 @@ class MPROPlines():
 #                   generate tables from unsaturated functions \n'''
 
     
-    def combine_pkstable(self):
+    def combine_pkstable(self, ldebug=False):
         """ take the p_s and Kr_s table and combine them together"""
         
         combine_pkstable_psfiles = glob.glob( '{}/{}o.p_s_table.*.dat'.format(self.grok_dirc, self.grok_name))
-        print('{}/{}.p_s_table.*.dat'.format(self.grok_dirc, self.grok_name))
-        print(combine_pkstable_psfiles)
+        if ldebug:
+            print('')
+            print('{}/{}.p_s_table.*.dat'.format(self.grok_dirc, self.grok_name))
+            print(combine_pkstable_psfiles)
+        
+        if len(combine_pkstable_psfiles) == 0:
+            print("\nERROR: No p_s and Kr_s tables found in folder '{}'. Did you run Grok?".format(self.grok_dirc))
+            return
+        
         # file name of the combined table
-
-        # path for the pks tables
         pksfiles = [w.replace('p_s_table', 'p_k_s_table') for w in combine_pkstable_psfiles]
+        # path for the pks tables
         pksfiles = list(map(os.path.basename,pksfiles))
         pksfiles = list(map(lambda x:os.path.join(self.grok_dirc, self.pks_folder,x),pksfiles))
-        print(pksfiles)
+        if ldebug: 
+          print(''); print(pksfiles)
         
         # the combined table is saved under directory 'pks_table'
         if not os.path.exists( self.pks_path):
