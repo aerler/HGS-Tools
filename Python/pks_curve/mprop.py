@@ -230,7 +230,9 @@ class MPROPlines():
 
 
     def insert_pks(self, material_name):
-        ''' construct string for command to read values from table (incl. table file path) '''        
+        ''' construct string for command to read values from table (incl. table file path) '''      
+        material_name = material_name.lower() # this is necessary, because Grok makes all output filenames lowercase
+        # N.B.: I'm not sure if Grok also makes the problem prefix lowercase or not...
         pks_path =  os.path.join('.', self.pks_folder, '{}o.p_k_s_table.{}.dat'.format(self.grok_name, material_name)) 
         return ' include ' + pks_path
 
