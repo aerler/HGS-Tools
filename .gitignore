@@ -43,6 +43,7 @@ figures/
 bin/
 test/
 gmon/.out
+.*project
 
 Python/dataset/test.txt
 Python/queue-test.txt
