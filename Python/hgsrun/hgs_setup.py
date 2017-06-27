@@ -438,7 +438,7 @@ class HGS(Grok):
     self.template_folder = template_folder # where to get the templates
     # prepare linked folders
     if linked_folders is None: linked_folders = ('etprop','gb','icbc','prop','soil', # original 
-                                                 'grid','init_con','K_maps','landcover','mprops','node_lists') # extended
+                                                 'grid','init_con','K_maps','landcover','mprops','node_lists','pks_table') # extended
     linked_folders = tuple(lf[:-1] if lf[-1] == '/' else lf for lf in linked_folders) # trim slash
     self.linked_folders = linked_folders
     # N.B.: these folders just contain static data and do not need to be replicated
