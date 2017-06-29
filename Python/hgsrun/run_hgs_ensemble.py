@@ -92,11 +92,11 @@ def main(argv=None): # IGNORE:C0111
     parser.add_argument("--skip-grok", dest="skipgrok", action='store_true', help="do not run Grok at all [default: %(default)s]")
     parser.add_argument("--dry-run", dest="dryrun", action='store_true', 
                         help="do not actually run simulations [default: %(default)s]")
-    parser.add_argument("-np", "-n", "--processes", dest="NP", nargs=1, default=None, type=int, 
+    parser.add_argument("-np", "-n", "--processes", dest="NP", default=None, type=int, 
                         help="number of concurrent simulations to run [default: number of available CPUs]")
     parser.add_argument("--serial", dest="serial", action='store_true', 
                         help="run batch execution in serial mode [default: %(default)s]")
-    parser.add_argument("--runtime", dest="runtime", nargs=1, default=None, type=int, 
+    parser.add_argument("--runtime", dest="runtime", default=None, type=int, 
                         help="override runtime setting [default: set in Grok configuration file]")
     
     # Process arguments
