@@ -22,28 +22,36 @@ class MPROPlines():
         in order to read them from input tables. It also assembles the tabulated values written by Grok in the form 
         that is required to read them as file inputs. """
 
-    def __init__ (self,grok_dirc, grok_name, mprop_dirc, mprop_name):
-        self.grok_dirc = grok_dirc
+    def __init__ (self,grok_dirc, grok_name, mprop_dirc, mprop_name, sr, kr_min, tsf, p_min, ldebug = False):
+        self.grok_dirc  = grok_dirc
         self.mprop_path = os.path.join(mprop_dirc,mprop_name)
-        self.grok_name = grok_name
+        self.grok_name  = grok_name
         self.pks_folder = 'pks_table'
-        self.pks_path = os.path.join(self.grok_dirc, self.pks_folder)
-                              
-       
-	   
-    
-    def get_gen_table(self,):
+        self.pks_path   = os.path.join(self.grok_dirc, self.pks_folder)
+        self.sr         = sr
+        self.kr_min     = kr_min
+        self.tsf        = tsf
+        self.p_min      = p_min
+
+        if ldebug:
+
+            print (" van Genuchten parameters \n ")
+            print({"sr":sr, "kr_min":kr_min, "tsf":tsf, "p_min":p_min})
+
+    def get_gen_table(self, sr, kr_min, tsf, p_min):
         ''' get the code section that controls table generation ''' 
+
         code = ( ' ! Parameters to generate van Genuchten table output \n\n'
-                 ' residual saturation \n'
-                 ' 0.13 \n\n'
-                 ' minimum relative permeability \n'
-                 ' 1.072e-12 \n\n'
+                 ' residual saturation \n' 
+                 '{} \n\n'.format(self.sr) + 
+                 ' minimum relative permeability \n' 
+                 '{} \n\n'.format(self.kr_min) + 
                  ' table smoothness factor \n'
-                 ' 1e-4 \n\n'
+                 '{} \n\n'.format(self.tsf) +
                  ' table minimum pressure \n'
-                 ' -1.0e3 \n\n'
+                 '{} \n\n'.format(self.p_min) +
                  ' generate tables from unsaturated functions \n\n' )
+
         return code
 #         code = '''residual saturation \n 0.13 \n\n minimum relative permeability \n 1.072e-12 \n\n 
 #                   table smoothness factor \n 1e-4 \n\n table minimum pressure \n -1.0e3 \n\n 
@@ -56,7 +64,7 @@ class MPROPlines():
         psfiles = glob.glob( '{}/{}o.p_s_table.*.dat'.format(self.grok_dirc, self.grok_name))
         if ldebug:
             print('')
-            print('{}/{}.p_s_table.*.dat'.format(self.grok_dirc, self.grok_name))
+            print('{}/{}o.p_s_table.*.dat'.format(self.grok_dirc, self.grok_name))
             print(psfiles)
         
         if len(psfiles) == 0:
@@ -118,7 +126,7 @@ class MPROPlines():
         return ' include ' + pks_path
 
 
-    def walk_mprop(self, lgentab=False):
+    def walk_mprop(self, lgentab=False, ldebug=False):
             """ walk through mprops file, identify van Genuchten function definitions, and edit file """
             
             material_flag = False
@@ -172,7 +180,10 @@ class MPROPlines():
                                     if lgentab:
                                         # if in table-generation mode, include table directives just before 'end'
                                         if 'end' in line.lower(): 
-                                            fcopy.write(self.get_gen_table())
+                                            fcopy.write(self.get_gen_table(sr = self.sr, 
+                                                                           kr_min = self.kr_min, 
+                                                                           tsf = self.tsf, 
+                                                                           p_min = self.p_min))
                                         fcopy.write(line) # and print original line, too                                        
                                     else:
                                         # if in include-table mode, just comment out
@@ -195,7 +206,10 @@ class MPROPlines():
                                          
                                         # add unsat function block header
                                         fcopy.write(unsat_fun_cmd+' \n\n')
-                                        fcopy.write(self.get_gen_table())
+                                        fcopy.write(self.get_gen_table(sr = self.sr, 
+                                                                        kr_min = self.kr_min, 
+                                                                        tsf = self.tsf, 
+                                                                        p_min = self.p_min))
                                         fcopy.write(' end ! function \n\n')
                                   
                                 else:
