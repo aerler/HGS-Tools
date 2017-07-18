@@ -9,16 +9,15 @@ Survey of Canada; the data is stored in human-readable text files and tables.
 
 # external imports
 import numpy as np
-import pandas as pd
-import scipy.interpolate as si
 import os
-from warnings import warn
 # internal imports
+from geodata.misc import ArgumentError, VariableError, DataError, isNumber, DatasetError
 from datasets.common import BatchLoad, getRootFolder
 from geodata.base import Dataset, Variable, Axis, concatDatasets
-from geodata.misc import ArgumentError, VariableError, DataError, isNumber, DatasetError
 from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS, updateScalefactor
 import datetime as dt
+# local imports
+from hgs.misc import interpolateIrregular, convertDate
 
 ## HGS Meta-data
 
@@ -40,34 +39,11 @@ flow_to_flux = dict(discharge='sfroff', seepage='ugroff', flow='runoff') # relat
 hgs_varlist = ['time','discharge','seepage','flow'] # internal use only; needs to have 'time'
 hgs_variables = {'surface':'discharge','porous media':'seepage','total':'flow'} # mapping of HGS variable names GeoPy conventions
 
-# a function to resolve a data
-def convertDate(date):
-  ''' convert a data into a common format '''
-  if isinstance(date, (tuple,list)):
-    year = date[0] # need these for time axis (day not really...)
-    month = date[1] if len(date) > 1 else 1
-    day = date[2] if len(date) > 2 else 1
-  elif isinstance(date, dict):
-    year = date['year']; month = date.get('month',1); day = date.get('day',1)
-  else:
-    year=int(date); month=1; day=1
-  return year,month,day
-
-# a function to conver to month since a certain year
-def monthSince(year, month, start_year=1979, start_month=1):
-  ''' compute the number of month since the start date '''
-  return 12*(year - start_year) + month - start_month
-  
-# a date parser function for the pandas ascii reader
-def date_parser(seconds, year=1979, month=1, day=1, **kwargs):
-    ''' convert seconds into a datetime object '''
-    return pd.Index(pd.datetime(year=year, month=month, day=day, **kwargs) + seconds * pd.offsets.Second())
 
 ## function to load HGS station timeseries
-def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=None, title=None,
-                  start_date=None, end_date=None, run_period=15, period=None, lskipNaN=False, lcheckComplete=True,
-                  basin=None, WSC_station=None, basin_list=None, filename=None, prefix=None, 
-                  scalefactors=None, **kwargs):
+def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=None, title=None, lcheckComplete=True,
+                  start_date=None, end_date=None, run_period=None, period=None, lskipNaN=False, basin=None,  
+                  WSC_station=None, basin_list=None, filename=None, prefix=None, scalefactors=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None or ( filename is None and station is None ): raise ArgumentError
@@ -137,6 +113,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
 #   # resample to monthly data
 #   data_frame = data_frame.resample(resampling).agg(np.mean)
 #       data = data_frame[flowvar].values
+
   # parse header
   if varlist is None: varlist = variable_list[:] # default list 
   with open(filepath, 'r') as f:
@@ -152,8 +129,16 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   variable_order = [hgs_variables[v] for v in variable_order] # replace HGS names with GeoPy names
   vardict = {v:i+1 for i,v in enumerate(variable_order)} # column mapping; +1 because time was removed
   variable_order = [v for v in variable_order if v in varlist or flow_to_flux[v] in varlist]
-  usecols = tuple(vardict[v] for v in variable_order) # variable columns that need to loaded (except time, which is col 0)
+  usecols = tuple(vardict[v] for v in variable_order) # variable columns that need to be loaded (except time, which is col 0)
   assert 0 not in usecols, usecols
+  
+  # generate regular monthly time steps
+  start_datetime = np.datetime64(dt.datetime(year=start_year, month=start_month, day=start_day), 'M')
+  end_datetime = np.datetime64(dt.datetime(year=end_year, month=end_month, day=end_day), 'M')
+  time_monthly = np.arange(start_datetime, end_datetime+np.timedelta64(1, 'M'), dtype='datetime64[M]')
+  assert time_monthly[0] == start_datetime, time_monthly[0]
+  assert time_monthly[-1] == end_datetime, time_monthly[-1] 
+  
   # load data as tab separated values
   data = np.genfromtxt(filepath, dtype=np.float64, delimiter=None, skip_header=3, usecols = (0,)+usecols)
   assert data.shape[1] == len(usecols)+1, data.shape
@@ -163,41 +148,11 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
       raise DataError("Missing values (NaN) encountered in hydrograph file; use 'lskipNaN' to ignore.\n('{:s}')".format(filepath))    
   time_series = data[:,0]; flow_data = data[:,1:]
   assert flow_data.shape == (len(time_series),len(usecols)), flow_data.shape
-  # original time deltas in seconds
-  time_diff = time_series.copy(); time_diff[1:] = np.diff(time_series) # time period between time steps
-  assert np.all( time_diff > 0 ), filepath
-  time_diff = time_diff.reshape((len(time_diff),1)) # reshape to make sure broadcasting works
-  # integrate flow over time steps before resampling
-  flow_data[1:,:] -= np.diff(flow_data, axis=0)/2. # get average flow between time steps
-  flow_data *= time_diff # integrate flow in time interval by multiplying average flow with time period
-  flow_data = np.cumsum(flow_data, axis=0) # integrate by summing up total flow per time interval
-  # generate regular monthly time steps
-  start_datetime = np.datetime64(dt.datetime(year=start_year, month=start_month, day=start_day), 'M')
-  end_datetime = np.datetime64(dt.datetime(year=end_year, month=end_month, day=end_day), 'M')
-  time_monthly = np.arange(start_datetime, end_datetime+np.timedelta64(1, 'M'), dtype='datetime64[M]')
-  assert time_monthly[0] == start_datetime, time_monthly[0]
-  assert time_monthly[-1] == end_datetime, time_monthly[-1] 
-  # convert monthly time series to regular array of seconds since start date
-  time_monthly = ( time_monthly.astype('datetime64[s]') - start_datetime.astype('datetime64[s]') ) / np.timedelta64(1,'s')
-  assert time_monthly[0] == 0, time_monthly[0]
-  # interpolate integrated flow to new time axis
-  #flow_data = np.interp(time_monthly, xp=time_series[:,0], fp=flow_data[:,0],).reshape((len(time_monthly),1))
-  time_series = np.concatenate(([0],time_series), axis=0) # integrated flow at time zero must be zero...
-  flow_data = np.concatenate(([[0,]*len(usecols)],flow_data), axis=0) # ... this is probably better than interpolation
-  # N.B.: we are adding zeros here so we don't have to extrapolate to the left; on the right we just fill in NaN's
-  if ( time_monthly[-1] - time_series[-1] ) > 3*86400. and lcheckComplete: 
-      warn("Data record ends more than 3 days befor end of period: {} days".format((time_monthly[-1]-time_series[-1])/86400.))
-  elif (time_monthly[-1]-time_series[-1]) > 5*86400.: 
-      if lcheckComplete: 
-        raise DataError("Data record ends more than 5 days befor end of period: {} days".format((time_monthly[-1]-time_series[-1])/86400.))
-      else:
-        warn("Data record ends more than 5 days befor end of period: {} days".format((time_monthly[-1]-time_series[-1])/86400.))
-  flow_interp = si.interp1d(x=time_series, y=flow_data, kind='linear', axis=0, copy=False, 
-                            bounds_error=False, fill_value=np.NaN, assume_sorted=True) 
-  flow_data = flow_interp(time_monthly) # evaluate with call
-  # compute monthly flow rate from interpolated integrated flow
-  flow_data = np.diff(flow_data, axis=0) / np.diff(time_monthly, axis=0).reshape((len(time_monthly)-1,1))
-  flow_data *= 1000 # convert from m^3/s to kg/s
+  
+  # call function to interpolate irregular HGS timeseries to regular monthly timseries  
+  flow_data = interpolateIrregular(old_time=time_series, flow_data=flow_data, new_time=time_monthly, start_date=start_datetime, 
+                                   lkgs=True, lcheckComplete=lcheckComplete, usecols=usecols, interp_kind='linear', fill_value=np.NaN)
+  
   # construct time axis
   start_time = 12*(start_year - 1979) + start_month -1
   end_time = 12*(end_year - 1979) + end_month -1
@@ -205,6 +160,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
               coord=np.arange(start_time, end_time)) # not including the last, e.g. 1979-01 to 1980-01 is 12 month
   assert len(time_monthly) == end_time-start_time+1
   assert flow_data.shape == (len(time),len(variable_order)), (flow_data.shape,len(time),len(variable_order))
+  
   # construct dataset
   dataset = Dataset(atts=metadata)
   dataset.station = station # add gage station object, if available (else None)
@@ -235,6 +191,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
           dataset = updateScalefactor(dataset, varlist=scalelist, scalefactor=scalefactors)
       else: 
           raise TypeError(scalefactors) 
+        
   # return completed dataset
   return dataset
 
@@ -300,8 +257,8 @@ if __name__ == '__main__':
   filename = '{PREFIX:s}o.hydrograph.Station_{STATION:s}.dat'
 
 #   test_mode = 'gage_station'
-#   test_mode = 'dataset'
-  test_mode = 'ensemble'
+  test_mode = 'dataset'
+#   test_mode = 'ensemble'
 
 
   if test_mode == 'gage_station':
@@ -319,10 +276,11 @@ if __name__ == '__main__':
     hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run'
 
     # load dataset
-    dataset = loadHGS_StnTS(name=hgs_name, station=hgs_station, folder=hgs_folder, filename=filename, run_period=10, 
+    dataset = loadHGS_StnTS(station=hgs_station, folder=hgs_folder, filename=filename, 
+                            start_date=1979, run_period=10, PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                             basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, 
                             lskipNaN=True, lcheckComplete=True, varlist=None, scalefactors=1e-4,
-                            EXP='erai-g', PRD='', DOM=2, CLIM='clim_15', BC='AABC_')
+                            EXP='erai-g', name='{EXP:s} ({BASIN:s})')
     # N.B.: there is not record of actual calendar time in HGS, so periods are anchored through start_date/run_period
     # and print
     print(dataset)
@@ -334,8 +292,14 @@ if __name__ == '__main__':
     print('')
     clim = dataset.climMean()
     print(clim)
-  #   print(clim.discharge[:])
-    print(clim.sfroff[:]*86400)
+    # test exact results
+    if dataset.name == 'erai-g (GRW)':
+        print(clim.discharge[:])
+        assert np.allclose(clim.discharge[:], 
+                        np.asarray([24793.523584608138, 25172.635322536684, 39248.71087752686, 73361.80217956303, 64505.67974315114, 
+                                    32456.80709658126, 18431.93890164255, 15018.095766333918, 16045.543845416256, 17636.665822798554,
+                                    18529.952477226405, 22288.711837028015]))
+#     print(clim.sfroff[:]*86400)
 
     
   elif test_mode == 'ensemble':
