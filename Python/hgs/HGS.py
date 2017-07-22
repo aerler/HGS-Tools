@@ -88,9 +88,12 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   metadata['station_name'] = metadata.get('long_name', station_name)
   if name is not None: name = name.format(**expargs) # name expansion with capitalized keyword arguments
   else: name = 'HGS_{:s}'.format(station_name)
-  metadata['name'] = name; expargs['Name'] = name.title() # name in title format
-  if title is None: title = '{{Name:s}} (HGS, {problem:s})'.format(**metadata)
-  title = title.format(**expargs) # name expansion with capitalized keyword arguments
+  metadata['name'] = name
+  if title is None: 
+    title = ' (HGS, {problem:s})'.format(**metadata)
+    if name == name.lower(): title = name.title() + title  # capitalize
+    else: title = name + title # assume already correctly capitalized
+  else: title = title.format(**expargs) # name expansion with capitalized keyword arguments
   metadata['long_name'] = metadata['title'] = title
   # now determine start data for date_parser
   if end_date is None: 
