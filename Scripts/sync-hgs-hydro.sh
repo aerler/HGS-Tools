@@ -80,7 +80,7 @@ if [[ -n "$YAML" ]]; then YINC="--include"; fi # need to define command as well
 # print configuration for debug mode
 [ $VERBOSITY -gt 0 ] && echo "Source folder: ${SRC}" && echo
 if [ $VERBOSITY -gt 1 ]; then
-echo nice --adjustment=${NICENESS} rsync --links ${ROPT} ${YINC} ${YAML}
+echo nice --adjustment=${NICENESS} rsync -e "ssh ${SSH}" --links ${ROPT} ${YINC} ${YAML}
 	echo "${HOST}:${SRC}" "${DST}"
 	echo
 fi # DEBUG
@@ -89,7 +89,7 @@ fi # DEBUG
 if [ $ALL -eq 0 ]
   then
     # copy only a specific subset of files that aren't too big
-		nice --adjustment=${NICENESS} rsync --links ${ROPT} ${YINC} ${YAML} \
+		nice --adjustment=${NICENESS} rsync -e "ssh ${SSH}" --links ${ROPT} ${YINC} ${YAML} \
 		      --exclude '*/gb/' --exclude '*/soil/' --include '*/' --include '*.hydrograph.*.dat' \
 		      --include 'parallelindx.dat' --include 'progress.dat' --include 'log.*' --include '*.grok' \
 		      --include 'SCHEDULED' --include 'IN_PROGRESS' --include 'COMPLETED' \
@@ -98,7 +98,7 @@ if [ $ALL -eq 0 ]
 		ERR=$?
 else
     # copy the entire run folder (but do not dereference links)
-    nice --adjustment=${NICENESS} rsync --links ${ROPT} "${HOST}:${SRC}" "${DST}" # just copy everything
+    nice --adjustment=${NICENESS} rsync -e "ssh ${SSH}" --links ${ROPT} "${HOST}:${SRC}" "${DST}" # just copy everything
     ERR=$? # capture exit code
 fi # ALL
     
