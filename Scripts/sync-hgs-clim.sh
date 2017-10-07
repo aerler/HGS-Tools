@@ -75,13 +75,13 @@ if [[ -n "$YAML" ]]; then YINC="--include"; fi # need to define command as well
 # print configuration for debug mode
 [ $VERBOSITY -gt 0 ] && echo "Source folder: ${SRC}" && echo
 if [ $VERBOSITY -gt 1 ]; then
-  echo nice --adjustment=${NICENESS} rsync --links ${ROPT} ${YINC} ${YAML}
+  echo nice --adjustment=${NICENESS} rsync -e "ssh ${SSH}" --links ${ROPT} ${YINC} ${YAML}
   echo "${SRC}" "${HOST}:${DST}"
   echo
 fi # DEBUG
 
 ## execute rsync command
-nice --adjustment=${NICENESS} rsync --links ${ROPT} ${YINC} ${YAML} \
+nice --adjustment=${NICENESS} rsync -e "ssh ${SSH}" --links ${ROPT} ${YINC} ${YAML} \
       --include '*/' --include '*.asc'  --exclude '*' --prune-empty-dirs \
       "${SRC}" "${HOST}:${DST}" # remote and local host/folders
 ERR=$?
