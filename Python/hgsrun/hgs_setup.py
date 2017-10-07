@@ -17,7 +17,7 @@ from geodata.misc import ArgumentError
 from utils.misc import tail
 
 ## patch symlink on Windows
-# adapted from Stak Overflow (last answer: "Edit 2"):
+# adapted from Stack Overflow (last answer: "Edit 2"):
 # https://stackoverflow.com/questions/6260149/os-symlink-support-in-windows
 if os.name == "nt":
   def symlink_ms(source, link_name):
@@ -32,6 +32,30 @@ if os.name == "nt":
     except:
       pass
   os.symlink = symlink_ms
+  
+# WindowsError is not defined on Linux - need a dummy
+try: 
+    lWin = True
+    WindowsError
+except NameError:
+    lWin = False
+    WindowsError = None
+        
+# a platform-independent solution to clear a folder...
+def clearFolder(folder, lWin=lWin, lmkdir=True):
+    ''' create a folder; if it already exists, remove it and all files and subfolder in it, and recreate it '''
+    if os.path.exists(folder):
+        if lWin: cmd = 'rmdir /q /s {}'.format(folder.replace('/', '\\'))
+        else: cmd = ['rm','-r',folder]
+        # N.B.: don't use shutil.rmtree(folder)! It appears that on Windows the use of soft links causes rmtree to 
+        #       follow the links and also delete all source files!
+        p = subprocess.Popen(cmd, shell=lWin, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # on windows we also need the shell, because rmdir is not an executable in itself
+        stdout, stderr = p.communicate(); ec = p.poll(); del stdout
+        if ec > 0: 
+            raise IOError("The command '{}' to remove the existing directory failed; exit code {}\n{}".format(cmd,ec,stderr))
+    # crease folder
+    if lmkdir: os.mkdir(folder)
 
 # some named exceptions
 class GrokError(Exception):
@@ -47,7 +71,6 @@ class Grok(object):
     A class that loads a grok configuration file into memory, provides functions for editing,
     saving the file, and running Grok.
   '''
-  grok_bin = './grok_premium.x' # default Grok executable
   batchpfx = 'batch.pfx' # a file that defines the HGS problem name for Grok
   grok_dbg = 'grok.dbg' # Grok debug output
   grok_file = '{PROBLEM:s}.grok' # the Grok configuration file; default includes problem name
@@ -72,12 +95,14 @@ class Grok(object):
   
   def __init__(self, rundir=None, project=None, problem=None, starttime=0, runtime=None, length=None, 
                output_interval='default', input_mode=None, input_interval=None, input_vars='PET', 
-               input_prefix=None, input_folder='../climate_forcing', pet_folder=None, lcheckdir=True):
+               input_prefix=None, input_folder='../climate_forcing', pet_folder=None, lcheckdir=True,
+               grok_bin='grok.exe'):
     ''' initialize a Grok configuration object with some settings '''
     if lcheckdir and not os.path.isdir(rundir): raise IOError(rundir)
     # determine end time in seconds (begin == 0) or number of intervals (length)
     length, runtime = resolveInterval(length=length, end_time=runtime, interval=input_interval)
     # assign class variables
+    self.grok_bin = grok_bin # Grok executable: first try local folder, then $HGSDIR/bin/
     self.rundir = rundir
     self.project = project
     self.problem = project if problem is None else problem
@@ -195,10 +220,10 @@ class Grok(object):
     for param,value in params.iteritems():
       self.editParam(param, value, format=None)
       
-  def resolveOutput(self,output_interval):
+  def resolveOutput(self, output_interval):
     ''' method to check and determine default output intervals '''
     # detect output interval
-    if isinstance(output_interval,basestring) and output_interval.lower() == 'default':
+    if isinstance(output_interval, basestring) and output_interval.lower() == 'default':
         if self.input_interval == 'monthly':
             self.output_interval = (int(self.length/12),12)
         elif self.input_interval == 'daily':
@@ -215,7 +240,7 @@ class Grok(object):
     ''' set the run time of the simulations, as well as the initial time and output times (model time in seconds) '''
     self.runtime = runtime if runtime is not None else self.runtime
     self.starttime = starttime if starttime is not None else self.starttime
-    self.output_interval = output_interval if output_interval is not None else self.output_interval
+    if output_interval is not None: self.resolveOutput(output_interval)
     if self._lines:
       # set start and run times
       self.setParam('initial time', self.starttime, formatter='{:e}', )
@@ -223,8 +248,11 @@ class Grok(object):
       # figure out output/restart times
       outtimes = []; outinit = self.starttime
       for nout in self.output_interval:
+          if not isinstance(nout,(int,np.integer)): raise TypeError(nout)
+          if nout < 1: raise ValueError(nout)
           timedelta = self.runtime - outinit
-          tmp = [ outinit + ( timedelta * float(r) / float(nout) ) for r in xrange(1,nout)]
+          if nout == 1: tmp = [outinit + timedelta] 
+          else: tmp = [ outinit + ( timedelta * float(r) / float(nout) ) for r in xrange(1,nout)]
           outtimes.extend(tmp) # append new/refined list
           outinit = tmp[-1] # use last value as starting point for next refinement interval
       outtimes.append(self.runtime) # append final time for output
@@ -337,7 +365,7 @@ class Grok(object):
     ec = 0 # cumulative exit code
     for varname,val in input_vars.iteritems():
       grokname,vartype,wrfvar = val
-      filename = '{0}.inc'.format(varname)
+      filename = '{}.inc'.format(varname)
       if self.getParam('name', after=vartype, llist=False).lower() != grokname:
             raise GrokError("No entry for boundary condition type '{}'/'{}' found in grok file!".format(vartype,grokname))
       self.setParam('time raster table', 'include {}'.format(filename), after=vartype)      
@@ -375,7 +403,7 @@ class Grok(object):
     os.chdir(self.rundir) # go into run Grok/HGS folder
     self.grok_bin = executable if executable is not None else self.grok_bin
     self.batchpfx = batchpfx if batchpfx is not None else self.batchpfx
-    if not os.path.isfile(self.grok_bin): 
+    if not os.path.lexists(self.grok_bin): 
       raise IOError("Grok executable '{}' not found.\n".format(self.grok_bin))
     # create batch.pfx file with problem name for batch processing
     with open(self.batchpfx, 'w+') as bp: bp.write(self.problem) # just one line...
@@ -417,7 +445,6 @@ class HGS(Grok):
   '''
   template_folder = None # temlate for rundir setup
   linked_folders = None # list of folders that should be linked rather than copied
-  hgs_bin   = './hgs_premium.x' # default HGS executable
   rundirOK  = None # indicate if rundir setup was successfule
   configOK  = None # indicate if Grok configuration was successful
   GrokOK    = None # indicate if Grok ran successfully
@@ -428,13 +455,15 @@ class HGS(Grok):
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, output_interval='default',
                input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, pet_folder=None,
-               input_folder='../climate_forcing', template_folder=None, linked_folders=None, NP=1, lindicator=True):
+               input_folder='../climate_forcing', template_folder=None, linked_folders=None, NP=1, lindicator=True,
+               grok_bin='grok.exe', hgs_bin='phgs.exe'):
     ''' initialize HGS instance with a few more parameters: number of processors... '''
     # call parent constructor (Grok)
     super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
                              output_interval=output_interval, input_vars=input_vars, input_prefix=input_prefix,
                              input_mode=input_mode, input_interval=input_interval, pet_folder=pet_folder,
-                             input_folder=input_folder, length=length, lcheckdir=False)
+                             input_folder=input_folder, length=length, lcheckdir=False, grok_bin=grok_bin,)
+    self.hgs_bin = hgs_bin # HGS executable: first try local folder, then $HGSDIR/bin/
     self.template_folder = template_folder # where to get the templates
     # prepare linked folders
     if linked_folders is None: linked_folders = ('etprop','gb','icbc','prop','soil', # original 
@@ -445,19 +474,15 @@ class HGS(Grok):
     self.NP = NP # number of processors
     self.lindicators = lindicator # use indicator files
     
-  def setupRundir(self, template_folder=None, bin_folder=None, loverwrite=True, lschedule=True):
+  def setupRundir(self, template_folder=None, bin_folder='{HGSDIR:s}/bin', loverwrite=True, lschedule=True):
     ''' copy entire run folder from a template folder and link executables '''
     template_folder = self.template_folder if template_folder is None else template_folder
     if template_folder is None: raise ValueError("Need to specify a template path.")
     if not os.path.exists(template_folder): raise IOError(template_folder)
+    if bin_folder: bin_folder = bin_folder.format(HGSDIR=os.getenv('HGSDIR'))
     # clear existing directory
     if loverwrite and os.path.isdir(self.rundir):
-#       ec = subprocess.call(['rm','-r',self.rundir], stdout=subprocess.STDOUT, stderr=subprocess.STDOUT)
-      p = subprocess.Popen(['rm','-r',self.rundir], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-      stdout, stderr = p.communicate(); ec = p.poll(); del stdout
-      if ec > 0: 
-        raise IOError("The command rm -r {} to remove the existing directory failed; exit code {}\n{}".format(self.rundir,ec,stderr))
-      #shutil.rmtree(self.rundir) 
+      clearFolder(self.rundir, lWin=lWin, lmkdir=False)
       # N.B.: rmtree is dangerous, because if follows symbolic links and deletes contents of target directories!
     # copy folder tree
     if not os.path.isdir(self.rundir): shutil.copytree(template_folder, self.rundir, symlinks=True,
@@ -475,10 +500,17 @@ class HGS(Grok):
     for exe in (self.hgs_bin, self.grok_bin):
       local_exe = '{}/{}'.format(self.rundir,exe)
       if os.path.lexists(local_exe): os.remove(local_exe)
-      if bin_folder is not None:
-        os.symlink('{}/{}'.format(bin_folder,exe), local_exe)
-      else: 
-        os.symlink('{}/{}'.format(template_folder,exe), local_exe)
+      bin_path = '{}/{}'.format(template_folder,exe)
+      if os.path.exists(bin_path):
+        os.symlink(bin_path, local_exe)
+      elif bin_folder and os.path.exists(bin_folder):
+        bin_path = '{}/{}'.format(bin_folder,exe)    
+        if os.path.exists(bin_path):
+          os.symlink(bin_path, local_exe)
+        else:
+          raise IOError("Executable file '{}' not found in bin folder.\n ('{}') ".format(exe,bin_folder))
+      else:
+        raise IOError("Executable file '{}' not found in template folder (no bin folder found).\n ('{}') ".format(exe,template_folder))
       # check executables
       if os.path.islink(local_exe):
         if not os.path.exists(local_exe): 
@@ -492,7 +524,7 @@ class HGS(Grok):
       else: open('{}/ERROR'.format(self.rundir),'a').close()
     return 0 if self.rundirOK else 1
     
-  def setupConfig(self, template_folder=None, linput=True, lpidx=True):
+  def setupConfig(self, template_folder=None, linput=True, lpidx=True, runtime_override=None):
     ''' load config file from template and write configuration to rundir '''
     if template_folder is None:
       template_folder = self.rundir if self.template_folder is None else self.template_folder
@@ -503,6 +535,9 @@ class HGS(Grok):
     ec += self.setRuntime()
     # write input lists to run folder
     if linput: ec += self.generateInputLists(lvalidate=True)
+    # after input lists are written, apply runtime override (just for testing)
+    if runtime_override is not None: 
+        ec += self.setRuntime(runtime=runtime_override, output_interval=1)
     # write config file to run folder
     ec += self.writeConfig()
     # write parallelindex with default settings

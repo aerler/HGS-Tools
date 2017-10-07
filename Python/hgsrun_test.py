@@ -10,20 +10,23 @@ import unittest
 import numpy as np
 import os, sys, gc, shutil
 import subprocess
-from subprocess import STDOUT
+# from subprocess import STDOUT
 
 # WindowsError is not defined on Linux - need a dummy
 try: 
+    lWin = True
     WindowsError
 except NameError:
+    lWin = False
     WindowsError = None
 
 # import modules to be tested
+from hgsrun.hgs_setup import lWin, clearFolder
 from hgsrun.hgs_setup import Grok, GrokError, HGS, HGSError
 from hgsrun.hgs_ensemble import EnsHGS, EnsembleError
 
 # work directory settings ("global" variable)
-data_root = os.getenv('DATA_ROOT', '')
+data_root = os.getenv('HGS_ROOT', '')
 # test folder either RAM disk or data directory
 RAM = bool(os.getenv('RAMDISK', '')) # whether or not to use a RAM disk
 # RAM = WindowsError is None # RAMDISK may not exist on Windows...
@@ -35,37 +38,46 @@ if not os.path.isdir(workdir): raise IOError(workdir)
 # other settings
 NP = 2 # for parallel tests
 ldebug = False # additional debug output
-# lbin = True # execute binaries to test runner methods
-lbin = False # don't execute binaries (takes very long)
+lbin = True # execute binaries to test runner methods
+# lbin = False # don't execute binaries (takes very long)
+
+# executables
+grok_bin = 'grok.exe' # Grok executable
+hgs_bin  = 'phgs.exe' # HGS executable
+hgsdir   = os.getenv('HGSDIR',) # HGS license file    
+
+# use old GRW model for testing
+hgs_testcase = 'grw_omafra' # name of test project (for file names)
+hgs_template = data_root+'/Test/Templates/GRW-test/' 
+test_prefix  = 'grw2' # pefix for climate input
+clim_data    = data_root+'/Test/grw2/test-run/clim/climate_forcing/'
+ts_data      = data_root+'/Test/grw2/test-run/timeseries/climate_forcing/'
 
 
 ## tests for Grok class
 class GrokTest(unittest.TestCase):  
   # some Grok test data
-  hgs_template = data_root+'/HGS/Templates/GRW-test/' 
-  hgs_testcase = 'grw_omafra' # name of test project (for file names)
-#   hgs_template = data_root+'/HGS/Templates/GRW-V2/' 
-#   hgs_testcase = 'GRC' # name of test project (for file names)
-  test_data    = data_root+'/HGS/Templates/input/clim/climate_forcing/'
-  test_prefix  = 'grw2' # pefix for climate input
+  hgs_template = hgs_template  
+  clim_data    = clim_data 
+  ts_data      = ts_data
+  hgs_testcase = hgs_testcase
+  test_prefix  = test_prefix  
+  grok_bin     = grok_bin
   lvalidate    = False # validate input data
   rundir       = '{}/grok_test/'.format(workdir,) # test folder
-  grok_bin     = 'grok_premium.x' # Grok executable
+  # some grok settings
+  runtime = 5*365*24*60*60 # two years in seconds
+  input_interval = 'monthly'
+  input_mode = 'periodic'
    
   def setUp(self):
     ''' initialize a Grok instance '''
     if not os.path.isdir(self.hgs_template): 
       raise IOError("HGS Template for testing not found:\n '{}'".format(self.hgs_template))
-    if os.path.isdir(self.rundir):
-      subprocess.call(['rm','-r',self.rundir],) # ignore errors... somehow this is unreliable on Windows...
-    os.mkdir(self.rundir) # don't try to create if remove failed...
+    clearFolder(self.rundir) # make a clean folder
     # grok test files
     self.grok_input  = '{}/{}.grok'.format(self.hgs_template,self.hgs_testcase)
     self.grok_output = '{}/{}.grok'.format(self.rundir,self.hgs_testcase)
-    # some grok settings
-    self.runtime = 5*365*24*60*60 # two years in seconds
-    self.input_interval = 'monthly'
-    self.input_mode = 'periodic'
     # create Grok instance
     self.grok = Grok(rundir=self.rundir, project=self.hgs_testcase, runtime=self.runtime,
                      input_mode=self.input_mode, input_interval=self.input_interval)
@@ -93,8 +105,8 @@ class GrokTest(unittest.TestCase):
     ''' test writing of input list files with climate forcings '''
     grok = self.grok  
     # write lists for fictional scenario
-    grok.generateInputLists(input_vars='WRFPET', input_prefix=self.test_prefix, pet_folder=self.test_data,
-                            input_folder=self.test_data, lvalidate=self.lvalidate,)
+    grok.generateInputLists(input_vars='WRFPET', input_prefix=self.test_prefix, pet_folder=self.clim_data,
+                            input_folder=self.clim_data, lvalidate=self.lvalidate,)
     # convert config file list into string and verify
     output = ''.join(grok._lines) # don't need newlines 
     assert 'precip.inc' in output
@@ -138,6 +150,8 @@ class GrokTest(unittest.TestCase):
   def testRunGrok(self):
     ''' test the Grok runner command (will fail, because other inputs are missing) '''
     grok = self.grok  
+    # write to rundir
+    grok.writeConfig() 
     exe = '{}/{}'.format(self.hgs_template,self.grok_bin)
     logfile = '{}/log.grok'.format(grok.rundir)
     # run Grok
@@ -186,28 +200,38 @@ class GrokTest(unittest.TestCase):
 ## tests for HGS class
 class HGSTest(GrokTest):  
   # some HGS test data
+  hgs_bin      = hgs_bin
   lvalidate    = True # validate input data
   rundir       = '{}/hgs_test/'.format(workdir,) # test folder
-  hgs_bin      = 'hgs_premium.x' # HGS executable
   hgsdir       = os.getenv('HGSDIR',) # HGS license file
+  # some grok settings
+  runtime = 5*365*24*60*60 # five years in seconds
+  input_interval = 'monthly'
+#   input_mode = 'periodic'
+  input_mode = 'quasi-transient'
    
   def setUp(self):
     ''' initialize an HGS intance '''
     if not os.path.isdir(self.hgs_template): 
       raise IOError("HGS Template for testing not found:\n '{}'".format(self.hgs_template))
-    if os.path.isdir(self.rundir):
-      subprocess.call(['rm','-r',self.rundir],) # ignore errors... somehow this is unreliable on Windows...
-    os.mkdir(self.rundir) # don't try to create if remove failed...
+    if lbin and not os.path.exists(hgsdir+'/hgs.lic'):
+      raise HGSError("License file for HGS not found:\n '{}/hgs.lic'".format(hgsdir))
+    clearFolder(self.rundir) # provide clean folder for testing 
     # grok test files
     self.grok_input  = '{}/{}.grok'.format(self.hgs_template,self.hgs_testcase)
     self.grok_output = '{}/{}.grok'.format(self.rundir,self.hgs_testcase)
-    # some grok settings
-    self.runtime = 5*365*24*60*60 # five years in seconds
-    self.input_interval = 'monthly'
-#     self.input_mode = 'periodic'
-    self.input_mode = 'quasi-transient'
-    input_folder = data_root+'/HGS/Templates/input/timeseries/climate_forcing/'
-    pet_folder = data_root+'/HGS/Templates/input/clim/climate_forcing/'
+    # data sources
+    if self.input_mode == 'periodic':
+        input_folder = self.clim_data
+        pet_folder   = self.clim_data
+    elif self.input_mode == 'quasi-transient': 
+        input_folder = self.ts_data
+        pet_folder   = self.clim_data
+    elif self.input_mode == 'transient': 
+        input_folder = self.ts_data
+        pet_folder   = self.ts_data
+    else:
+        raise ValueError(self.input_mode)
     # HGS settings
     self.NP = NP
     # create Grok instance
@@ -253,17 +277,18 @@ class HGSTest(GrokTest):
     logfile = '{}/log.grok'.format(hgs.rundir)
     assert hgs.GrokOK is None, hgs.GrokOK
     # climate data
-    if not os.path.isdir(self.test_data): raise IOError(self.test_data)
+    if not os.path.isdir(self.clim_data): raise IOError(self.clim_data)
+    if not os.path.isdir(self.ts_data): raise IOError(self.ts_data)
     # run Grok
     if not os.path.isfile(exe): raise IOError(exe)
     ec = hgs.runGrok(executable=exe, logfile=logfile, lerror=False, linput=lbin, ldryrun=not lbin)
+    assert ec == ( 1 if lbin else 0 ), ec # since we did not set up the run folder, an actual run will fail
     # check output
     batchpfx = self.rundir+hgs.batchpfx
     assert os.path.isfile(batchpfx), batchpfx
     assert os.path.isfile(logfile), logfile
-    assert ec == 0, ec
     # check flag
-    assert hgs.GrokOK is True, hgs.GrokOK
+    assert hgs.GrokOK is not lbin, hgs.GrokOK
 
   def testRunHGS(self):
     ''' test the HGS runner command (will fail without proper folder setup) '''
@@ -271,70 +296,86 @@ class HGSTest(GrokTest):
     exe = '{}/{}'.format(self.hgs_template,self.hgs_bin) # run folder not set up
     logfile = '{}/log.hgs_run'.format(hgs.rundir)
     assert hgs.GrokOK is None, hgs.GrokOK
-    # set environment variable for license file
+    # print environment variable for license file
     print('\nHGSDIR: {}'.format(self.hgsdir))
     # attempt to run HGS
     if not os.path.isfile(exe): raise IOError(exe)
-    open('{}/SCHEDULED'.format(self.rundir),'a').close() # create fake indicator
-    ec = hgs.runHGS(executable=exe, logfile=logfile, skip_grok=True, ldryrun=not lbin)
+    # run setup
+    ec = hgs.setupRundir(template_folder=self.hgs_template, loverwrite=loverwrite, bin_folder=None)
+    assert ec == 0, ec
+    assert hgs.rundirOK, hgs.rundir
+    indicator = '{}/SCHEDULED'.format(self.rundir)
+    assert os.path.exists(indicator), indicator
+    # create some required files without running full setup
+    ec = hgs.runHGS(executable=exe, logfile=logfile, skip_grok=True, ldryrun=not lbin, lerror=False)
+    assert ec == ( 1 if lbin else 0 ), ec # since we did not run Grok etc., an actual run will fail
     # check output
     pidx_file = self.rundir+hgs.pidx_file
     assert os.path.isfile(pidx_file), pidx_file
     assert os.path.isfile(logfile), logfile
-    assert ec == 0, ec
     if hgs.HGSOK: indicator = '{}/COMPLETED'.format(self.rundir)
     else: indicator = '{}/FAILED'.format(self.rundir)
     assert os.path.isfile(indicator), indicator
     # check flag
-    assert hgs.GrokOK is None, hgs.GrokOK
+    assert hgs.GrokOK is None, hgs.GrokOK # we skipped Grok
 
   def testSetup(self):
     ''' test copying of a run folder from a template '''
     hgs = self.hgs
     if not os.path.isdir(self.hgs_template): raise IOError(self.hgs_template)
     # run setup
-    try: 
-      hgs.setupRundir(template_folder=self.hgs_template, loverwrite=loverwrite, bin_folder=None)
-      # check that all items are there
-      assert os.path.isdir(self.rundir), self.rundir
-      for exe in (self.hgs_bin, self.grok_bin):
-        local_exe = '{}/{}'.format(self.rundir,exe)
-        assert os.path.exists(local_exe), local_exe
-        indicator = '{}/SCHEDULED'.format(self.rundir)
-        assert os.path.exists(indicator), indicator
-      print('\nRundir: {}'.format(self.rundir))
-    except WindowsError: pass
+    hgs.setupRundir(template_folder=self.hgs_template, loverwrite=loverwrite, bin_folder=None)
+    # check that all items are there
+    assert os.path.isdir(self.rundir), self.rundir
+    for exe in (self.hgs_bin, self.grok_bin):
+      local_exe = '{}/{}'.format(self.rundir,exe)
+      assert os.path.exists(local_exe), local_exe
+    indicator = '{}/SCHEDULED'.format(self.rundir)
+    assert os.path.exists(indicator), indicator
+#     print('\nRundir: {}'.format(self.rundir))
+    assert hgs.rundirOK, hgs.rundir
    
     
 ## tests for EnsHGS class
 class EnsHGSTest(unittest.TestCase):  
   # some HGS test data
-  hgs_template = data_root+'/HGS/Templates/GRW-test/' 
-  hgs_testcase = 'grw_omafra' # name of test project (for file names)
-  test_data    = data_root+'/HGS/Templates/input/clim/climate_forcing/'
-  test_prefix  = 'grw2'
+  hgs_template = hgs_template 
+  hgs_testcase = hgs_testcase
+  clim_data    = clim_data
+  ts_data      = ts_data
+  test_prefix  = test_prefix
   rundir       = '{}/enshgs_test/'.format(workdir,) # test folder
-  grok_bin     = 'grok_premium.x' # Grok executable
-  hgs_bin      = 'hgs_premium.x' # HGS executable
-  hgsdir       = os.getenv('HGSDIR',) # HGS license file  
+  grok_bin     = grok_bin
+  hgs_bin      = hgs_bin
+  hgsdir       = hgsdir  
+  # some grok settings
+  runtime = 5*365*24*60*60 # two years in seconds
+  input_interval = 'monthly'
+  input_mode = 'periodic'
+#   input_mode = 'quasi-transient'
    
   def setUp(self):
     ''' initialize an HGS ensemble '''
     if not os.path.isdir(self.hgs_template): 
       raise IOError("HGS Template for testing not found:\n '{}'".format(self.hgs_template))
-    if os.path.isdir(self.rundir):
-      subprocess.call(['rm','-r',self.rundir],) # ignore errors... somehow this is unreliable on Windows...
-    os.mkdir(self.rundir) # create new test folder
+    if lbin and not os.path.exists(hgsdir+'/hgs.lic'):
+      raise HGSError("License file for HGS not found:\n '{}/hgs.lic'".format(hgsdir))    
+    clearFolder(self.rundir) # provide clean folder for testing
     # grok test files
     self.grok_input  = '{}/{}.grok'.format(self.hgs_template,self.hgs_testcase)
     self.grok_output = '{}/{}.grok'.format(self.rundir,self.hgs_testcase)
-    # some grok settings
-    self.runtime = 5*365*24*60*60 # two years in seconds
-    self.input_interval = 'monthly'
-#     self.input_mode = 'periodic'
-    self.input_mode = 'quasi-transient'
-    input_folder = data_root+'/HGS/Templates/input/timeseries/climate_forcing/'
-    pet_folder = data_root+'/HGS/Templates/input/clim/climate_forcing/'
+    # data sources
+    if self.input_mode == 'periodic':
+        input_folder = self.clim_data
+        pet_folder   = self.clim_data
+    elif self.input_mode == 'quasi-transient': 
+        input_folder = self.ts_data
+        pet_folder   = self.clim_data
+    elif self.input_mode == 'transient': 
+        input_folder = self.ts_data
+        pet_folder   = self.ts_data
+    else:
+        raise ValueError(self.input_mode)
     # HGS settings
     self.NP = NP
     # create 2-member ensemble
@@ -398,7 +439,7 @@ class EnsHGSTest(unittest.TestCase):
     # check license
     print('\nHGSDIR: {}'.format(self.hgsdir))
     # setup run folders and run Grok
-    enshgs.runSimulations(lsetup=True, lgrok=False, loverwrite=loverwrite, skip_grok=True, lparallel=True, NP=2, 
+    enshgs.runSimulations(lsetup=True, lgrok=True, loverwrite=loverwrite, skip_grok=True, lparallel=True, NP=NP, 
                           runtime_override=120, ldryrun=not lbin) # set runtime to 2 minutes
     assert not lbin or all(g for g in enshgs.HGSOK), enshgs.HGSOK
     for rundir in enshgs.rundirs:
@@ -441,7 +482,7 @@ if __name__ == "__main__":
 #     specific_tests += ['InputLists']
 #     specific_tests += ['ParallelIndex']
 #     specific_tests += ['Restart']
-#     specific_tests += ['RunEns']
+    specific_tests += ['RunEns']
 #     specific_tests += ['RunGrok']
 #     specific_tests += ['RunHGS']
 #     specific_tests += ['SetTime']
@@ -454,8 +495,8 @@ if __name__ == "__main__":
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-    tests += ['Grok']
-    tests += ['HGS']    
+#     tests += ['Grok']
+#     tests += ['HGS']    
     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above

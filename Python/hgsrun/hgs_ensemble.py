@@ -221,7 +221,8 @@ class EnsHGS(object):
       return EnsembleWrapper(self,attr)
     else: raise EnsembleError("Inconsistent attribute type '{}'".format(attr))
         
-  def setupExperiments(self, inner_list=None, outer_list=None, lgrok=False, lparallel=True, NP=None, **allargs):
+  def setupExperiments(self, inner_list=None, outer_list=None, lgrok=False, lparallel=True, NP=None, 
+                       runtime_override=None, **allargs):
     ''' set up run dirs as execute Grok for each member; check setup and report results '''
     ec = 0 # cumulative exit code (sum of all members)
     # create run folders and copy data
@@ -232,7 +233,8 @@ class EnsHGS(object):
     ec += sum(ecs)
     # write configuration
     kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.setupConfig).args if arg in allargs}
-    ecs = self.setupConfig(inner_list=inner_list, outer_list=outer_list, lparallel=lparallel, NP=NP, **kwargs)
+    ecs = self.setupConfig(inner_list=inner_list, outer_list=outer_list, lparallel=lparallel, NP=NP, 
+                           runtime_override=runtime_override, **kwargs)
     if any(ecs) or not all(self.configOK): 
       raise GrokError("Grok configuration failed in {0} cases:\n{1}".format(sum(ecs),
                                                                             [rd for rd,e in zip(self.rundirs,ecs) if e > 0]))
@@ -260,12 +262,11 @@ class EnsHGS(object):
       if lgrok: arglist.union(inspect.getargspec(HGS.runGrok).args)
       kwargs = {arg:allargs[arg] for arg in arglist if arg in allargs}
       ec = self.setupExperiments(inner_list=inner_list, outer_list=outer_list, lgrok=lgrok, lparallel=lparallel, NP=NP, 
-                                 **kwargs)
+                                 runtime_override=runtime_override, **kwargs)
       if ec > 0 or not all(self.configOK): 
         rundirs = [rundir for rundir,OK in zip(self.rundirs,self.configOK) if not OK]
         raise GrokError("Experiment setup failed in {0} cases:\n{1}".format(ec,rundirs))
     # run HGS
-    if runtime_override is not None: self.setRuntime(runtime=runtime_override)
     kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.runHGS).args if arg in allargs}
     ecs = self.runHGS(inner_list=inner_list, outer_list=outer_list, lparallel=lparallel, NP=NP, callback=callback, 
                       skip_config=True, **kwargs) # setup already ran (or was skipped intentionally)
