@@ -217,24 +217,26 @@ class Grok(object):
         value = self._lines[i] # lines should be stripped (but still case-sensitive!)
         if value == 'end': 
           lterm = True # proper termination of list
-        elif value == '' and llist is None: 
-          lterm = True # proper termination for a scalar
+        elif value == '':
+          if not llist and len(values) == 1: # if it is a list, just skip empty lines... 
+              lterm = True # proper termination for a scalar
         else:
           try: 
             value = dtype(value) # convert string and append
             values.append(value) # append to list
           except ValueError: 
-            if llist: raise ValueError("Illegal list termination: '{}'".format(value))
+            if llist: raise ValueError("Illegal list termination '{}' for parameter '{}'".format(value, param))
             else: lterm = True # terminate with invalid value
         i += 1 # increment to next line
       # check results
       if value == 'end': value = values # legitimately a list
       elif llist is None and len(values) == 1: value = values[0] # auto-detect scalar
-      else: raise ValueError()
+      else: raise ValueError(value)
+      # N.B.: this is very fragile, because it assumes there are no empty lines in the list
     return value
 
   def replaceParam(self, old, new, formatter=None, after=None, start=0):
-    ''' repalce a parameter value with a new value '''
+    ''' repalce a parameter value with a new value (does not work for lists) '''
     if formatter: 
       new = formatter.format(new) # apply appropriate formatting
       old = formatter.format(old) # apply appropriate formatting
@@ -495,8 +497,9 @@ class HGS(Grok):
     self.hgs_bin = hgs_bin # HGS executable: first try local folder, then $HGSDIR/bin/
     self.template_folder = template_folder # where to get the templates
     # prepare linked folders
-    if linked_folders is None: linked_folders = ('etprop','gb','icbc','prop','soil', # original 
-                                                 'grid','init_con','K_maps','landcover','mprops','node_lists','pks_table') # extended
+    if linked_folders is None: linked_folders = ('etprop', 'gb', 'icbc', 'prop', 'soil', # original 
+                                                 'grid', 'init_con', 'K_maps', 'landcover', 'mprops', 'node_lists', # extended
+                                                 'pks_table', 'retent_tables', 'inc') # even more...
     linked_folders = tuple(lf[:-1] if lf[-1] == '/' else lf for lf in linked_folders) # trim slash
     self.linked_folders = linked_folders
     # N.B.: these folders just contain static data and do not need to be replicated

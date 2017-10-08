@@ -38,20 +38,27 @@ if not os.path.isdir(workdir): raise IOError(workdir)
 # other settings
 NP = 2 # for parallel tests
 ldebug = False # additional debug output
-lbin = True # execute binaries to test runner methods
-# lbin = False # don't execute binaries (takes very long)
+# lbin = True # execute binaries to test runner methods
+lbin = False # don't execute binaries (takes very long)
 
 # executables
 grok_bin = 'grok.exe' # Grok executable
 hgs_bin  = 'phgs.exe' # HGS executable
 hgsdir   = os.getenv('HGSDIR',) # HGS license file    
 
-# use old GRW model for testing
-hgs_testcase = 'grw_omafra' # name of test project (for file names)
-hgs_template = data_root+'/Test/Templates/GRW-test/' 
-test_prefix  = 'grw2' # pefix for climate input
-clim_data    = data_root+'/Test/grw2/test-run/clim/climate_forcing/'
-ts_data      = data_root+'/Test/grw2/test-run/timeseries/climate_forcing/'
+# # use old GRW model for testing
+# hgs_testcase = 'grw_omafra' # name of test project (for file names)
+# hgs_template = data_root+'/Test/Templates/GRW-test/' 
+# test_prefix  = 'grw2' # pefix for climate input
+# clim_data    = data_root+'/Test/grw2/test-run/clim/climate_forcing/'
+# ts_data      = data_root+'/Test/grw2/test-run/timeseries/climate_forcing/'
+
+# use small Payne River model for testing
+hgs_testcase = 'PRC' # name of test project (for file names)
+hgs_template = data_root+'/Test/Templates/PRC-test/' 
+test_prefix  = 'snw1' # pefix for climate input
+clim_data    = data_root+'/Test/snw1/test-run/clim/climate_forcing/'
+ts_data      = data_root+'/Test/snw1/test-run/timeseries/climate_forcing/'
 
 
 ## tests for Grok class
@@ -495,9 +502,9 @@ if __name__ == "__main__":
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-#     tests += ['Grok']
-#     tests += ['HGS']    
-#     tests += ['EnsHGS']
+    tests += ['Grok']
+    tests += ['HGS']    
+    tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()
