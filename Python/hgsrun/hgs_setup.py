@@ -65,6 +65,37 @@ class HGSError(Exception):
   ''' Exception indicating an Error in HGS '''
   pass
 
+# helper function to recursively parse a Grok file with includes
+def parseFile(filepath, line_list):
+    ''' recursively parse files which include other files, starting with 'filepath', and append their lines to 'line_list' '''
+    # change working directory locally to resolve relative path'
+    pwd = os.getcwd() # need to go back later!
+    os.chdir(os.path.dirname(filepath))
+    with open(os.path.basename(filepath), 'r') as f:
+        lines = f.readlines() # load lines all at once (for performance)
+    # loop over lines, clean them and find includes
+    for line in lines:
+        line = line.strip() # remove which space 
+        # skip comments and empty lines
+        if not line.startswith('!'):
+            line = line.replace('\\','/') # enforce Unix folder convention
+            # scan for include statements (except precip.inc and pet.inc) 
+            if line.startswith('include') and not ( line.endswith('precip.inc') or line.endswith('pet.inc') ):
+            # N.B.: apparently HGS/Grok is case-sensitive... 
+                # figure out new file path
+                incpath = line[7:].strip()
+                if not os.path.lexists(incpath):
+                    raise IOError("Unable to open include file '{}'.".format(incpath))
+                # initiate recursion
+                parseFile(incpath, line_list)
+            else:
+                # append line to line_list
+                line_list.append(line)
+                # N.B.: only convert non-path statements to lower
+    # now we are done - we don't return anything, since line_list was modified in place
+    os.chdir(pwd) # this is important: return to previous working directory!!!
+    return None
+
 ## a class to handle Grok for HGS simulations
 class Grok(object):
   '''
@@ -124,14 +155,12 @@ class Grok(object):
     ''' Read a grok configuration file into memory (or a template to start from). '''    
     filename = filename or self.grok_file; self.grok_file = filename
     filename = '{:s}/{:s}'.format(folder or self.rundir, filename) # prepend folder
-    if not os.path.isfile(filename): raise IOError(filename)
+    if not os.path.isfile(filename): 
+        raise IOError("Grok configuration file not found: '{}'".format(filename))
     self._sourcefile = filename # use  different file as template
-    # read source file
-    with open(filename, 'r') as src: # with-environment should take care of closing the file
-      self._lines = src.readlines() # read all lines into list
-    # strip white spaces and convert to lower case
-    self._lines = [line.strip() for line in self._lines]
-    # N.B.: converting to lower case creates problems with file/folder path
+    # read source file (and recurse into includes)
+    self._lines = [] # initialize empty list (will be extended in-place)
+    parseFile(filename, self._lines)
     # return exit code
     return 0 if isinstance(self._lines,list) else 0
       
@@ -144,8 +173,8 @@ class Grok(object):
     if os.path.isfile(filename): shutil.move(filename, '{:s}.backup'.format(filename))
     # write configuration to file
     with open(filename, 'w') as tgt: # with-environment should take care of closing the file
-      tgt.write('\n'.join(self._lines)+'\n')
-      # N.B.: this is necessary, because our list does not have newlines and Python does not add them...
+        tgt.write('\n'.join(self._lines)+'\n')
+        # N.B.: this is necessary, because our list does not have newlines and Python does not add them...
     # return exit code
     return 0 if os.path.isfile(filename) else 1
       
@@ -160,7 +189,7 @@ class Grok(object):
     if isinstance(value,(tuple,list)):
       # vector-valued parameter
       values = [formatter(val) for val in value] # apply formatter to list items
-      start = self._lines.index(param.lower(), start) # find begin of vector statement
+      start = self._lines.index(param, start) # find begin of vector statement
       end = self._lines.index('end', start) # 'end' marks the end of a vector statement
       # insert list of vector entries into file, line by line
       self._lines = self._lines[:start+1] + values + self._lines[end:]
@@ -168,7 +197,7 @@ class Grok(object):
       #       manipulate inner-most lists, because the insertion is terminated at the first 'end'
     else:
       # single-valued parameter
-      self._lines[self._lines.index(param.lower())+1] = formatter(value) # replace value in list of lines
+      self._lines[self._lines.index(param)+1] = formatter(value) # replace value in list of lines
 
   def getParam(self, param, dtype=None, llist=None, after=None, start=0):
     ''' read a single parameter, based on the assumption that the parameter value follows in the 
@@ -178,14 +207,14 @@ class Grok(object):
     if after is not None: start = self._lines.index(after, start) # search offset for primary paramerter
     if isinstance(dtype,basestring): dtype = getattr(np,dtype) # convert to given numpy dtype
     elif dtype is None: dtype = str # read as string data type as default
-    i = self._lines.index(param.lower(), start)+1
+    i = self._lines.index(param, start)+1
     # different handling for scalars and lists
     if llist is False:
       value = dtype(self._lines[i]) # just a single value
     else:
       lterm = False; values = [] # indicate if list is complete
       while i < len(self._lines) and not lterm:
-        value = self._lines[i].strip().lower()
+        value = self._lines[i] # lines should be stripped (but still case-sensitive!)
         if value == 'end': 
           lterm = True # proper termination of list
         elif value == '' and llist is None: 
@@ -212,7 +241,7 @@ class Grok(object):
     else:
       new = str(new); old = str(old)
     if after is not None: start = self._lines.index(after, start)# search offset for primary paramerter
-    self._lines[self._lines.index(old.lower(), start)] = new # replace value in list of lines
+    self._lines[self._lines.index(old, start)] = new # replace value in list of lines
     
   def editParams(self, **params):
     ''' edit a bunch of parameters, which are defined as key/values pairs using self.editParam;

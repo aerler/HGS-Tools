@@ -244,7 +244,8 @@ class EnsHGS(object):
       kwargs = {arg:allargs[arg] for arg in inspect.getargspec(HGS.runGrok).args if arg in allargs}
       ecs = self.runGrok(inner_list=inner_list, outer_list=outer_list, lparallel=lparallel, NP=NP, **kwargs)
       if any(ecs) or not all(self.GrokOK): 
-        raise GrokError("Grok execution failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
+        rundirs = [rundir for rundir,OK in zip(self.rundirs,self.HGSOK) if not OK]
+        raise GrokError("Grok execution failed in {0} cases:\n{1}".format(sum(ecs),rundirs))
       ec += sum(ecs)
     # return sum of all exit codes
     return ec
@@ -271,7 +272,8 @@ class EnsHGS(object):
     ecs = self.runHGS(inner_list=inner_list, outer_list=outer_list, lparallel=lparallel, NP=NP, callback=callback, 
                       skip_config=True, **kwargs) # setup already ran (or was skipped intentionally)
     if any(ecs) or not all(self.HGSOK): 
-      raise HGSError("Grok configuration failed in {0} cases:\n{1}".format(sum(ecs),self.rundirs[ecs]))
+      rundirs = [rundir for rundir,OK in zip(self.rundirs,self.HGSOK) if not OK]
+      raise HGSError("Grok configuration failed in {0} cases:\n{1}".format(sum(ecs),rundirs))
     ec += sum(ecs)
     # return sum of all exit codes
     return ec
