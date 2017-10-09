@@ -509,7 +509,7 @@ class HGS(Grok):
                              output_interval=output_interval, input_vars=input_vars, input_prefix=input_prefix,
                              input_mode=input_mode, input_interval=input_interval, pet_folder=pet_folder,
                              input_folder=input_folder, length=length, lcheckdir=False, grok_bin=grok_bin,)
-    self.hgs_bin = hgs_bin # HGS executable: first try local folder, then $HGSDIR/bin/
+    self.hgs_bin = hgs_bin # HGS executable: first try local folder, then $HGSDIR
     self.template_folder = template_folder # where to get the templates
     # prepare linked folders
     if linked_folders is None: linked_folders = ('etprop', 'gb', 'icbc', 'prop', 'soil', # original 
@@ -521,7 +521,7 @@ class HGS(Grok):
     self.NP = NP # number of processors
     self.lindicators = lindicator # use indicator files
     
-  def setupRundir(self, template_folder=None, bin_folder='{HGSDIR:s}/bin', loverwrite=True, lschedule=True):
+  def setupRundir(self, template_folder=None, bin_folder='{HGSDIR:s}', loverwrite=True, lschedule=True):
     ''' copy entire run folder from a template folder and link executables '''
     template_folder = self.template_folder if template_folder is None else template_folder
     if template_folder is None: raise ValueError("Need to specify a template path.")

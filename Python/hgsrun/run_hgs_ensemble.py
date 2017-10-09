@@ -142,9 +142,13 @@ def main(argv=None): # IGNORE:C0111
     # add some variables based on cli override, YAML file, and environment variables
     for envval,envvar in [(data_root,'DATA_ROOT'),(hgs_root,'HGS_ROOT'),(hgsdir,'HGSDIR')]:
         tmpvar = os.getenv(envvar, None)
-        if envval is not None: hgs_config[envvar] = envval # override
-        elif envvar in hgs_config: pass # use that value 
-        elif tmpvar: hgs_config[envvar] = tmpvar
+        if envval is not None: # override
+            hgs_config[envvar] = envval 
+            os.environ[envvar] = envval
+        elif envvar in hgs_config: # use that value
+            os.environ[envvar] =  hgs_config[envvar]
+        elif tmpvar: # use environment variable 
+            hgs_config[envvar] = tmpvar
     
     # override some settings with command-line arguments
     if lnoindicator: hgs_config['lindicator'] = False
