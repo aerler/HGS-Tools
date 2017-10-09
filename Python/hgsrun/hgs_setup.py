@@ -16,6 +16,14 @@ from hgsrun.input_list import generateInputFilelist, resolveInterval
 from geodata.misc import ArgumentError
 from utils.misc import tail
 
+# WindowsError is not defined on Linux - need a dummy
+try: 
+    lWin = True
+    WindowsError
+except NameError:
+    lWin = False
+    WindowsError = None
+        
 ## patch symlink on Windows
 # adapted from Stack Overflow (last answer: "Edit 2"):
 # https://stackoverflow.com/questions/6260149/os-symlink-support-in-windows
@@ -26,21 +34,14 @@ if os.name == "nt":
     csl.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
     csl.restype = ctypes.c_ubyte
     flags = 1 if os.path.isdir(source) else 0
-    try:
-      if csl(link_name, source.replace('/', '\\'), flags) == 0:
-          raise ctypes.WinError()
-    except:
-      pass
+    if csl(link_name, source.replace('/', '\\'), flags) == 0:
+        raise ctypes.WinError()
+    if not os.path.exists(link_name):
+        raise WindowsError("Creation of Symbolic Link '{}' failed - do you have sufficient Privileges?".format(link_name))
+  
+  # replace os symlink with this function
   os.symlink = symlink_ms
   
-# WindowsError is not defined on Linux - need a dummy
-try: 
-    lWin = True
-    WindowsError
-except NameError:
-    lWin = False
-    WindowsError = None
-        
 # a platform-independent solution to clear a folder...
 def clearFolder(folder, lWin=lWin, lmkdir=True):
     ''' create a folder; if it already exists, remove it and all files and subfolder in it, and recreate it '''
@@ -262,6 +263,9 @@ class Grok(object):
         elif self.input_interval == 'daily':
             self.output_interval = (int(self.length/365.),12)
         else: raise NotImplementedError(self.input_interval)
+        # sanity check
+        if self.output_interval[0] < 1: 
+            raise NotImplementedError("No default 'output_interval' for simulation times less than one year: {}".format(self.output_interval))
       elif output_interval.lower() == 'yearly':
         if self.input_interval == 'monthly':
             self.output_interval = (int(self.length/12.),)
@@ -295,7 +299,7 @@ class Grok(object):
       outtimes = []; outinit = self.starttime
       for nout in self.output_interval:
           if not isinstance(nout,(int,np.integer)): raise TypeError(nout)
-          if nout < 1: raise ValueError(nout)
+          if nout < 1: raise ValueError("An 'output_interval' of {} < 1 is illegal!".format(nout))
           timedelta = self.runtime - outinit
           if nout == 1: tmp = [outinit + timedelta] 
           else: tmp = [ outinit + ( timedelta * float(r) / float(nout) ) for r in xrange(1,nout)]

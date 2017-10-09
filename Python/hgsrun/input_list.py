@@ -154,7 +154,7 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
     else: raise NotImplementedError(mode)
     # determine length of period (always one year, but different units)
     if lperiodic:
-      period, idxprd = resolvePeriod(period=period, interval=interval, units=units)      
+      period, idxprd = resolvePeriod(period=period, interval=interval, units=units) 
     # initialize time iterator
     if interval[:5].lower() == 'month':
       time_iter = MonthlyIter(length=length-1 if lcenter else length, start=0, l365=l365, 

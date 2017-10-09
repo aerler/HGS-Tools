@@ -42,6 +42,7 @@ ldebug = False # additional debug output
 lbin = False # don't execute binaries (takes very long)
 
 # executables
+os.environ['HGSDIR'] = '/c/Users/aerler/me/Code//HGS//'
 grok_bin = 'grok.exe' # Grok executable
 hgs_bin  = 'phgs.exe' # HGS executable
 hgsdir   = os.getenv('HGSDIR',) # HGS license file    
@@ -54,12 +55,18 @@ hgsdir   = os.getenv('HGSDIR',) # HGS license file
 # ts_data      = data_root+'/Test/grw2/test-run/timeseries/climate_forcing/'
 
 # use small Payne River model for testing
-hgs_testcase = 'PRC' # name of test project (for file names)
+hgs_testcase = 'test' # name of test project (for file names)
 hgs_template = data_root+'/Test/Templates/PRC-test/' 
 test_prefix  = 'snw1' # pefix for climate input
 clim_data    = data_root+'/Test/snw1/test-run/clim/climate_forcing/'
 ts_data      = data_root+'/Test/snw1/test-run/timeseries/climate_forcing/'
 
+# # use new hires GRW model for testing
+# hgs_testcase = 'grw_omafra' # name of test project (for file names)
+# hgs_template = data_root+'/GRW/Templates/GRW-V3-hires/' 
+# test_prefix  = 'grw2' # pefix for climate input
+# clim_data    = data_root+'/Test/grw2/test-run/clim/climate_forcing/'
+# ts_data      = data_root+'/Test/grw2/test-run/timeseries/climate_forcing/'
 
 ## tests for Grok class
 class GrokTest(unittest.TestCase):  
@@ -504,7 +511,7 @@ if __name__ == "__main__":
     # list of variable tests
     tests += ['Grok']
     tests += ['HGS']    
-    tests += ['EnsHGS']
+#     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()
