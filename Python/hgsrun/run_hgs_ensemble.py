@@ -83,8 +83,12 @@ def main(argv=None): # IGNORE:C0111
     parser.add_argument("--ignore-indicator", dest="noindicator", action='store_true', help="run all simulations, ignoring indicator files [default: %(default)s]")
     parser.add_argument("--overwrite", dest="overwrite", action='store_true', help="overwrite all run folders, ignoring indicator files [default: %(default)s]")
     parser.add_argument("--rerun-failed", dest="runfailed", action='store_true', help="rerun failed experiments, ignore completed [default: %(default)s]")
-    parser.add_argument('--data-root', nargs='?', const=os.getenv('DATA_ROOT', None), default=None, type=basestring, 
-                        help="Set the root folder of the data archive [default: $DATA_ROOT]")
+    parser.add_argument('--data-root', nargs='?', const=None, default=None, type=str, 
+                        help="Override the root folder of the data archive [default: $DATA_ROOT or config.yaml]")
+    parser.add_argument('--hgs-root', nargs='?', const=None, default=None, type=str, 
+                        help="Override the HGS data root folder [default: $HGS_ROOT or config.yaml]")
+    parser.add_argument('--hgsdir', nargs='?', const=None, default=None, type=str, 
+                        help="Override the root folder for the HGS license and fall-back executables [default: $HGSDIR or config.yaml]")
     parser.add_argument("--skip-setup", dest="nosetup", action='store_true', help="skip run folder setup; start simulations immediately [default: %(default)s]")
     parser.add_argument("--only-setup", dest="nosim", action='store_true', help="only set up run folder; don;t start simulation [default: %(default)s]")
     parser.add_argument("--grok-first", dest="grok", action='store_true', 
@@ -109,6 +113,8 @@ def main(argv=None): # IGNORE:C0111
     lrunfailed   = args.runfailed
     yamlfile     = args.config
     data_root    = args.data_root
+    hgs_root     = args.hgs_root
+    hgsdir       = args.hgsdir
     lnosetup     = args.nosetup
     lnosim       = args.nosim
     lgrok        = args.grok
@@ -133,8 +139,13 @@ def main(argv=None): # IGNORE:C0111
     # run-time parameters for parallel batch execution (passed to EnsHGS.runSimulations)
     batch_config = config['batch_config']
     
-    # add data_root, if not already present
-    if data_root not in hgs_config: hgs_config['DATA_ROOT'] = data_root
+    # add some variables based on cli override, YAML file, and environment variables
+    for envval,envvar in [(data_root,'DATA_ROOT'),(hgs_root,'HGS_ROOT'),(hgsdir,'HGSDIR')]:
+        tmpvar = os.getenv(envvar, None)
+        if envval is not None: hgs_config[envvar] = envval # override
+        elif envvar in hgs_config: pass # use that value 
+        elif tmpvar: hgs_config[envvar] = tmpvar
+    
     # override some settings with command-line arguments
     if lnoindicator: hgs_config['lindicator'] = False
     if loverwrite: hgs_config['loverwrite'] = True

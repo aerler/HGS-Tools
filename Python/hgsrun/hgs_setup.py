@@ -253,13 +253,28 @@ class Grok(object):
       
   def resolveOutput(self, output_interval):
     ''' method to check and determine default output intervals '''
-    # detect output interval
-    if isinstance(output_interval, basestring) and output_interval.lower() == 'default':
+    # detect output interval based on length and input_interval
+    if isinstance(output_interval, basestring):
+      if output_interval.lower() == 'default':
+        # monthly for the last year and yearly otherwise
         if self.input_interval == 'monthly':
-            self.output_interval = (int(self.length/12),12)
+            self.output_interval = (int(self.length/12.),12)
         elif self.input_interval == 'daily':
-            self.output_interval = (int(self.length/365),12,30)
-        else: raise NotImplementedError()
+            self.output_interval = (int(self.length/365.),12)
+        else: raise NotImplementedError(self.input_interval)
+      elif output_interval.lower() == 'yearly':
+        if self.input_interval == 'monthly':
+            self.output_interval = (int(self.length/12.),)
+        elif self.input_interval == 'daily':
+            self.output_interval = (int(self.length/365.),)
+        else: raise NotImplementedError(self.input_interval)
+      elif output_interval.lower() == 'monthly':
+        if self.input_interval == 'monthly':
+            self.output_interval = (self.length,)
+        elif self.input_interval == 'daily':
+            self.output_interval = (int(self.length/(365./12.)),)
+        else: raise NotImplementedError(self.input_interval)
+      else: raise NotImplementedError(output_interval)
     elif isinstance(output_interval,(int,np.integer)):
         self.output_interval = (output_interval,)
     elif isinstance(output_interval,(tuple,list)):
