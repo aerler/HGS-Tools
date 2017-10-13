@@ -38,11 +38,10 @@ if not os.path.isdir(workdir): raise IOError(workdir)
 # other settings
 NP = 2 # for parallel tests
 ldebug = False # additional debug output
-# lbin = True # execute binaries to test runner methods
-lbin = False # don't execute binaries (takes very long)
+lbin = True # execute binaries to test runner methods
+# lbin = False # don't execute binaries (takes very long)
 
 # executables
-os.environ['HGSDIR'] = '/c/Users/aerler/me/Code//HGS//'
 grok_bin = 'grok.exe' # Grok executable
 hgs_bin  = 'phgs.exe' # HGS executable
 hgsdir   = os.getenv('HGSDIR',) # HGS license file    
@@ -320,6 +319,8 @@ class HGSTest(GrokTest):
     assert hgs.rundirOK, hgs.rundir
     indicator = '{}/SCHEDULED'.format(self.rundir)
     assert os.path.exists(indicator), indicator
+    # create fake input file to cause crash
+    open(os.path.join(hgs.rundir,hgs.problem+'o.gen'),'w').close()
     # create some required files without running full setup
     ec = hgs.runHGS(executable=exe, logfile=logfile, skip_grok=True, ldryrun=not lbin, lerror=False)
     assert ec == ( 1 if lbin else 0 ), ec # since we did not run Grok etc., an actual run will fail

@@ -464,7 +464,7 @@ class Grok(object):
         lec = True # pretend everything works
       else:
         # run Grok
-        subprocess.call([self.grok_bin], stdout=lf, stderr=lf)
+        subprocess.call([os.path.abspath(self.grok_bin)], stdout=lf, stderr=lf)
         # parse log file for errors
         lec = ( tail(lf, n=3)[0].strip() == '---- Normal exit ----' )
         # i.e. -3, third line from the end (different from HGS)
@@ -662,7 +662,7 @@ class HGS(Grok):
         lec = True # pretend everything works
       else:
         # run HGS as subprocess
-        subprocess.call([self.hgs_bin], stdout=lf, stderr=lf)
+        subprocess.call([os.path.abspath(self.hgs_bin)], stdout=lf, stderr=lf)
         # parse log file for errors
         lec = ( tail(lf, n=2)[0].strip() == '---- NORMAL EXIT ----' )
         # i.e. -2, second line from the end (and different capitalization from Grok!)
