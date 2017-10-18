@@ -537,7 +537,7 @@ class HGS(Grok):
       # N.B.: rmtree is dangerous, because if follows symbolic links and deletes contents of target directories!
     # copy folder tree
     if not os.path.isdir(self.rundir): shutil.copytree(template_folder, self.rundir, symlinks=True,
-                                                       ignore=shutil.ignore_patterns(*self.linked_folders))
+                                                       ignore=shutil.ignore_patterns('*.grok',*self.linked_folders))
     # place link to template
     os.symlink(template_folder, '{}/template'.format(self.rundir))
     # symlinks to static folder that are not copied (linked_folders)
