@@ -26,14 +26,21 @@ root_folder = getRootFolder(dataset_name=dataset_name, fallback_name='WRF') # ge
 prefix_file = 'batch.pfx' # text file that contians the HGS problem prefix (also HGS convention)
 
 # variable attributes and name
-variable_attributes = dict(sfroff = dict(name='sfroff', units='kg/m^2/s', atts=dict(long_name='Surface Runoff')),    # surface flow rate over area
-                           ugroff = dict(name='ugroff', units='kg/m^2/s', atts=dict(long_name='Subsurface Runoff')), # subsurface flow rate over area
-                           runoff = dict(name='runoff', units='kg/m^2/s', atts=dict(long_name='Total Runoff')),      # total flow rate over area
-                           discharge = dict(name='discharge', units='kg/s', atts=dict(long_name='Surface Flow Rate')),      # surface flow rate
-                           seepage   = dict(name='seepage'  , units='kg/s', atts=dict(long_name='Subsurface Flow Rate')),   # subsurface flow rate
-                           flow      = dict(name='flow'     , units='kg/s', atts=dict(long_name='Total Flow Rate')),      ) # total flow rate
+variable_attributes_mms = dict(sfroff = dict(name='sfroff', units='mm/s', atts=dict(long_name='Surface Runoff')),    # surface flow rate over area
+                               ugroff = dict(name='ugroff', units='mm/s', atts=dict(long_name='Subsurface Runoff')), # subsurface flow rate over area
+                               runoff = dict(name='runoff', units='mm/s', atts=dict(long_name='Total Runoff')),      # total flow rate over area
+                               discharge = dict(name='discharge', units='m^3/s', atts=dict(long_name='Surface Flow Rate')),      # surface flow rate
+                               seepage   = dict(name='seepage'  , units='m^3/s', atts=dict(long_name='Subsurface Flow Rate')),   # subsurface flow rate
+                               flow      = dict(name='flow'     , units='m^3/s', atts=dict(long_name='Total Flow Rate')),      ) # total flow rate
+# optional unit conversion
+mms_to_kgs = {'mm/s':'kg/m^2/s', 'm^3/s':'kg/s'}
+variable_attributes_kgs = dict()
+for varname,varatts in variable_attributes_mms.items():
+    varatts = varatts.copy()
+    varatts['units'] = mms_to_kgs[varatts['units']]
+    variable_attributes_kgs[varname] = varatts
 # list of variables to load
-variable_list = variable_attributes.keys() # also includes coordinate fields    
+variable_list = variable_attributes_mms.keys() # also includes coordinate fields    
 flow_to_flux = dict(discharge='sfroff', seepage='ugroff', flow='runoff') # relationship between flux and flow variables
 # N.B.: computing surface flux rates from gage flows also requires the drainage area
 hgs_varlist = ['time','discharge','seepage','flow'] # internal use only; needs to have 'time'
@@ -42,7 +49,7 @@ hgs_variables = {'surface':'discharge','porous media':'seepage','total':'flow'} 
 
 ## function to load HGS station timeseries
 def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=None, title=None, lcheckComplete=True,
-                  start_date=None, end_date=None, run_period=None, period=None, lskipNaN=False, basin=None,  
+                  start_date=None, end_date=None, run_period=None, period=None, lskipNaN=False, basin=None, lkgs=True,
                   WSC_station=None, basin_list=None, filename=None, prefix=None, scalefactors=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
@@ -154,7 +161,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   
   # call function to interpolate irregular HGS timeseries to regular monthly timseries  
   flow_data = interpolateIrregular(old_time=time_series, flow_data=flow_data, new_time=time_monthly, start_date=start_datetime, 
-                                   lkgs=True, lcheckComplete=lcheckComplete, usecols=usecols, interp_kind='linear', fill_value=np.NaN)
+                                   lkgs=lkgs, lcheckComplete=lcheckComplete, usecols=usecols, interp_kind='linear', fill_value=np.NaN)
   
   # construct time axis
   start_time = 12*(start_year - 1979) + start_month -1
@@ -167,20 +174,34 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   # construct dataset
   dataset = Dataset(atts=metadata)
   dataset.station = station # add gage station object, if available (else None)
+  
+  # unit options: cubic meters or kg
+  if lkgs:
+    flow_units = 'kg/s'
+    variable_attributes = variable_attributes_kgs
+    den = metadata['shp_area'] 
+  else:
+    flow_units = 'm^3/s'
+    variable_attributes = variable_attributes_mms
+    den = metadata['shp_area'] / 1000.
+    
+  # create variables
   for i,flowvar in enumerate(variable_order):
       data = flow_data[:,i]
-      fluxvar = flow_to_flux[flowvar]
+      fluxvar = flow_to_flux[flowvar]      
+      flow_units = 'kg/s' if lkgs else 'm^3/s'
       if flowvar in varlist:
         flowatts = variable_attributes[flowvar]
         # convert variables and put into dataset (monthly time series)
-        if flowatts['units'] != 'kg/s': 
+        if flowatts['units'] != flow_units: 
           raise VariableError("Hydrograph data is read as kg/s; flow variable does not match.\n{}".format(flowatts))
         dataset += Variable(data=data, axes=(time,), **flowatts)
       if fluxvar in varlist and 'shp_area' in metadata:
         # compute surface flux variable based on drainage area
         fluxatts = variable_attributes[fluxvar]
-        if fluxatts['units'] == 'kg/s' and fluxatts['units'] != 'kg/m^2/s': raise VariableError(fluxatts)
-        data = data / metadata['shp_area'] # need to make a copy
+        if fluxatts['units'] == flow_units and fluxatts['units'] not in ('kg/m^2/s','mm/s'): 
+          raise VariableError(fluxatts)
+        data = data / den # need to make a copy
         dataset += Variable(data=data, axes=(time,), **fluxatts)
   # apply analysis period
   if period is not None:
@@ -268,7 +289,7 @@ if __name__ == '__main__':
     
     # load single dataset
     ds = loadWSC_StnTS(station=WSC_station, basin=basin_name, period=(1974,2004), 
-                            basin_list=basin_list, filetype='monthly', scalefactors=1e-4)
+                            basin_list=basin_list, filetype='monthly', scalefactors=1e-3)
     print(ds)
     
   elif test_mode == 'dataset':
@@ -279,9 +300,10 @@ if __name__ == '__main__':
     hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run'
 
     # load dataset
+    lkgs = True
     dataset = loadHGS_StnTS(station=hgs_station, folder=hgs_folder, filename=filename, 
                             start_date=1979, run_period=10, PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
-                            basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, 
+                            basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, lkgs=lkgs,
                             lskipNaN=True, lcheckComplete=True, varlist=None, scalefactors=1e-4,
                             EXP='erai-g', name='{EXP:s} ({BASIN:s})')
     # N.B.: there is not record of actual calendar time in HGS, so periods are anchored through start_date/run_period
@@ -295,13 +317,14 @@ if __name__ == '__main__':
     print('')
     clim = dataset.climMean()
     print(clim)
+    test_results = np.asarray([24793.523584608138, 25172.635322536684, 39248.71087752686, 73361.80217956303, 64505.67974315114, 
+                               32456.80709658126, 18431.93890164255, 15018.095766333918, 16045.543845416256, 17636.665822798554,
+                               18529.952477226405, 22288.711837028015])
+    if not lkgs: test_results /= 1000.
     # test exact results
     if dataset.name == 'erai-g (GRW)':
         print(clim.discharge[:])
-        assert np.allclose(clim.discharge[:], 
-                        np.asarray([24793.523584608138, 25172.635322536684, 39248.71087752686, 73361.80217956303, 64505.67974315114, 
-                                    32456.80709658126, 18431.93890164255, 15018.095766333918, 16045.543845416256, 17636.665822798554,
-                                    18529.952477226405, 22288.711837028015]))
+        assert np.allclose(clim.discharge[:], test_results)
 #     print(clim.sfroff[:]*86400)
 
     
