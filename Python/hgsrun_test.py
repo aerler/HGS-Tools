@@ -125,41 +125,6 @@ class GrokTest(unittest.TestCase):
     assert 'precip.inc' in output
     assert 'pet.inc' in output    
     
-  def testRestart(self):
-    ''' load config file from rundir and modify restart time etc. '''
-    grok = self.grok
-    # write to rundir
-    grok.writeConfig() 
-    assert os.path.isfile(self.grok_output), self.grok_output
-    old_times = grok.getParam('output times', dtype='float', llist=True)
-    grok._lines = None # delete already loaded file contents
-    # create fake output files for restart
-    for i in range(5):
-        pm_file = '{}/{}'.format(grok.rundir,grok.pm_files.format(IDX=i+1))
-        open(pm_file,'w').close()
-        olf_file = '{}/{}'.format(grok.rundir,grok.olf_files.format(IDX=i+1))
-        open(olf_file,'w').close()
-    # read from template
-    grok.readConfig(folder=self.rundir)
-    assert isinstance(grok._lines, list), grok._lines
-    new_times = grok.getParam('output times', dtype='float', llist=None)
-    assert all([old == new for old,new in zip(old_times,new_times)]), old_times
-    assert all(np.diff(new_times) > 0), np.diff(new_times)
-    # apply modifications for restart
-    restart_file = grok.rewriteRestart()
-    assert os.path.isfile(restart_file), restart_file
-    # write modified file to rundir
-    grok.writeConfig()
-    assert os.path.isfile(self.grok_output), self.grok_output
-    # verify grok file
-    grok._lines = None # delete already loaded file contents
-    grok.readConfig(folder=self.rundir)
-    assert isinstance(grok._lines, list), grok._lines
-    new_times = grok.getParam('output times', dtype='float', llist=None)
-    assert len(new_times) == max(len(old_times)-5,0), (len(new_times),len(old_times))
-    assert all([old == new for old,new in zip(old_times[5:],new_times)]), old_times
-    assert all(np.diff(new_times) > 0), np.diff(new_times)
-    
   def testRunGrok(self):
     ''' test the Grok runner command (will fail, because other inputs are missing) '''
     grok = self.grok  
@@ -283,6 +248,41 @@ class HGSTest(GrokTest):
     hgs.writeParallelIndex(NP=1, parallelindex=pidx_file) 
     assert os.path.isfile(pidx_file), pidx_file
   
+  def testRestart(self):
+    ''' load config file from rundir and modify restart time etc. '''
+    hgs = self.hgs
+    # write to rundir
+    hgs.writeConfig() 
+    assert os.path.isfile(self.grok_output), self.grok_output
+    old_times = hgs.getParam('output times', dtype='float', llist=True)
+    hgs._lines = None # delete already loaded file contents
+    # create fake output files for restart
+    for i in range(5):
+        pm_file = '{}/{}'.format(hgs.rundir,hgs.pm_files.format(IDX=i+1))
+        open(pm_file,'w').close()
+        olf_file = '{}/{}'.format(hgs.rundir,hgs.olf_files.format(IDX=i+1))
+        open(olf_file,'w').close()
+    # read from template
+    hgs.readConfig(folder=self.rundir)
+    assert isinstance(hgs._lines, list), hgs._lines
+    new_times = hgs.getParam('output times', dtype='float', llist=None)
+    assert all([old == new for old,new in zip(old_times,new_times)]), old_times
+    assert all(np.diff(new_times) > 0), np.diff(new_times)
+    # apply modifications for restart
+    restart_file = hgs.rewriteRestart()
+    assert os.path.isfile(restart_file), restart_file
+    # write modified file to rundir
+    hgs.writeConfig()
+    assert os.path.isfile(self.grok_output), self.grok_output
+    # verify grok file
+    hgs._lines = None # delete already loaded file contents
+    hgs.readConfig(folder=self.rundir)
+    assert isinstance(hgs._lines, list), hgs._lines
+    new_times = hgs.getParam('output times', dtype='float', llist=None)
+    assert len(new_times) == max(len(old_times)-5,0), (len(new_times),len(old_times))
+    assert all([old == new for old,new in zip(old_times[5:],new_times)]), old_times
+    assert all(np.diff(new_times) > 0), np.diff(new_times)
+    
   def testRunGrok(self):
     ''' test the Grok runner command and check if flag is set correctly '''
     hgs = self.hgs  
