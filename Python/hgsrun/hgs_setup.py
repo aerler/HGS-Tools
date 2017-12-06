@@ -106,9 +106,12 @@ class Grok(object):
   batchpfx = 'batch.pfx' # a file that defines the HGS problem name for Grok
   grok_dbg = 'grok.dbg' # Grok debug output
   grok_file = '{PROBLEM:s}.grok' # the Grok configuration file; default includes problem name
-  pm_files = '{PROBLEM:s}o.head_pm.{{IDX:04d}}' # porous media head output (for restart)
-  olf_files = '{PROBLEM:s}o.head_olf.{{IDX:04d}}' # over-land flow head output (for restart)
   restart_file = '{PROBLEM:s}o.hen' # restart file name
+  out_files = '{PROBLEM:s}o.{FILETYPE}.{{IDX:04d}}' # porous media head output (for restart)
+  pm_tag = 'head_pm'
+  olf_tag = 'head_olf'
+  chan_tag = 'head_Chan'
+  lchannel = None # whether or not we are using 1D channels  
   rundir = None # folder where the experiment is set up and executed
   project = None # a project designator used for file names
   problem = None # the HGS problem name (defaults to project)
@@ -139,8 +142,9 @@ class Grok(object):
     self.project = project
     self.problem = project if problem is None else problem
     self.grok_file = self.grok_file.format(PROBLEM=self.problem) # default name
-    self.pm_files = self.pm_files.format(PROBLEM=self.problem) # default name
-    self.olf_files = self.olf_files.format(PROBLEM=self.problem) # default name
+    self.pm_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.pm_tag) # default name
+    self.olf_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.olf_tag) # default name
+    self.chan_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.chan_tag) # default name
     self.restart_file = self.restart_file.format(PROBLEM=self.problem) # default name
     self.starttime = starttime
     self.runtime = runtime
@@ -162,6 +166,8 @@ class Grok(object):
     # read source file (and recurse into includes)
     self._lines = [] # initialize empty list (will be extended in-place)
     parseFile(filename, self._lines)
+    # check if we are dealing with channels
+    self.lchannel = 'channel' in self._lines    
     # return exit code
     return 0 if isinstance(self._lines,list) else 0
       
@@ -198,9 +204,9 @@ class Grok(object):
       #       manipulate inner-most lists, because the insertion is terminated at the first 'end'
     else:
       # single-valued parameter
-      self._lines[self._lines.index(param)+1] = formatter(value) # replace value in list of lines
+      self._lines[self._lines.index(param, start)+1] = formatter(value) # replace value in list of lines
 
-  def getParam(self, param, dtype=None, llist=None, after=None, start=0):
+  def getParam(self, param, dtype=None, llist=None, after=None, start=0, lindex=False, lerror=True):
     ''' read a single parameter, based on the assumption that the parameter value follows in the 
         line below the one where the parameter name appears (case in-sensitive); dtype is a 
         numpy data type to which the value string is cast; a list can be inferred if values of the 
@@ -208,7 +214,12 @@ class Grok(object):
     if after is not None: start = self._lines.index(after, start) # search offset for primary paramerter
     if isinstance(dtype,basestring): dtype = getattr(np,dtype) # convert to given numpy dtype
     elif dtype is None: dtype = str # read as string data type as default
-    i = self._lines.index(param, start)+1
+    # find entry
+    try: 
+      i = self._lines.index(param, start)+1
+    except ValueError:
+      if lerror: raise
+      else: return None,None if lindex else None
     # different handling for scalars and lists
     if llist is False:
       value = dtype(self._lines[i]) # just a single value
@@ -229,12 +240,15 @@ class Grok(object):
             if llist: raise ValueError("Illegal list termination '{}' for parameter '{}'".format(value, param))
             else: lterm = True # terminate with invalid value
         i += 1 # increment to next line
+      i -= 1 # decrement to pass on position
       # check results
       if value == 'end': value = values # legitimately a list
       elif llist is None and len(values) == 1: value = values[0] # auto-detect scalar
       else: raise ValueError(value)
       # N.B.: this is very fragile, because it assumes there are no empty lines in the list
-    return value
+    # return value and optionally index position
+    if lindex: value = (value,i)
+    return (value,i) if lindex else value
 
   def replaceParam(self, old, new, formatter=None, after=None, start=0):
     ''' repalce a parameter value with a new value (does not work for lists) '''
@@ -251,6 +265,54 @@ class Grok(object):
         note that there is no validation and 'format' is only supported for single edits '''
     for param,value in params.iteritems():
       self.editParam(param, value, format=None)
+      
+  def changeICs(self, ic_pattern=None):
+    ''' change the initial condition files in Grok using either .hen/restart or head/output files'''
+    # check which type of restart file we are dealing with
+    if not isinstance(ic_pattern,basestring): 
+        raise TypeError(ic_pattern)
+    lhenf = ic_pattern.endswith('.hen')
+    lheadf = '{FILETYPE}' in ic_pattern
+    # expand pattern and make sure files are present
+    ic_pattern = ic_pattern.format(FILETYPE='{FILETYPE}',RUNDIR=self.rundir)
+    if lheadf and lhenf: 
+        raise ArgumentError('Filetype expansion is not supported for .hen files:',ic_pattern)
+    elif lhenf:
+        ic_file_hen = ic_pattern # for consistency
+        if not os.path.exists(ic_file_hen): IOError(ic_file_hen)
+    elif lheadf:
+        ic_file_pm = ic_pattern.format(FILETYPE=self.pm_tag)
+        if not os.path.exists(ic_file_pm): IOError(ic_file_pm)
+        ic_file_olf = ic_pattern.format(FILETYPE=self.olf_tag)
+        if not os.path.exists(ic_file_olf): IOError(ic_file_olf)
+        if self.lchannel:
+            ic_file_chan = ic_pattern.format(FILETYPE=self.chan_tag)
+            if not os.path.exists(ic_file_chan): IOError(ic_file_chan) 
+    else: raise ArgumentError('Restart filetype not recognized:',ic_pattern)
+    # see if we are using .hen restart files
+    hen_file,i = self.getParam('restart file for heads', dtype=str, llist=False, lindex=True, lerror=False)
+    if hen_file:
+        # this Grok file/simulation uses .hen files for initialization
+        if lhenf:
+            self._lines[i] = ic_file_hen
+        else:
+            raise NotImplementedError
+    else:
+        # this Grok file/simulation uses regular head output files for initialization
+        if lheadf:
+            lpm = False; lolf = False; lchan = not self.lchannel; i = 0; ini_file = ''
+            while ini_file is not None:
+                if self.pm_tag in ini_file: 
+                    self._lines[i] = ic_file_pm; lpm = True
+                elif self.olf_tag in ini_file: 
+                    self._lines[i] = ic_file_olf; lolf = True
+                elif self.lchannel and self.chan_tag in ini_file: 
+                    self._lines[i] = ic_file_chan; lchan = True
+                ini_file, i = self.getParam('initial head from output file', llist=False, start=i, lindex=True, lerror=False)
+            if not ( lpm and lolf and lchan ): raise GrokError(lpm,lolf,lchan)
+        else:
+            raise NotImplementedError  
+        
       
   def resolveOutput(self, output_interval):
     ''' method to check and determine default output intervals '''
@@ -313,56 +375,6 @@ class Grok(object):
     # check
     return 0 if self.getParam('initial time', float, llist=False) == self.starttime else 1
   
-  def rewriteRestart(self, backup_folder=None, lnoOut=True):
-    ''' rewrite grok file for a restart based on existing output files '''
-    if not backup_folder: backup_folder = '{}/backup/'.format(self.rundir)
-    if not os.path.isdir(backup_folder): os.mkdir(backup_folder)
-    backup_file = '{}/{}'.format(backup_folder,os.path.basename(self._targetfile))
-    shutil.copy2(self._targetfile, backup_file)
-    # read output times and check presence of files
-    out_times = self.getParam('output times', dtype='float', llist=True)
-    last_pm = last_olf = last_time = None
-    for i,out_time in enumerate(out_times):
-        ii = i+1
-        pm_file = '{}/{}'.format(self.rundir,self.pm_files.format(IDX=ii))
-        olf_file = '{}/{}'.format(self.rundir,self.olf_files.format(IDX=ii))
-        if os.path.isfile(pm_file) and os.path.isfile(olf_file):
-            last_time = out_time # candidate for last completed time step
-            # move output to backup folder
-            last_pm = '{}/{}'.format(backup_folder,self.pm_files.format(IDX=ii))
-            last_olf = '{}/{}'.format(backup_folder,self.olf_files.format(IDX=ii))
-            shutil.move(pm_file, last_pm); shutil.move(olf_file, last_olf)                
-        elif os.path.isfile(pm_file):
-            raise IOError("Matching OLF file for output time step {} not found!\n('{}')".format(ii,olf_file))
-        elif os.path.isfile(olf_file):
-            raise IOError("Matching PM file for output time step {} not found!\n('{}')".format(ii,pm_file))
-        else: break # terminate loop
-    # modify grok file accordingly
-    if last_time is None:
-        # same restart point as last time... no need to change anything
-        if lnoOut: 
-            raise IOError("No output files found in run folder!\n('{}')".format(self.rundir))
-    else:
-      if i == len(out_times)-1: 
-          new_times = [] # no more output if this was the last output step
-      else:
-          assert i > 0, i 
-          new_times = out_times[i:] # use the remaining output times
-      self.setParam('output times', new_times, formatter='{:e}', )
-      self.setParam('initial time', last_time, formatter='{:e}', )
-      # merge pm and olf file
-      restart_file = '{}/{}'.format(self.rundir, self.restart_file) 
-      if os.path.exists(restart_file):     
-          shutil.move(restart_file,backup_folder)
-      # open new restart file for writing
-      with open(restart_file,'wb') as rf:
-          # open porous media file and dump into restart file
-          with open(last_pm, 'rb') as pm: shutil.copyfileobj(pm, rf)
-          # open over land flow file and dump into restart file
-          with open(last_olf, 'rb') as olf: shutil.copyfileobj(olf, rf)
-    # return name of restart file
-    return restart_file
-    
   
   def setInputMode(self, input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
                    input_folder='../climate_forcing', pet_folder=None):
@@ -502,11 +514,13 @@ class HGS(Grok):
   HGSOK     = None # indicate if HGS ran successfully
   pidx_file = 'parallelindx.dat' # file with parallel execution settings 
   lindicators = True # use indicator files (default: True)
+  lrestart  = False # whether or not this is a restart run (to complete an interrupted run)
+  ic_files  = None # pattern for initial condition files (path can be expanded)
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, output_interval='default',
                input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, pet_folder=None,
                input_folder='../climate_forcing', template_folder=None, linked_folders=None, NP=1, lindicator=True,
-               grok_bin='grok.exe', hgs_bin='phgs.exe'):
+               grok_bin='grok.exe', hgs_bin='phgs.exe', lrestart=False):
     ''' initialize HGS instance with a few more parameters: number of processors... '''
     # call parent constructor (Grok)
     super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
@@ -524,14 +538,21 @@ class HGS(Grok):
     # N.B.: these folders just contain static data and do not need to be replicated
     self.NP = NP # number of processors
     self.lindicators = lindicator # use indicator files
+    self.lrestart = lrestart # complete an interrupted run
     
-  def setupRundir(self, template_folder=None, bin_folder='{HGSDIR:s}', loverwrite=True, lschedule=True):
+  def setupRundir(self, template_folder=None, bin_folder='{HGSDIR:s}', loverwrite=None, lschedule=True):
     ''' copy entire run folder from a template folder and link executables '''
     template_folder = self.template_folder if template_folder is None else template_folder
     if template_folder is None: raise ValueError("Need to specify a template path.")
     if not os.path.exists(template_folder): raise IOError(template_folder)
     if bin_folder: bin_folder = bin_folder.format(HGSDIR=os.getenv('HGSDIR'))
+    # check for restart
+    if self.lrestart and self.lindicators:
+      if os.path.exists('{}/SCHEDULED'.format(self.rundir)) or os.path.exists('{}/ERROR'.format(self.rundir)):
+        self.lrestart = False # this mean it probably never ran!
     # clear existing directory
+    if loverwrite is None: 
+      loverwrite = not self.lrestart # i.e. don't clean for a restart
     if loverwrite and os.path.isdir(self.rundir):
       clearFolder(self.rundir, lWin=lWin, lmkdir=False)
       # N.B.: rmtree is dangerous, because if follows symbolic links and deletes contents of target directories!
@@ -575,6 +596,58 @@ class HGS(Grok):
       else: open('{}/ERROR'.format(self.rundir),'a').close()
     return 0 if self.rundirOK else 1
     
+  def rewriteRestart(self, backup_folder=None, lnoOut=True):
+    ''' rewrite grok file for a restart based on existing output files '''
+    if not backup_folder: backup_folder = '{}/backup/'.format(self.rundir)
+    if not os.path.isdir(backup_folder): os.mkdir(backup_folder)
+    backup_file = '{}/{}'.format(backup_folder,os.path.basename(self._targetfile))
+    shutil.copy2(self._targetfile, backup_file)
+    # read output times and check presence of files
+    out_times = self.getParam('output times', dtype='float', llist=True)
+    last_pm = last_olf = last_time = None
+    for i,out_time in enumerate(out_times):
+        ii = i+1
+        pm_file = '{}/{}'.format(self.rundir,self.pm_files.format(IDX=ii))
+        olf_file = '{}/{}'.format(self.rundir,self.olf_files.format(IDX=ii))
+        if os.path.isfile(pm_file) and os.path.isfile(olf_file):
+            last_time = out_time # candidate for last completed time step
+            # move output to backup folder
+            last_pm = '{}/{}'.format(backup_folder,self.pm_files.format(IDX=ii))
+            last_olf = '{}/{}'.format(backup_folder,self.olf_files.format(IDX=ii))
+            shutil.move(pm_file, last_pm); shutil.move(olf_file, last_olf)                
+        elif os.path.isfile(pm_file):
+            raise IOError("Matching OLF file for output time step {} not found!\n('{}')".format(ii,olf_file))
+        elif os.path.isfile(olf_file):
+            raise IOError("Matching PM file for output time step {} not found!\n('{}')".format(ii,pm_file))
+        else: break # terminate loop
+    # save restart point
+    self.restart_time = last_time; self.restart_index = i
+    # modify grok file accordingly
+    if last_time is None:
+        # same restart point as last time... no need to change anything
+        if lnoOut: 
+            raise IOError("No output files found in run folder!\n('{}')".format(self.rundir))
+    else:
+      if i == len(out_times)-1: 
+          new_times = [] # no more output if this was the last output step
+      else:
+          assert i > 0, i 
+          new_times = out_times[i:] # use the remaining output times
+      self.setParam('output times', new_times, formatter='{:e}', )
+      self.setParam('initial time', last_time, formatter='{:e}', )
+      # merge pm and olf file
+      restart_file = '{}/{}'.format(self.rundir, self.restart_file) 
+      if os.path.exists(restart_file):     
+          shutil.move(restart_file,backup_folder)
+      # open new restart file for writing
+      with open(restart_file,'wb') as rf:
+          # open porous media file and dump into restart file
+          with open(last_pm, 'rb') as pm: shutil.copyfileobj(pm, rf)
+          # open over land flow file and dump into restart file
+          with open(last_olf, 'rb') as olf: shutil.copyfileobj(olf, rf)
+    # return name of restart file
+    return restart_file
+    
   def setupConfig(self, template_folder=None, linput=True, lpidx=True, runtime_override=None):
     ''' load config file from template and write configuration to rundir '''
     if template_folder is None:
@@ -586,6 +659,12 @@ class HGS(Grok):
     ec += self.setRuntime()
     # write input lists to run folder
     if linput: ec += self.generateInputLists(lvalidate=True)
+    # rewrite Grok file for restarts
+    if self.lrestart:
+      self.ic_files = self.rewriteRestart()      
+    # change initial condition files in Grok
+    if self.ic_files:
+      self.changeICs(ic_pattern=self.ic_files)
     # after input lists are written, apply runtime override (just for testing)
     if runtime_override is not None: 
         ec += self.setRuntime(runtime=runtime_override, output_interval=1)
@@ -696,4 +775,4 @@ class HGS(Grok):
     # return a regular (POSIX) exit code
     return 0 if lec else 1
   
-  
+  def concatOutput(self):
