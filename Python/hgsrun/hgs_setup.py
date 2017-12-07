@@ -250,8 +250,8 @@ class Grok(object):
     if lindex: value = (value,i)
     return (value,i) if lindex else value
 
-  def replaceParam(self, old, new, formatter=None, after=None, start=0):
-    ''' repalce a parameter value with a new value (does not work for lists) '''
+  def replaceValue(self, old, new, formatter=None, after=None, start=0):
+    ''' repalce a value with a new value (does not work for lists) '''
     if formatter: 
       new = formatter.format(new) # apply appropriate formatting
       old = formatter.format(old) # apply appropriate formatting
@@ -260,11 +260,21 @@ class Grok(object):
     if after is not None: start = self._lines.index(after, start)# search offset for primary paramerter
     self._lines[self._lines.index(old, start)] = new # replace value in list of lines
     
-  def editParams(self, **params):
+  def setParams(self, **params):
     ''' edit a bunch of parameters, which are defined as key/values pairs using self.editParam;
         note that there is no validation and 'format' is only supported for single edits '''
     for param,value in params.iteritems():
-      self.editParam(param, value, format=None)
+      self.setParam(param, value)
+      
+  def remParam(self, param, llist=None, after=None, start=0, lindex=False, lerror=True, lall=False):
+    ''' find a parameter definition and comment it out (command and value, including lists) '''
+    # lall indicates wether all occurences or just the first one should be commented out
+    raise NotImplementedError
+  
+  def remParams(self, *params, **kwargs):
+    ''' comment out a list of parameters (and their values) '''
+    for param in params:
+        self.remParam(param, **kwargs)
       
   def changeICs(self, ic_pattern=None):
     ''' change the initial condition files in Grok using either .hen/restart or head/output files'''
@@ -296,6 +306,8 @@ class Grok(object):
         if lhenf:
             self._lines[i] = ic_file_hen
         else:
+            # remove all occurrences of 'initial head from output file' and ... 
+            # ... append 'restart file for heads' section at the end
             raise NotImplementedError
     else:
         # this Grok file/simulation uses regular head output files for initialization
@@ -309,8 +321,11 @@ class Grok(object):
                 elif self.lchannel and self.chan_tag in ini_file: 
                     self._lines[i] = ic_file_chan; lchan = True
                 ini_file, i = self.getParam('initial head from output file', llist=False, start=i, lindex=True, lerror=False)
-            if not ( lpm and lolf and lchan ): raise GrokError(lpm,lolf,lchan)
+            if not ( lpm and lolf and lchan ): 
+                raise GrokError("Not all IC filetypes have been found/changed (PM,OLF,Chan): ",lpm,lolf,lchan)
         else:
+            # remove all occurrences of 'restart file for heads' and ... 
+            # ... append required 'initial head from output file' sections at the end
             raise NotImplementedError  
         
       
@@ -604,29 +619,40 @@ class HGS(Grok):
     shutil.copy2(self._targetfile, backup_file)
     # read output times and check presence of files
     out_times = self.getParam('output times', dtype='float', llist=True)
-    last_pm = last_olf = last_time = None
+    last_pm = last_olf = last_chan = last_time = None
     for i,out_time in enumerate(out_times):
         ii = i+1
         pm_file = '{}/{}'.format(self.rundir,self.pm_files.format(IDX=ii))
         olf_file = '{}/{}'.format(self.rundir,self.olf_files.format(IDX=ii))
-        if os.path.isfile(pm_file) and os.path.isfile(olf_file):
+        chan_file = '{}/{}'.format(self.rundir,self.chan_files.format(IDX=ii))
+        if ( os.path.isfile(pm_file) and os.path.isfile(olf_file) and 
+             (not self.lchannel or os.path.isfile(chan_file) ) ):
             last_time = out_time # candidate for last completed time step
             # move output to backup folder
             last_pm = '{}/{}'.format(backup_folder,self.pm_files.format(IDX=ii))
             last_olf = '{}/{}'.format(backup_folder,self.olf_files.format(IDX=ii))
-            shutil.move(pm_file, last_pm); shutil.move(olf_file, last_olf)                
-        elif os.path.isfile(pm_file):
-            raise IOError("Matching OLF file for output time step {} not found!\n('{}')".format(ii,olf_file))
-        elif os.path.isfile(olf_file):
-            raise IOError("Matching PM file for output time step {} not found!\n('{}')".format(ii,pm_file))
-        else: break # terminate loop
+            shutil.move(pm_file, last_pm); shutil.move(olf_file, last_olf)
+            if self.lchannel:                
+                last_chan = '{}/{}'.format(backup_folder,self.chan_files.format(IDX=ii))
+                shutil.move(chan_file, last_chan)
+        elif not os.path.isfile(pm_file) and not os.path.isfile(olf_file) and not os.path.isfile(chan_file):
+          break # terminate loop
+        else:
+          # something strange happened
+          raise IOError("Some of the files for output time step {} appear to be missing!".format(ii))
     # save restart point
     self.restart_time = last_time; self.restart_index = i
     # modify grok file accordingly
     if last_time is None:
         # same restart point as last time... no need to change anything
+        restart_pattern = None
         if lnoOut: 
             raise IOError("No output files found in run folder!\n('{}')".format(self.rundir))
+    elif last_time == out_time:
+        # already finished
+        restart_pattern = None
+        if lnoOut:
+            raise ArgumentError("The last output file is already present - the simulation appears to be complete!")
     else:
       if i == len(out_times)-1: 
           new_times = [] # no more output if this was the last output step
@@ -635,18 +661,25 @@ class HGS(Grok):
           new_times = out_times[i:] # use the remaining output times
       self.setParam('output times', new_times, formatter='{:e}', )
       self.setParam('initial time', last_time, formatter='{:e}', )
-      # merge pm and olf file
-      restart_file = '{}/{}'.format(self.rundir, self.restart_file) 
-      if os.path.exists(restart_file):     
-          shutil.move(restart_file,backup_folder)
-      # open new restart file for writing
-      with open(restart_file,'wb') as rf:
-          # open porous media file and dump into restart file
-          with open(last_pm, 'rb') as pm: shutil.copyfileobj(pm, rf)
-          # open over land flow file and dump into restart file
-          with open(last_olf, 'rb') as olf: shutil.copyfileobj(olf, rf)
+      # assemble name for restart file pattern
+      restart_pattern = self.out_files.format(PROBLEM=self.problem,FILETYPE='{FILETYPE}').format(IDX=i)
+      # N.B.: the double-format is necessary, because IDX is enclosed in double-braces (see Grok.__init__)      
+#       # N.B.: according to Dr. Park this will not work, because Fortran binary files have some leading
+#       #       characters that need to be removed at the concatenation points...
+#       # merge pm and olf file
+#       restart_file = '{}/{}'.format(self.rundir, self.restart_file) 
+#       if os.path.exists(restart_file):     
+#           shutil.move(restart_file,backup_folder)
+#       # open new restart file for writing
+#       with open(restart_file,'wb') as rf:
+#           # open porous media file and dump into restart file
+#           with open(last_pm, 'rb') as pm: shutil.copyfileobj(pm, rf)
+#           # open over land flow file and dump into restart file
+#           with open(last_olf, 'rb') as olf: shutil.copyfileobj(olf, rf)
+#           # open channel flow file and dump into restart file
+#           with open(last_chan, 'rb') as chan: shutil.copyfileobj(chan, rf)
     # return name of restart file
-    return restart_file
+    return restart_pattern
     
   def setupConfig(self, template_folder=None, linput=True, lpidx=True, runtime_override=None):
     ''' load config file from template and write configuration to rundir '''
@@ -776,3 +809,10 @@ class HGS(Grok):
     return 0 if lec else 1
   
   def concatOutput(self):
+    ''' a function to concatenate HGS timeseries files after a restart; the following file types are 
+        concatenated: hydrograph's, observation_well_flow's, water_balance, and newton_info '''
+    # hydrograph's and observation_wll_flow's require globbing expressions to find all relevant files
+    # hydrograph's, water_balance, and newton_info essentially follow the same pattern,
+    # but observation_well_flow's require somewhat different method
+    # in all cases search from end backwards and drop everything after the last/initial time step
+    raise NotImplementedError
