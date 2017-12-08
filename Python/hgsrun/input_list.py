@@ -198,8 +198,8 @@ if __name__ == '__main__':
     
     # test cases
 #     test_case = 'simple_mean'
-#     test_case = 'climatology'
-    test_case = 'time-series'
+    test_case = 'climatology'
+#     test_case = 'time-series'
     
     ## file settings
     # work directory settings ("global" variable)
@@ -214,35 +214,35 @@ if __name__ == '__main__':
     testfile = 'test.inc'; testpattern = 'test_file'; inputfolder = '../test_folder'
     
     # for production
-#     grid = 'can1'; project = 'CAN'; length = 360
+    grid = 'can1'; project = 'CAN'; length = 360
 #     grid = 'brd1'; project = 'ASB'; length = 360
-    grid = 'asb1'; project = 'ASB'; length = 432
+#     grid = 'asb1'; project = 'ASB'; length = 432
 #     grid = 'grw2'; project = 'GRW'; length = 360
 #     grid = 'snw1'; project = 'SNW'; length = 360
-    varname = 'liqwatlfx'; testfile = 'precip.inc'; 
-#     varname = 'pet'; testfile = 'pet.inc'      
+#     varname = 'liqwatlfx'; testfile = 'precip.inc';
+#     varname = 'liqwatlfx_CMC'; testfile = 'precip_CMC.inc'; 
+    varname = 'pet'; testfile = 'pet.inc'      
     inputfolder = '../climate_forcing/'; testpattern = '{:s}_{:s}_iTime'.format(grid,varname)
-#     testfolder = 'D:/Data/HGS/{PRJ}/{GRD}/NRCan/'.format(PRJ=project,GRD=grid)
-    testfolder = '//AQFS1/Data/temp_data_exchange/{PRJ}/{GRD}/'.format(PRJ=project,GRD=grid)
+    testfolder = 'D:/Data/HGS/{PRJ}/{GRD}/'.format(PRJ=project,GRD=grid)
       
     ## write test file
     if test_case == 'simple_mean':
       # test simple mean
+#       testfolder += '/annual_30/'
       generateInputFilelist(filename=testfile, folder=testfolder,
                             input_folder=inputfolder, input_pattern=testpattern+'.asc', 
-                            length=100, interval='daily', mode='mean', lvalidate=False)
+                            length=length, interval='daily', mode='mean', lvalidate=False)
     
     elif test_case == 'climatology':
-      # test simple mean
-      testfolder += '/clim_30/'
-#       testfolder += '/timeseries/'      
+      # test climatology
+#       testfolder += '/clim_30/'
       generateInputFilelist(filename=testfile, folder=testfolder,
                             input_folder=inputfolder, input_pattern=testpattern+'_{IDX:02d}.asc', 
                             length=length, mode='climatology', lvalidate=False)
     
     elif test_case == 'time-series':
-      # test simple mean
-      testfolder += '/timeseries/'
+      # test time-series
+#       testfolder += '/timeseries/'
       generateInputFilelist(filename=testfile, folder=testfolder,
                             input_folder=inputfolder, input_pattern=testpattern+'_{IDX:03d}.asc', 
                             length=length, mode='time-series', lvalidate=False)
