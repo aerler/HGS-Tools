@@ -82,7 +82,7 @@ def parseFile(filepath, line_list):
             line = line.replace('\\','/') # enforce Unix folder convention
             # scan for include statements (except precip.inc and pet.inc) 
             if line.startswith('include') and not ( line.endswith('precip.inc') or line.endswith('pet.inc') ):
-            # N.B.: apparently HGS/Grok is case-sensitive... 
+                # N.B.: apparently HGS/Grok is case-sensitive... 
                 # figure out new file path
                 incpath = line[7:].strip()
                 if not os.path.lexists(incpath):
@@ -208,12 +208,14 @@ class Grok(object):
 
   def getParam(self, param, dtype=None, llist=None, after=None, start=0, lindex=False, lerror=True):
     ''' read a single parameter, based on the assumption that the parameter value follows in the 
-        line below the one where the parameter name appears (case in-sensitive); dtype is a 
+        line below the one where the parameter name appears (case sensitive); dtype is a 
         numpy data type to which the value string is cast; a list can be inferred if values of the 
         proper type follow in consecutive lines and are terminated by and 'end' '''
     if after is not None: start = self._lines.index(after, start) # search offset for primary paramerter
     if isinstance(dtype,basestring): dtype = getattr(np,dtype) # convert to given numpy dtype
     elif dtype is None: dtype = str # read as string data type as default
+    # lists of strings cannot be detected properly
+    if llist is None and ( np.issubdtype(dtype,np.string_) or np.issubdtype(dtype,np.unicode_) ): llist = False
     # find entry
     try: 
       i = self._lines.index(param, start)+1
@@ -247,7 +249,6 @@ class Grok(object):
       else: raise ValueError(value)
       # N.B.: this is very fragile, because it assumes there are no empty lines in the list
     # return value and optionally index position
-    if lindex: value = (value,i)
     return (value,i) if lindex else value
 
   def replaceValue(self, old, new, formatter=None, after=None, start=0):
@@ -266,10 +267,42 @@ class Grok(object):
     for param,value in params.iteritems():
       self.setParam(param, value)
       
-  def remParam(self, param, llist=None, after=None, start=0, lindex=False, lerror=True, lall=False):
-    ''' find a parameter definition and comment it out (command and value, including lists) '''
+  def remParam(self, param, llist=False, after=None, start=0, lerror=True, lall=False):
+    ''' find a parameter definition and comment it out, including the value of the parameter; the
+        value is assumed to follow directly after the definition; lists cannot be auto-detected as 
+        in consecutive values terminated by an 'end'; lall indicates that all occurences should be
+        commented out; lall returns a list of occurences, while normally only the last index of 
+        the occurence is returned. '''
     # lall indicates wether all occurences or just the first one should be commented out
-    raise NotImplementedError
+    if after is not None: start = self._lines.index(after, start) # search offset for primary paramerter
+    # find entry
+    try: 
+      i = self._lines.index(param, start)
+    except ValueError:
+      if lerror: raise
+      else: return None
+    # comment out command
+    self._lines[i] = '! '+self._lines[i]
+    i += 1 # increment index
+    # comment out values; different handling for scalars and lists
+    if llist is False:
+      self._lines[i] = '! '+self._lines[i] # just one value
+    else:
+      lterm = False # indicate if list is complete
+      while i < len(self._lines) and not lterm:
+        self._lines[i] = '! '+self._lines[i] # comment line by line
+        value = self._lines[i] # lines should be stripped (but still case-sensitive!)
+        if value == 'end': lterm = True # proper termination of list
+        i += 1 # increment to next line
+    # find more occurences recursively
+    if lall: 
+        ii = self.remParam(param, llist=llist, after=None, start=i, lerror=False, lall=True)
+        if ii is None: 
+            i = [i] # terminate recursion - return current occurence as last in the list
+        else:
+            i = [i] + ii # prepend this current occurence to list from recursion
+    # return index position 
+    return i
   
   def remParams(self, *params, **kwargs):
     ''' comment out a list of parameters (and their values) '''
@@ -306,9 +339,14 @@ class Grok(object):
         if lhenf:
             self._lines[i] = ic_file_hen
         else:
-            # remove all occurrences of 'initial head from output file' and ... 
-            # ... append 'restart file for heads' section at the end
-            raise NotImplementedError
+            # remove all occurrences of 'initial head from output file'
+            idx = self.remParam('initial head from output file', llist=False, start=0, lerror=True, lall=True)
+            if len(idx) < 2: raise GrokError(idx)
+            # append 'restart file for heads' section at the end
+            lines = ['clear chosen nodes', 'choose nodes all', 
+                     'restart file for heads', ic_file_hen,
+                     'clear chosen nodes',]
+            self._lines += lines
     else:
         # this Grok file/simulation uses regular head output files for initialization
         if lheadf:
@@ -324,10 +362,23 @@ class Grok(object):
             if not ( lpm and lolf and lchan ): 
                 raise GrokError("Not all IC filetypes have been found/changed (PM,OLF,Chan): ",lpm,lolf,lchan)
         else:
-            # remove all occurrences of 'restart file for heads' and ... 
-            # ... append required 'initial head from output file' sections at the end
-            raise NotImplementedError  
-        
+            # remove all occurrences of 'restart file for heads'
+            idx = self.remParam('restart file for heads', llist=False, start=0, lerror=True, lall=True)
+            if len(idx) < 1: raise GrokError(idx)
+            # append required 'initial head from output file' sections at the end
+            pm_lines = ['use domain type', 'porous media','clear chosen nodes', 'choose nodes all',
+                        'initial head from output file', ic_file_pm,
+                        'clear chosen nodes']
+            olf_lines = ['use domain type', 'surface','clear chosen nodes', 'choose nodes all',
+                         'initial head from output file', ic_file_olf,
+                         'clear chosen nodes']
+            lines = pm_lines + olf_lines
+            if self.lchannel:
+                chan_lines = ['use domain type', 'channel','clear chosen nodes', 'choose nodes all',
+                              'initial head from output file', ic_file_chan,
+                              'clear chosen nodes']
+                lines += chan_lines
+            self._lines += lines
       
   def resolveOutput(self, output_interval):
     ''' method to check and determine default output intervals '''
@@ -611,7 +662,7 @@ class HGS(Grok):
       else: open('{}/ERROR'.format(self.rundir),'a').close()
     return 0 if self.rundirOK else 1
     
-  def rewriteRestart(self, backup_folder=None, lnoOut=True):
+  def rewriteRestart(self, backup_folder=None, lerror=True):
     ''' rewrite grok file for a restart based on existing output files '''
     if not backup_folder: backup_folder = '{}/backup/'.format(self.rundir)
     if not os.path.isdir(backup_folder): os.mkdir(backup_folder)
@@ -646,12 +697,12 @@ class HGS(Grok):
     if last_time is None:
         # same restart point as last time... no need to change anything
         restart_pattern = None
-        if lnoOut: 
+        if lerror: 
             raise IOError("No output files found in run folder!\n('{}')".format(self.rundir))
     elif last_time == out_time:
         # already finished
         restart_pattern = None
-        if lnoOut:
+        if lerror:
             raise ArgumentError("The last output file is already present - the simulation appears to be complete!")
     else:
       if i == len(out_times)-1: 
@@ -662,8 +713,10 @@ class HGS(Grok):
       self.setParam('output times', new_times, formatter='{:e}', )
       self.setParam('initial time', last_time, formatter='{:e}', )
       # assemble name for restart file pattern
-      restart_pattern = self.out_files.format(PROBLEM=self.problem,FILETYPE='{FILETYPE}').format(IDX=i)
+      tmp = self.out_files.format(PROBLEM=self.problem, FILETYPE='{FILETYPE}')
+      tmp = tmp.format(IDX=i, FILETYPE='{FILETYPE}')
       # N.B.: the double-format is necessary, because IDX is enclosed in double-braces (see Grok.__init__)      
+      restart_pattern = '{}/{}'.format(backup_folder,tmp)
 #       # N.B.: according to Dr. Park this will not work, because Fortran binary files have some leading
 #       #       characters that need to be removed at the concatenation points...
 #       # merge pm and olf file
@@ -815,4 +868,5 @@ class HGS(Grok):
     # hydrograph's, water_balance, and newton_info essentially follow the same pattern,
     # but observation_well_flow's require somewhat different method
     # in all cases search from end backwards and drop everything after the last/initial time step
+    # finally, we also need to renumber 
     raise NotImplementedError

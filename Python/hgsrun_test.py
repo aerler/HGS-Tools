@@ -53,19 +53,19 @@ hgsdir   = os.getenv('HGSDIR',) # HGS license file
 # clim_data    = data_root+'/Test/grw2/test-run/clim/climate_forcing/'
 # ts_data      = data_root+'/Test/grw2/test-run/timeseries/climate_forcing/'
 
-# use small Payne River model for testing
-hgs_testcase = 'test' # name of test project (for file names)
-hgs_template = data_root+'/Test/Templates/PRC-test/' 
-test_prefix  = 'snw1' # pefix for climate input
-clim_data    = data_root+'/Test/snw1/test-run/clim/climate_forcing/'
-ts_data      = data_root+'/Test/snw1/test-run/timeseries/climate_forcing/'
+# # use small Payne River model for testing
+# hgs_testcase = 'test' # name of test project (for file names)
+# hgs_template = data_root+'/Test/Templates/PRC-test/' 
+# test_prefix  = 'snw1' # pefix for climate input
+# clim_data    = data_root+'/Test/snw1/test-run/clim/climate_forcing/'
+# ts_data      = data_root+'/Test/snw1/test-run/timeseries/climate_forcing/'
 
-# # use new hires GRW model for testing
-# hgs_testcase = 'grw_omafra' # name of test project (for file names)
-# hgs_template = data_root+'/GRW/Templates/GRW-V3-hires/' 
-# test_prefix  = 'grw2' # pefix for climate input
-# clim_data    = data_root+'/Test/grw2/test-run/clim/climate_forcing/'
-# ts_data      = data_root+'/Test/grw2/test-run/timeseries/climate_forcing/'
+# use new hires GRW model for testing
+hgs_testcase = 'grw_omafra' # name of test project (for file names)
+hgs_template = data_root+'/GRW/Templates/GRW-V3-hires/' 
+test_prefix  = 'grw2' # pefix for climate input
+clim_data    = data_root+'/Test/grw2/test-run/clim/climate_forcing/'
+ts_data      = data_root+'/Test/grw2/test-run/timeseries/climate_forcing/'
 
 ## tests for Grok class
 class GrokTest(unittest.TestCase):  
@@ -262,6 +262,9 @@ class HGSTest(GrokTest):
         open(pm_file,'w').close()
         olf_file = '{}/{}'.format(hgs.rundir,hgs.olf_files.format(IDX=i+1))
         open(olf_file,'w').close()
+        if hgs.lchannel:
+            chan_file = '{}/{}'.format(hgs.rundir,hgs.chan_files.format(IDX=i+1))
+            open(chan_file,'w').close()
     # read from template
     hgs.readConfig(folder=self.rundir)
     assert isinstance(hgs._lines, list), hgs._lines
@@ -270,7 +273,10 @@ class HGSTest(GrokTest):
     assert all(np.diff(new_times) > 0), np.diff(new_times)
     # apply modifications for restart
     restart_file = hgs.rewriteRestart()
-    assert os.path.isfile(restart_file), restart_file
+    test_file = restart_file.format(FILETYPE=hgs.olf_tag)
+    assert os.path.isfile(test_file), test_file
+    # write new restart files into Grok file
+    hgs.changeICs(ic_pattern=restart_file)
     # write modified file to rundir
     hgs.writeConfig()
     assert os.path.isfile(self.grok_output), self.grok_output
@@ -496,7 +502,7 @@ if __name__ == "__main__":
 #     specific_tests += ['InitEns']
 #     specific_tests += ['InputLists']
 #     specific_tests += ['ParallelIndex']
-#     specific_tests += ['Restart']
+    specific_tests += ['Restart']
 #     specific_tests += ['RunEns']
 #     specific_tests += ['RunGrok']
 #     specific_tests += ['RunHGS']
@@ -510,7 +516,7 @@ if __name__ == "__main__":
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-    tests += ['Grok']
+#     tests += ['Grok']
     tests += ['HGS']    
 #     tests += ['EnsHGS']
 
