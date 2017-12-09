@@ -13,89 +13,18 @@ import os, shutil
 import subprocess # launching external programs
 # internal imports
 from hgsrun.input_list import generateInputFilelist, resolveInterval
+from hgsrun.misc import lWin, symlink_ms, GrokError, HGSError
+from hgsrun.misc import parseGrokFile, clearFolder
 from geodata.misc import ArgumentError
 from utils.misc import tail
 
-# WindowsError is not defined on Linux - need a dummy
-try: 
-    lWin = True
-    WindowsError
-except NameError:
-    lWin = False
-    WindowsError = None
-        
+
 ## patch symlink on Windows
 # adapted from Stack Overflow (last answer: "Edit 2"):
 # https://stackoverflow.com/questions/6260149/os-symlink-support-in-windows
 if os.name == "nt":
-  def symlink_ms(source, link_name):
-    import ctypes
-    csl = ctypes.windll.kernel32.CreateSymbolicLinkW
-    csl.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
-    csl.restype = ctypes.c_ubyte
-    flags = 1 if os.path.isdir(source) else 0
-    if csl(link_name, source.replace('/', '\\'), flags) == 0:
-        raise ctypes.WinError()
-    if not os.path.exists(link_name):
-        raise WindowsError("Creation of Symbolic Link '{}' failed - do you have sufficient Privileges?".format(link_name))
-  
-  # replace os symlink with this function
-  os.symlink = symlink_ms
-  
-# a platform-independent solution to clear a folder...
-def clearFolder(folder, lWin=lWin, lmkdir=True):
-    ''' create a folder; if it already exists, remove it and all files and subfolder in it, and recreate it '''
-    if os.path.exists(folder):
-        if lWin: cmd = 'rmdir /q /s {}'.format(folder.replace('/', '\\'))
-        else: cmd = ['rm','-r',folder]
-        # N.B.: don't use shutil.rmtree(folder)! It appears that on Windows the use of soft links causes rmtree to 
-        #       follow the links and also delete all source files!
-        p = subprocess.Popen(cmd, shell=lWin, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # on windows we also need the shell, because rmdir is not an executable in itself
-        stdout, stderr = p.communicate(); ec = p.poll(); del stdout
-        if ec > 0: 
-            raise IOError("The command '{}' to remove the existing directory failed; exit code {}\n{}".format(cmd,ec,stderr))
-    # crease folder
-    if lmkdir: os.mkdir(folder)
+  os.symlink = symlink_ms # replace os symlink with this function
 
-# some named exceptions
-class GrokError(Exception):
-  ''' Exception indicating an Error in Grok '''
-  pass
-class HGSError(Exception):
-  ''' Exception indicating an Error in HGS '''
-  pass
-
-# helper function to recursively parse a Grok file with includes
-def parseFile(filepath, line_list):
-    ''' recursively parse files which include other files, starting with 'filepath', and append their lines to 'line_list' '''
-    # change working directory locally to resolve relative path'
-    pwd = os.getcwd() # need to go back later!
-    os.chdir(os.path.dirname(filepath))
-    with open(os.path.basename(filepath), 'r') as f:
-        lines = f.readlines() # load lines all at once (for performance)
-    # loop over lines, clean them and find includes
-    for line in lines:
-        line = line.strip() # remove which space 
-        # skip comments and empty lines
-        if not line.startswith('!'):
-            line = line.replace('\\','/') # enforce Unix folder convention
-            # scan for include statements (except precip.inc and pet.inc) 
-            if line.startswith('include') and not ( line.endswith('precip.inc') or line.endswith('pet.inc') ):
-                # N.B.: apparently HGS/Grok is case-sensitive... 
-                # figure out new file path
-                incpath = line[7:].strip()
-                if not os.path.lexists(incpath):
-                    raise IOError("Unable to open include file '{}'.".format(incpath))
-                # initiate recursion
-                parseFile(incpath, line_list)
-            else:
-                # append line to line_list
-                line_list.append(line)
-                # N.B.: only convert non-path statements to lower
-    # now we are done - we don't return anything, since line_list was modified in place
-    os.chdir(pwd) # this is important: return to previous working directory!!!
-    return None
 
 ## a class to handle Grok for HGS simulations
 class Grok(object):
@@ -165,7 +94,7 @@ class Grok(object):
     self._sourcefile = filename # use  different file as template
     # read source file (and recurse into includes)
     self._lines = [] # initialize empty list (will be extended in-place)
-    parseFile(filename, self._lines)
+    parseGrokFile(filename, self._lines)
     # check if we are dealing with channels
     self.lchannel = 'channel' in self._lines    
     # return exit code
@@ -339,14 +268,18 @@ class Grok(object):
         if lhenf:
             self._lines[i] = ic_file_hen
         else:
-            # remove all occurrences of 'initial head from output file'
-            idx = self.remParam('initial head from output file', llist=False, start=0, lerror=True, lall=True)
-            if len(idx) < 2: raise GrokError(idx)
-            # append 'restart file for heads' section at the end
-            lines = ['clear chosen nodes', 'choose nodes all', 
-                     'restart file for heads', ic_file_hen,
-                     'clear chosen nodes',]
-            self._lines += lines
+            # remove all occurrences of 'restart file for heads'
+            idx = self.remParam('restart file for heads', llist=False, start=0, lerror=True, lall=True)
+            if len(idx) < 1: raise GrokError(idx)
+            # append required 'initial head from output file' sections at the end
+            domains_files = [('porous media',ic_file_pm),('surface',ic_file_olf),]
+            if self.lchannel: domains_files += [('channel',ic_file_chan)]
+            for domain,ic_file in domains_files:
+                lines = ["! restart file '{}' for domain {} added by restart function".format(ic_file,domain),'',
+                         'use domain type', domain, '','clear chosen nodes', 'choose nodes all','',
+                         'initial head from output file', ic_file, '',
+                         'clear chosen nodes', '',]
+                self._lines += lines
     else:
         # this Grok file/simulation uses regular head output files for initialization
         if lheadf:
@@ -362,22 +295,14 @@ class Grok(object):
             if not ( lpm and lolf and lchan ): 
                 raise GrokError("Not all IC filetypes have been found/changed (PM,OLF,Chan): ",lpm,lolf,lchan)
         else:
-            # remove all occurrences of 'restart file for heads'
-            idx = self.remParam('restart file for heads', llist=False, start=0, lerror=True, lall=True)
-            if len(idx) < 1: raise GrokError(idx)
-            # append required 'initial head from output file' sections at the end
-            pm_lines = ['use domain type', 'porous media','clear chosen nodes', 'choose nodes all',
-                        'initial head from output file', ic_file_pm,
-                        'clear chosen nodes']
-            olf_lines = ['use domain type', 'surface','clear chosen nodes', 'choose nodes all',
-                         'initial head from output file', ic_file_olf,
-                         'clear chosen nodes']
-            lines = pm_lines + olf_lines
-            if self.lchannel:
-                chan_lines = ['use domain type', 'channel','clear chosen nodes', 'choose nodes all',
-                              'initial head from output file', ic_file_chan,
-                              'clear chosen nodes']
-                lines += chan_lines
+            # remove all occurrences of 'initial head from output file'
+            idx = self.remParam('initial head from output file', llist=False, start=0, lerror=True, lall=True)
+            if len(idx) < 2: raise GrokError(idx)
+            # append 'restart file for heads' section at the end
+            lines = ["! restart file '{}' added by restart function".format(ic_file_hen),'',
+                     'clear chosen nodes', 'choose nodes all', '',
+                     'restart file for heads', ic_file_hen, '',
+                     'clear chosen nodes', '',]
             self._lines += lines
       
   def resolveOutput(self, output_interval):
@@ -626,23 +551,23 @@ class HGS(Grok):
     if not os.path.isdir(self.rundir): shutil.copytree(template_folder, self.rundir, symlinks=True,
                                                        ignore=shutil.ignore_patterns('*.grok*',*self.linked_folders))
     # place link to template
-    os.symlink(template_folder, '{}/template'.format(self.rundir))
+    os.symlink(template_folder, os.path.join(self.rundir,'template'))
     # symlinks to static folder that are not copied (linked_folders)
     if self.linked_folders:
       for lf in self.linked_folders:
-        link_source = '{}/{}/'.format(template_folder,lf)
+        link_source = os.path.join(template_folder,lf)
         if os.path.exists(link_source):
-          #print('linking {}: {}'.format(lf,'{}/{}'.format(self.rundir,lf)))
-          os.symlink(link_source, '{}/{}'.format(self.rundir,lf))
+          #print('linking {}: {}'.format(lf,os.path.join(self.rundir,lf)))
+          os.symlink(link_source, os.path.join(self.rundir,lf))
     # copy or put links to executables in place
     for exe in (self.hgs_bin, self.grok_bin):
-      local_exe = '{}/{}'.format(self.rundir,exe)
+      local_exe = os.path.join(self.rundir,exe)
       if os.path.lexists(local_exe): os.remove(local_exe)
-      bin_path = '{}/{}'.format(template_folder,exe)
+      bin_path = os.path.join(template_folder,exe)
       if os.path.exists(bin_path):
         os.symlink(bin_path, local_exe)
       elif bin_folder and os.path.exists(bin_folder):
-        bin_path = '{}/{}'.format(bin_folder,exe)    
+        bin_path = os.path.join(bin_folder,exe)    
         if os.path.exists(bin_path):
           os.symlink(bin_path, local_exe)
         else:
@@ -664,27 +589,27 @@ class HGS(Grok):
     
   def rewriteRestart(self, backup_folder=None, lerror=True):
     ''' rewrite grok file for a restart based on existing output files '''
-    if not backup_folder: backup_folder = '{}/backup/'.format(self.rundir)
+    if not backup_folder: backup_folder = os.path.join(self.rundir,'backup/')
     if not os.path.isdir(backup_folder): os.mkdir(backup_folder)
-    backup_file = '{}/{}'.format(backup_folder,os.path.basename(self._targetfile))
-    shutil.copy2(self._targetfile, backup_file)
+    grok_backup = os.path.join(backup_folder,os.path.basename(self._targetfile))
+    shutil.copy2(self._targetfile, grok_backup)
     # read output times and check presence of files
     out_times = self.getParam('output times', dtype='float', llist=True)
     last_pm = last_olf = last_chan = last_time = None
     for i,out_time in enumerate(out_times):
         ii = i+1
-        pm_file = '{}/{}'.format(self.rundir,self.pm_files.format(IDX=ii))
-        olf_file = '{}/{}'.format(self.rundir,self.olf_files.format(IDX=ii))
-        chan_file = '{}/{}'.format(self.rundir,self.chan_files.format(IDX=ii))
+        pm_file = os.path.join(self.rundir,self.pm_files.format(IDX=ii))
+        olf_file = os.path.join(self.rundir,self.olf_files.format(IDX=ii))
+        chan_file = os.path.join(self.rundir,self.chan_files.format(IDX=ii))
         if ( os.path.isfile(pm_file) and os.path.isfile(olf_file) and 
              (not self.lchannel or os.path.isfile(chan_file) ) ):
             last_time = out_time # candidate for last completed time step
             # move output to backup folder
-            last_pm = '{}/{}'.format(backup_folder,self.pm_files.format(IDX=ii))
-            last_olf = '{}/{}'.format(backup_folder,self.olf_files.format(IDX=ii))
+            last_pm = os.path.join(backup_folder,self.pm_files.format(IDX=ii))
+            last_olf = os.path.join(backup_folder,self.olf_files.format(IDX=ii))
             shutil.move(pm_file, last_pm); shutil.move(olf_file, last_olf)
             if self.lchannel:                
-                last_chan = '{}/{}'.format(backup_folder,self.chan_files.format(IDX=ii))
+                last_chan = os.path.join(backup_folder,self.chan_files.format(IDX=ii))
                 shutil.move(chan_file, last_chan)
         elif not os.path.isfile(pm_file) and not os.path.isfile(olf_file) and not os.path.isfile(chan_file):
           break # terminate loop
@@ -716,11 +641,13 @@ class HGS(Grok):
       tmp = self.out_files.format(PROBLEM=self.problem, FILETYPE='{FILETYPE}')
       tmp = tmp.format(IDX=i, FILETYPE='{FILETYPE}')
       # N.B.: the double-format is necessary, because IDX is enclosed in double-braces (see Grok.__init__)      
-      restart_pattern = '{}/{}'.format(backup_folder,tmp)
+      restart_pattern = os.path.join(backup_folder,tmp)
+      # use relative path for restart file
+      restart_pattern = os.path.relpath(restart_pattern, self.rundir)
 #       # N.B.: according to Dr. Park this will not work, because Fortran binary files have some leading
 #       #       characters that need to be removed at the concatenation points...
 #       # merge pm and olf file
-#       restart_file = '{}/{}'.format(self.rundir, self.restart_file) 
+#       restart_file = os.path.join(self.rundir, self.restart_file) 
 #       if os.path.exists(restart_file):     
 #           shutil.move(restart_file,backup_folder)
 #       # open new restart file for writing

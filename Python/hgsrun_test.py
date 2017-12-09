@@ -53,19 +53,19 @@ hgsdir   = os.getenv('HGSDIR',) # HGS license file
 # clim_data    = data_root+'/Test/grw2/test-run/clim/climate_forcing/'
 # ts_data      = data_root+'/Test/grw2/test-run/timeseries/climate_forcing/'
 
-# # use small Payne River model for testing
-# hgs_testcase = 'test' # name of test project (for file names)
-# hgs_template = data_root+'/Test/Templates/PRC-test/' 
-# test_prefix  = 'snw1' # pefix for climate input
-# clim_data    = data_root+'/Test/snw1/test-run/clim/climate_forcing/'
-# ts_data      = data_root+'/Test/snw1/test-run/timeseries/climate_forcing/'
+# use small Payne River model for testing
+hgs_testcase = 'test' # name of test project (for file names)
+hgs_template = data_root+'/Test/Templates/PRC-test/' 
+test_prefix  = 'snw1' # pefix for climate input
+clim_data    = data_root+'/Test/snw1/test-run/clim/climate_forcing/'
+ts_data      = data_root+'/Test/snw1/test-run/timeseries/climate_forcing/'
 
-# use new hires GRW model for testing
-hgs_testcase = 'grw_omafra' # name of test project (for file names)
-hgs_template = data_root+'/GRW/Templates/GRW-V3-hires/' 
-test_prefix  = 'grw2' # pefix for climate input
-clim_data    = data_root+'/Test/grw2/test-run/clim/climate_forcing/'
-ts_data      = data_root+'/Test/grw2/test-run/timeseries/climate_forcing/'
+# # use new hires GRW model for testing
+# hgs_testcase = 'grw_omafra' # name of test project (for file names)
+# hgs_template = data_root+'/GRW/Templates/GRW-V3-hires/' 
+# test_prefix  = 'grw2' # pefix for climate input
+# clim_data    = data_root+'/Test/grw2/test-run/clim/climate_forcing/'
+# ts_data      = data_root+'/Test/grw2/test-run/timeseries/climate_forcing/'
 
 ## tests for Grok class
 class GrokTest(unittest.TestCase):  
@@ -130,7 +130,7 @@ class GrokTest(unittest.TestCase):
     grok = self.grok  
     # write to rundir
     grok.writeConfig() 
-    exe = '{}/{}'.format(self.hgs_template,self.grok_bin)
+    exe = os.path.join(self.hgs_template,self.grok_bin)
     logfile = '{}/log.grok'.format(grok.rundir)
     # run Grok
     if not os.path.isfile(exe): raise IOError(exe)
@@ -258,12 +258,12 @@ class HGSTest(GrokTest):
     hgs._lines = None # delete already loaded file contents
     # create fake output files for restart
     for i in range(5):
-        pm_file = '{}/{}'.format(hgs.rundir,hgs.pm_files.format(IDX=i+1))
+        pm_file = os.path.join(hgs.rundir,hgs.pm_files.format(IDX=i+1))
         open(pm_file,'w').close()
-        olf_file = '{}/{}'.format(hgs.rundir,hgs.olf_files.format(IDX=i+1))
+        olf_file = os.path.join(hgs.rundir,hgs.olf_files.format(IDX=i+1))
         open(olf_file,'w').close()
         if hgs.lchannel:
-            chan_file = '{}/{}'.format(hgs.rundir,hgs.chan_files.format(IDX=i+1))
+            chan_file = os.path.join(hgs.rundir,hgs.chan_files.format(IDX=i+1))
             open(chan_file,'w').close()
     # read from template
     hgs.readConfig(folder=self.rundir)
@@ -273,7 +273,7 @@ class HGSTest(GrokTest):
     assert all(np.diff(new_times) > 0), np.diff(new_times)
     # apply modifications for restart
     restart_file = hgs.rewriteRestart()
-    test_file = restart_file.format(FILETYPE=hgs.olf_tag)
+    test_file = os.path.join(self.rundir,restart_file.format(FILETYPE=hgs.olf_tag))
     assert os.path.isfile(test_file), test_file
     # write new restart files into Grok file
     hgs.changeICs(ic_pattern=restart_file)
@@ -292,7 +292,7 @@ class HGSTest(GrokTest):
   def testRunGrok(self):
     ''' test the Grok runner command and check if flag is set correctly '''
     hgs = self.hgs  
-    exe = '{}/{}'.format(self.hgs_template,self.grok_bin) # run folder not set up
+    exe = os.path.join(self.hgs_template,self.grok_bin) # run folder not set up
     logfile = '{}/log.grok'.format(hgs.rundir)
     assert hgs.GrokOK is None, hgs.GrokOK
     # climate data
@@ -312,7 +312,7 @@ class HGSTest(GrokTest):
   def testRunHGS(self):
     ''' test the HGS runner command (will fail without proper folder setup) '''
     hgs = self.hgs  
-    exe = '{}/{}'.format(self.hgs_template,self.hgs_bin) # run folder not set up
+    exe = os.path.join(self.hgs_template,self.hgs_bin) # run folder not set up
     logfile = '{}/log.hgs_run'.format(hgs.rundir)
     assert hgs.GrokOK is None, hgs.GrokOK
     # print environment variable for license file
@@ -349,7 +349,7 @@ class HGSTest(GrokTest):
     # check that all items are there
     assert os.path.isdir(self.rundir), self.rundir
     for exe in (self.hgs_bin, self.grok_bin):
-      local_exe = '{}/{}'.format(self.rundir,exe)
+      local_exe = os.path.join(self.rundir,exe)
       assert os.path.exists(local_exe), local_exe
     indicator = '{}/SCHEDULED'.format(self.rundir)
     assert os.path.exists(indicator), indicator
@@ -502,7 +502,7 @@ if __name__ == "__main__":
 #     specific_tests += ['InitEns']
 #     specific_tests += ['InputLists']
 #     specific_tests += ['ParallelIndex']
-    specific_tests += ['Restart']
+#     specific_tests += ['Restart']
 #     specific_tests += ['RunEns']
 #     specific_tests += ['RunGrok']
 #     specific_tests += ['RunHGS']
@@ -516,7 +516,7 @@ if __name__ == "__main__":
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-#     tests += ['Grok']
+    tests += ['Grok']
     tests += ['HGS']    
 #     tests += ['EnsHGS']
 
