@@ -82,11 +82,11 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   folder = folder.format(**expargs)
   if not os.path.exists(folder): raise IOError(folder)
   if expargs['PREFIX'] is None:
-    with open('{}/{}'.format(folder,prefix_file), 'r') as pfx:
+    with open(os.path.join(folder,prefix_file), 'r') as pfx:
       expargs['PREFIX'] = prefix = ''.join(pfx.readlines()).strip()      
   # now assemble file name for station timeseries
   filename = filename.format(**expargs)
-  filepath = '{}/{}'.format(folder,filename)
+  filepath = os.path.join(folder,filename)
   if not os.path.exists(filepath): IOError(filepath)
   if station_name is None: 
       station_name = filename[filename.index('hydrograph.')+1:-4] if station is None else station

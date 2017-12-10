@@ -7,7 +7,8 @@ mainly functions that parse configuration and output files.
 @author: Andre R. Erler, GPL v3
 '''
 
-import os, subprocess
+import os, subprocess, glob
+
 
 ## general utility 
 
@@ -36,6 +37,7 @@ if os.name == "nt":
   
   # replace os symlink with this function
   os.symlink = symlink_ms
+
   
 # some named exceptions
 class GrokError(Exception):
@@ -44,6 +46,7 @@ class GrokError(Exception):
 class HGSError(Exception):
   ''' Exception indicating an Error in HGS '''
   pass
+
 
 # a platform-independent solution to clear a folder...
 def clearFolder(folder, lWin=lWin, lmkdir=True):
@@ -60,6 +63,91 @@ def clearFolder(folder, lWin=lWin, lmkdir=True):
             raise IOError("The command '{}' to remove the existing directory failed; exit code {}\n{}".format(cmd,ec,stderr))
     # crease folder
     if lmkdir: os.mkdir(folder)
+
+
+## file collectors
+
+# function to find numeric values of occurences of a numbered file pattern
+def numberedPattern(name_pattern, nidx, folder=None):
+    ''' function to find numeric values of occurences of a numbered file pattern;
+        works only with indices at the end '''
+    if folder: 
+        pwd = os.getcwd()
+        os.chdir(folder)
+    pattern = name_pattern + '[0-9]'*nidx 
+    filenames = glob.glob(pattern)
+    numbers = [ int(filename[-nidx:]) for filename in filenames ]
+    if folder: 
+        os.chdir(pwd)
+    return numbers
+
+
+# function to collect all time-dependent binary output files
+def binaryFiles(prefix, folder=None, nidx=4, ldict=True):
+    ''' function to collect all time-dependent binary output files '''
+    if folder: 
+        pwd = os.getcwd()
+        os.chdir(folder)
+    # find binary file pattern
+    pattern = prefix + 'o.*.' + '[0-9]'*nidx 
+    filenames = glob.glob(pattern)
+    if folder: 
+        os.chdir(pwd)
+    # reorganize files
+    if ldict:
+        # split head files and store in dictionary
+        pm_files = []; olf_files = []; chan_files = []; other_files = []        
+        for filename in filenames:
+            if 'o.head_pm.' in filename: pm_files.append(filename)
+            elif 'o.head_olf.' in filename: olf_files.append(filename)
+            elif 'o.head_Chan.' in filename: chan_files.append(filename)
+            else:
+                # omit unwanted file
+                if not filename.endswith('o.ElemK_pm.0001'): other_files.append(filename)
+        binary_files = dict(head_pm=pm_files,head_olf=olf_files,head_Chan=chan_files,others=other_files)
+    else:
+        # only remove unwanted files
+        binary_files = [filename for filename in filenames if not filename.endswith('o.ElemK_pm.0001')]
+    return binary_files
+
+
+# function to collect all time-series output files
+def timeseriesFiles(prefix, folder=None, ldict=True, llogs=True, lcheck=True):
+    ''' function to collect all time-series output files '''
+    if folder: 
+        pwd = os.getcwd()
+        os.chdir(folder)
+    ts_dict = dict()
+    # log files
+    if llogs:
+        log_files = ['log.grok','log.hgs_run']
+        if lcheck: 
+            for log_file in log_files:
+                if not os.path.exists(log_file): 
+                    raise IOError(log_file)
+        ts_dict['logs'] = log_files        
+    # special files
+    special_files = [ prefix+name for name in ['o.newton_info.dat','o.water_balance.dat',] ]
+    if lcheck: 
+        for special_file in special_files:
+            if not os.path.exists(special_file): 
+                raise IOError(special_file)
+    ts_dict['special'] = special_files
+    # hydrographs
+    pattern = prefix + 'o.hydrograph.*.dat' 
+    ts_dict['hydrographs']= glob.glob(pattern)
+    # observation wells
+    pattern = prefix + 'o.observation_well_flow.*.dat' 
+    ts_dict['wells']= glob.glob(pattern)
+    if folder: 
+        os.chdir(pwd)
+    # reorganize
+    if not ldict:
+        flat_list = []
+        for files in ts_dict.values(): flat_list.extend(files)
+        return flat_list
+    else:
+        return ts_dict
 
 
 ## file parsere
@@ -97,4 +185,35 @@ def parseGrokFile(filepath, line_list):
 
 
 if __name__ == '__main__':
-    pass
+
+    test = 'filelists'
+    
+    if test == 'filelists':
+        
+        from hgs.HGS import root_folder, prefix_file
+        exp_folder = 'GRW/grw2/NRCan/clim_30/hgs_run_v3/'
+        folder = os.path.join(root_folder,exp_folder)
+        if not os.path.exists(folder): raise IOError(folder)
+        # read prefix from simulation
+        with open(os.path.join(folder,prefix_file), 'r') as pfx:
+            prefix = ''.join(pfx.readlines()).strip()
+        
+        # count numbered patter
+        print('\n  Numbered Pattern')
+        files = numberedPattern(prefix+'o.head_olf.', folder=folder, nidx=4)
+        print(files)
+        
+        # list binary files
+        print('\n  Binary Files')
+        files = binaryFiles(prefix=prefix, folder=folder, nidx=4, ldict=True)
+        for key,val in files.items():
+            print('{}: {}'.format(key,len(val)))
+            print(val)
+        
+        # list time-series files
+        print('\n  Time-series Files')
+        files = timeseriesFiles(prefix=prefix, folder=folder, llogs=True, lcheck=True, ldict=True)
+        for key,val in files.items():
+            print('{}: {}'.format(key,len(val)))
+            print(val)
+        

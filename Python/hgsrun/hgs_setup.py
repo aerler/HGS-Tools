@@ -11,10 +11,12 @@ that also handles folder setup (based on template) and execution of HGS.
 import numpy as np
 import os, shutil
 import subprocess # launching external programs
+import bisect
 # internal imports
 from hgsrun.input_list import generateInputFilelist, resolveInterval
-from hgsrun.misc import lWin, symlink_ms, GrokError, HGSError
-from hgsrun.misc import parseGrokFile, clearFolder
+from hgsrun.misc import lWin, symlink_ms, GrokError, HGSError, timeseriesFiles,\
+  binaryFiles
+from hgsrun.misc import parseGrokFile, clearFolder, numberedPattern
 from geodata.misc import ArgumentError
 from utils.misc import tail
 
@@ -40,6 +42,10 @@ class Grok(object):
   pm_tag = 'head_pm'
   olf_tag = 'head_olf'
   chan_tag = 'head_Chan'
+  newton_file = '{PROBLEM:s}o.newton_info.dat' # newton info time series file
+  water_file = '{PROBLEM:s}o.water_balance.dat' # water balance time series file
+  hydro_file = '{PROBLEM:s}o.hydrograph.{{TAG}}.dat' # hydrograph time series file
+  well_file = '{PROBLEM:s}o.observation_well_flow.{{TAG}}.dat' # observation well time series file 
   lchannel = None # whether or not we are using 1D channels  
   rundir = None # folder where the experiment is set up and executed
   project = None # a project designator used for file names
@@ -70,14 +76,20 @@ class Grok(object):
     self.rundir = rundir
     self.project = project
     self.problem = project if problem is None else problem
-    self.grok_file = self.grok_file.format(PROBLEM=self.problem) # default name
-    self.pm_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.pm_tag) # default name
-    self.olf_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.olf_tag) # default name
-    self.chan_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.chan_tag) # default name
-    self.restart_file = self.restart_file.format(PROBLEM=self.problem) # default name
     self.starttime = starttime
     self.runtime = runtime
     self.length = length
+    self.grok_file = self.grok_file.format(PROBLEM=self.problem) # default name
+    self.restart_file = self.restart_file.format(PROBLEM=self.problem) # default name
+    # binary files for restart
+    self.pm_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.pm_tag) # default name
+    self.olf_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.olf_tag) # default name
+    self.chan_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.chan_tag) # default name
+    # time-series files (for later concatenatenation)
+    self.newton_file = self.newton_file.format(PROBLEM=self.problem)
+    self.water_file = self.water_file.format(PROBLEM=self.problem)
+    self.hydro_file = self.hydro_file.format(PROBLEM=self.problem)
+    self.well_file = self.well_file.format(PROBLEM=self.problem)
     # input configuration
     self.setInputMode(input_mode=input_mode, input_interval=input_interval,
                       input_vars=input_vars, input_prefix=input_prefix,
@@ -240,6 +252,7 @@ class Grok(object):
       
   def changeICs(self, ic_pattern=None):
     ''' change the initial condition files in Grok using either .hen/restart or head/output files'''
+    os.chdir(self.rundir)
     # check which type of restart file we are dealing with
     if not isinstance(ic_pattern,basestring): 
         raise TypeError(ic_pattern)
@@ -587,77 +600,57 @@ class HGS(Grok):
       else: open('{}/ERROR'.format(self.rundir),'a').close()
     return 0 if self.rundirOK else 1
     
-  def rewriteRestart(self, backup_folder=None, lerror=True):
+  def rewriteRestart(self, backup_folder='restart_', lerror=True, nidx=4):
     ''' rewrite grok file for a restart based on existing output files '''
-    if not backup_folder: backup_folder = os.path.join(self.rundir,'backup/')
-    if not os.path.isdir(backup_folder): os.mkdir(backup_folder)
-    grok_backup = os.path.join(backup_folder,os.path.basename(self._targetfile))
-    shutil.copy2(self._targetfile, grok_backup)
-    # read output times and check presence of files
+    os.chdir(self.rundir) # move into directory and work with relative path
+    # extract end time from time series to find restart time   
+    with open(self.newton_file, 'r') as nf:
+        lines = nf.readlines()
+    last_time = float(lines[-1].split()[0])
     out_times = self.getParam('output times', dtype='float', llist=True)
-    last_pm = last_olf = last_chan = last_time = None
-    for i,out_time in enumerate(out_times):
-        ii = i+1
-        pm_file = os.path.join(self.rundir,self.pm_files.format(IDX=ii))
-        olf_file = os.path.join(self.rundir,self.olf_files.format(IDX=ii))
-        chan_file = os.path.join(self.rundir,self.chan_files.format(IDX=ii))
-        if ( os.path.isfile(pm_file) and os.path.isfile(olf_file) and 
-             (not self.lchannel or os.path.isfile(chan_file) ) ):
-            last_time = out_time # candidate for last completed time step
-            # move output to backup folder
-            last_pm = os.path.join(backup_folder,self.pm_files.format(IDX=ii))
-            last_olf = os.path.join(backup_folder,self.olf_files.format(IDX=ii))
-            shutil.move(pm_file, last_pm); shutil.move(olf_file, last_olf)
-            if self.lchannel:                
-                last_chan = os.path.join(backup_folder,self.chan_files.format(IDX=ii))
-                shutil.move(chan_file, last_chan)
-        elif not os.path.isfile(pm_file) and not os.path.isfile(olf_file) and not os.path.isfile(chan_file):
-          break # terminate loop
-        else:
-          # something strange happened
-          raise IOError("Some of the files for output time step {} appear to be missing!".format(ii))
-    # save restart point
-    self.restart_time = last_time; self.restart_index = i
-    # modify grok file accordingly
-    if last_time is None:
-        # same restart point as last time... no need to change anything
-        restart_pattern = None
-        if lerror: 
-            raise IOError("No output files found in run folder!\n('{}')".format(self.rundir))
-    elif last_time == out_time:
-        # already finished
-        restart_pattern = None
-        if lerror:
-            raise ArgumentError("The last output file is already present - the simulation appears to be complete!")
-    else:
-      if i == len(out_times)-1: 
-          new_times = [] # no more output if this was the last output step
-      else:
-          assert i > 0, i 
-          new_times = out_times[i:] # use the remaining output times
-      self.setParam('output times', new_times, formatter='{:e}', )
-      self.setParam('initial time', last_time, formatter='{:e}', )
-      # assemble name for restart file pattern
-      tmp = self.out_files.format(PROBLEM=self.problem, FILETYPE='{FILETYPE}')
-      tmp = tmp.format(IDX=i, FILETYPE='{FILETYPE}')
-      # N.B.: the double-format is necessary, because IDX is enclosed in double-braces (see Grok.__init__)      
-      restart_pattern = os.path.join(backup_folder,tmp)
-      # use relative path for restart file
-      restart_pattern = os.path.relpath(restart_pattern, self.rundir)
-#       # N.B.: according to Dr. Park this will not work, because Fortran binary files have some leading
-#       #       characters that need to be removed at the concatenation points...
-#       # merge pm and olf file
-#       restart_file = os.path.join(self.rundir, self.restart_file) 
-#       if os.path.exists(restart_file):     
-#           shutil.move(restart_file,backup_folder)
-#       # open new restart file for writing
-#       with open(restart_file,'wb') as rf:
-#           # open porous media file and dump into restart file
-#           with open(last_pm, 'rb') as pm: shutil.copyfileobj(pm, rf)
-#           # open over land flow file and dump into restart file
-#           with open(last_olf, 'rb') as olf: shutil.copyfileobj(olf, rf)
-#           # open channel flow file and dump into restart file
-#           with open(last_chan, 'rb') as chan: shutil.copyfileobj(chan, rf)
+    restart_index = bisect.bisect(out_times, last_time)
+    times_done = out_times[:restart_index]
+    if len(times_done)==0:        
+        self.lrestart = False
+        return # no restart necessary - just start from beginning
+    times_todo = out_times[restart_index:]
+    if len(times_todo) == 0:
+        raise HGSError("Simulations appears to be complete --- no restart necesary/possible.")          
+    restart_time = times_done[-1]
+    # set new time parameters in Grok file
+    self.setParam('output times', times_todo, formatter='{:e}', )
+    self.setParam('initial time', restart_time, formatter='{:e}', )
+    # find last head files
+    filetypes = [self.pm_files,self.olf_files]
+    if self.lchannel: filetypes += [self.chan_files]
+    indices = [] # last indices out head output files
+    for filetype in filetypes: 
+      # nidx: number of digits at the end
+      name_pattern = filetype.format(IDX=0)[:nidx] # cut off last four digits
+      file_inidces = numberedPattern(name_pattern, nidx=nidx, folder=None)
+      indices.append(max(file_inidces))
+    if min(indices) < max(indices): # should all be the same
+        raise IOError("Available head output files (PM,OLF,Chan) are not numbered consistently -- cannot restart!")    
+    # now we know that we are actually restarting, so set RESTART indicator
+    open('RESTARTED','a').close()
+    # assemble name for restart file pattern
+    tmp = self.out_files.format(PROBLEM=self.problem, FILETYPE='{FILETYPE}')
+    # N.B.: the double-format is necessary, because IDX is enclosed in double-braces (see Grok.__init__)      
+    restart_pattern = tmp.format(IDX=indices[0], FILETYPE='{FILETYPE}')
+    # determine new restart backup folder to store time-dependent output
+    # N.B.: to prevent data loss, a new folder with a 4-digit running number is created
+    idx = max(numberedPattern(backup_folder, nidx=nidx, folder=None)) # absolute path
+    backup_folder = backup_folder + '{:04d}'.format(idx)
+    os.mkdir(backup_folder)
+    # backup grok files
+    shutil.copy2(self._targetfile, backup_folder)
+    # move time-series and binary files
+    ts_list = timeseriesFiles(prefix=self.problem, folder=None, ldict=False, llogs=True, lcheck=True)
+    binary_list = binaryFiles(prefix=self.problem, folder=None, nidx=nidx, ldict=False)
+    for backup_file in ts_list + binary_list:
+        shutil.move(backup_file,backup_folder) # relative path
+    # add backup folder to restart file pattern (will be checked when restart files are updated)
+    restart_pattern = os.path.join(backup_folder,restart_pattern)
     # return name of restart file
     return restart_pattern
     
