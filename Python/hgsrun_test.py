@@ -107,7 +107,9 @@ class GrokTest(unittest.TestCase):
     self.grok.writeConfig()
     del self.grok
     gc.collect()
- 
+    # leave directory, so we can delete folder
+    os.chdir(os.path.expanduser('~'))
+
   def testClass(self):
     ''' test instantiation of class '''    
     # instantiation done in self.setUp()
@@ -229,6 +231,8 @@ class HGSTest(GrokTest):
     self.grok.writeConfig()
     del self.grok, self.hgs
     gc.collect()
+    # leave directory, so we can delete folder
+    os.chdir(os.path.expanduser('~'))
 
   def testInputLists(self):
     ''' test writing of input list files with climate forcings '''
@@ -251,6 +255,7 @@ class HGSTest(GrokTest):
   def testRestart(self):
     ''' load config file from rundir and modify restart time etc. '''
     hgs = self.hgs
+    os.chdir(hgs.rundir)
     # write to rundir
     hgs.writeConfig() 
     assert os.path.isfile(self.grok_output), self.grok_output
@@ -265,6 +270,17 @@ class HGSTest(GrokTest):
         if hgs.lchannel:
             chan_file = os.path.join(hgs.rundir,hgs.chan_files.format(IDX=i+1))
             open(chan_file,'w').close()
+    # create fake newton_info and water_balance files with time-stamps
+    with open(hgs.newton_file, 'w') as nf:
+        nf.write('Title\nVARIABLES\nzone\n')
+        nf.writelines(['{:e}\n'.format(t) for t in old_times[:5]])
+    #with open(hgs.newton_file, 'r') as nf:
+    #    for line in nf.readlines(): print(line)
+    with open(hgs.water_file, 'w') as wf:
+        wf.write('Title\nVARIABLES\nzone\n')
+        wf.writelines(['{:e}\n'.format(t) for t in old_times[:5]])
+    # create fake log files, too
+    open(hgs.grok_log, 'a').close(); open(hgs.hgs_log, 'a').close() 
     # read from template
     hgs.readConfig(folder=self.rundir)
     assert isinstance(hgs._lines, list), hgs._lines

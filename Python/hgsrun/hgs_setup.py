@@ -35,6 +35,7 @@ class Grok(object):
     saving the file, and running Grok.
   '''
   batchpfx = 'batch.pfx' # a file that defines the HGS problem name for Grok
+  grok_log = 'log.grok' # save stdout and stderr in this file
   grok_dbg = 'grok.dbg' # Grok debug output
   grok_file = '{PROBLEM:s}.grok' # the Grok configuration file; default includes problem name
   restart_file = '{PROBLEM:s}o.hen' # restart file name
@@ -463,10 +464,11 @@ class Grok(object):
     # return exit code
     return ec
   
-  def runGrok(self, executable=None, logfile='log.grok', batchpfx=None, lerror=True, lcompress=True, ldryrun=False):
+  def runGrok(self, executable=None, logfile=None, batchpfx=None, lerror=True, lcompress=True, ldryrun=False):
     ''' run the Grok executable in the run directory '''
     pwd = os.getcwd() # save present workign directory to return later
     os.chdir(self.rundir) # go into run Grok/HGS folder
+    if not logfile: logfile = self.grok_log
     self.grok_bin = executable if executable is not None else self.grok_bin
     self.batchpfx = batchpfx if batchpfx is not None else self.batchpfx
     if not os.path.lexists(self.grok_bin): 
@@ -511,6 +513,7 @@ class HGS(Grok):
   '''
   template_folder = None # temlate for rundir setup
   linked_folders = None # list of folders that should be linked rather than copied
+  hgs_log   = 'log.hgs_run'  # save stdout and stderr in this file
   rundirOK  = None # indicate if rundir setup was successfule
   configOK  = None # indicate if Grok configuration was successful
   GrokOK    = None # indicate if Grok ran successfully
@@ -606,6 +609,8 @@ class HGS(Grok):
     # extract end time from time series to find restart time   
     with open(self.newton_file, 'r') as nf:
         lines = nf.readlines()
+    #TODO: this could be moved into a function to query begin and end times
+    #      in time-series files and check consistency between files
     last_time = float(lines[-1].split()[0])
     out_times = self.getParam('output times', dtype='float', llist=True)
     restart_index = bisect.bisect(out_times, last_time)
@@ -626,9 +631,9 @@ class HGS(Grok):
     indices = [] # last indices out head output files
     for filetype in filetypes: 
       # nidx: number of digits at the end
-      name_pattern = filetype.format(IDX=0)[:nidx] # cut off last four digits
-      file_inidces = numberedPattern(name_pattern, nidx=nidx, folder=None)
-      indices.append(max(file_inidces))
+      name_pattern = filetype.format(IDX=0)[:-nidx] # cut off last four digits
+      file_indices = numberedPattern(name_pattern, nidx=nidx, folder=None)
+      indices.append(max(file_indices))
     if min(indices) < max(indices): # should all be the same
         raise IOError("Available head output files (PM,OLF,Chan) are not numbered consistently -- cannot restart!")    
     # now we know that we are actually restarting, so set RESTART indicator
@@ -639,18 +644,20 @@ class HGS(Grok):
     restart_pattern = tmp.format(IDX=indices[0], FILETYPE='{FILETYPE}')
     # determine new restart backup folder to store time-dependent output
     # N.B.: to prevent data loss, a new folder with a 4-digit running number is created
-    idx = max(numberedPattern(backup_folder, nidx=nidx, folder=None)) # absolute path
-    backup_folder = backup_folder + '{:04d}'.format(idx)
-    os.mkdir(backup_folder)
+    self.restart_folders = numberedPattern(backup_folder, nidx=nidx, folder=None)
+    idx = ( max(self.restart_folders) if len(self.restart_folders) > 0 else 0 ) + 1 
+    restart_folder = backup_folder + '{:04d}'.format(idx)
+    self.restart_folders.append(restart_folder)
+    os.mkdir(restart_folder)
     # backup grok files
-    shutil.copy2(self._targetfile, backup_folder)
+    shutil.copy2(self._targetfile, restart_folder)
     # move time-series and binary files
     ts_list = timeseriesFiles(prefix=self.problem, folder=None, ldict=False, llogs=True, lcheck=True)
     binary_list = binaryFiles(prefix=self.problem, folder=None, nidx=nidx, ldict=False)
     for backup_file in ts_list + binary_list:
-        shutil.move(backup_file,backup_folder) # relative path
+        shutil.move(backup_file,restart_folder) # relative path
     # add backup folder to restart file pattern (will be checked when restart files are updated)
-    restart_pattern = os.path.join(backup_folder,restart_pattern)
+    restart_pattern = os.path.join(restart_folder,restart_pattern)
     # return name of restart file
     return restart_pattern
     
@@ -715,11 +722,12 @@ class HGS(Grok):
     os.chdir(pwd) # return to previous working directory
     return 0 if self.pidxOK else 1
     
-  def runHGS(self, executable=None, logfile='log.hgs_run', lerror=True, lcompress=True,
+  def runHGS(self, executable=None, logfile=None, lerror=True, lcompress=True,
              skip_config=False, skip_grok=False, skip_pidx=False, ldryrun=False):
     ''' check if all inputs are in place and run the HGS executable in the run directory '''
     pwd = os.getcwd() # save present workign directory to return later    
     os.chdir(self.rundir) # go into run Grok/HGS folder
+    if not logfile: logfile = self.hgs_log
     self.hgs_bin = executable if executable is not None else self.hgs_bin
     if not os.path.isfile(self.hgs_bin): 
       raise IOError("HGS executable '{}' not found.".format(self.hgs_bin))

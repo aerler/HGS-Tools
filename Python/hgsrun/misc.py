@@ -109,7 +109,7 @@ def binaryFiles(prefix, folder=None, nidx=4, ldict=True):
         # only remove unwanted files
         binary_files = [filename for filename in filenames if not filename.endswith('o.ElemK_pm.0001')]
     return binary_files
-
+#TOTO: remove hard-coding of file patterns and add wrapper as class method to Grok
 
 # function to collect all time-series output files
 def timeseriesFiles(prefix, folder=None, ldict=True, llogs=True, lcheck=True):
@@ -148,6 +148,7 @@ def timeseriesFiles(prefix, folder=None, ldict=True, llogs=True, lcheck=True):
         return flat_list
     else:
         return ts_dict
+#TOTO: remove hard-coding of file patterns and add wrapper as class method to Grok
 
 
 ## file parsere
