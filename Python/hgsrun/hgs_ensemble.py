@@ -8,7 +8,7 @@ to actually running HGS.
 '''
 
 # external imports
-import os, inspect, multiprocessing
+import os, shutil, inspect, multiprocessing
 # internal imports
 from utils.misc import expandArgumentList
 from geodata.misc import ArgumentError
@@ -157,6 +157,7 @@ class EnsHGS(object):
           lskip = True
         elif self.lindicator and os.path.exists('{}/IN_PROGRESS'.format(rundir)):
           if self.lrestart:
+            shutil.move(os.path.join(rundir,'IN_PROGRESS'),os.path.join(rundir,'SCHEDULED'))
             if self.lreport: print("Restarting experiment in folder '{:s}' (was in progress).".format(rundir))
             lskip = False
             kwargs['restart'] = True
