@@ -156,6 +156,7 @@ def main(argv=None): # IGNORE:C0111
     if lnoindicator: hgs_config['lindicator'] = False
     if loverwrite: hgs_config['loverwrite'] = True
     if lrunfailed: hgs_config['lrunfailed'] = True
+    if lrestart: hgs_config['lrestart'] = True
     
     # instantiate ensemble
     if not lquiet:
@@ -173,7 +174,6 @@ def main(argv=None): # IGNORE:C0111
         del  batch_config['lsetup']
     if 'lgrok' in batch_config: del batch_config['lgrok']
     if lskipgrok: batch_config['skip_grok'] = True
-    if lrestart: batch_config['lrestart'] = True
     if ldryrun: batch_config['ldryrun'] = True
     if NP is not None: batch_config['NP'] = NP
     if lserial or NP == 1: batch_config['lparallel'] = False

@@ -567,24 +567,30 @@ class HGS(Grok):
     if not os.path.isdir(self.rundir): shutil.copytree(template_folder, self.rundir, symlinks=True,
                                                        ignore=shutil.ignore_patterns('*.grok*',*self.linked_folders))
     # place link to template
-    os.symlink(template_folder, os.path.join(self.rundir,'template'))
+    template_link = os.path.join(self.rundir,'template')
+    if os.path.exists(template_link): os.rmdir(template_link) if lWin else os.remove(template_link)
+    os.symlink(template_folder, template_link)
     # symlinks to static folder that are not copied (linked_folders)
     if self.linked_folders:
       for lf in self.linked_folders:
         link_source = os.path.join(template_folder,lf)
         if os.path.exists(link_source):
           #print('linking {}: {}'.format(lf,os.path.join(self.rundir,lf)))
-          os.symlink(link_source, os.path.join(self.rundir,lf))
+          lf_link = os.path.join(self.rundir,lf)
+          if os.path.exists(lf_link): os.rmdir(lf_link) if lWin else os.remove(lf_link)
+          os.symlink(link_source, lf_link)
     # copy or put links to executables in place
     for exe in (self.hgs_bin, self.grok_bin):
       local_exe = os.path.join(self.rundir,exe)
       if os.path.lexists(local_exe): os.remove(local_exe)
       bin_path = os.path.join(template_folder,exe)
       if os.path.exists(bin_path):
+        if os.path.exists(local_exe): os.remove(local_exe)
         os.symlink(bin_path, local_exe)
       elif bin_folder and os.path.exists(bin_folder):
         bin_path = os.path.join(bin_folder,exe)    
         if os.path.exists(bin_path):
+          if os.path.exists(local_exe): os.remove(local_exe)
           os.symlink(bin_path, local_exe)
         else:
           raise IOError("Executable file '{}' not found in bin folder.\n ('{}') ".format(exe,bin_folder))
@@ -651,7 +657,7 @@ class HGS(Grok):
     if not ldryrun: # for testing we don't actually want to move files...
         os.mkdir(restart_folder)
         # backup grok files
-        shutil.copy2(self._targetfile, restart_folder)
+        shutil.copy2(self.grok_file.format(PROBLEM=self.problem), restart_folder)
         # move time-series and binary files
         ts_list = timeseriesFiles(prefix=self.problem, folder=None, ldict=False, llogs=True, lcheck=True)
         binary_list = binaryFiles(prefix=self.problem, folder=None, nidx=nidx, ldict=False)
@@ -762,18 +768,18 @@ class HGS(Grok):
         # i.e. -2, second line from the end (and different capitalization from Grok!)
     # concatenate output from restarts (if necesary)
     if self.lrestart:
-      with open(logfile, 'a') as lf: # output and error log
-        try:
-          self.concatOutput()
-          shutil.move('RESTARTED','CONCATENATED')
-        except:
+      try:
+        self.concatOutput()
+        shutil.move('RESTARTED','CONCATENATED')
+      except:
+        with open(logfile, 'a') as lf: # output and error log
           lf.write('\nConcatenation of output from previous (re-)starts failed; please assemble complete ' + 
-                   'output from restart folders manually:')
-          for folder in self.restart_folders: lf.write(folder)
+                   'output from restart folders manually:\n\n')
+          for folder in self.restart_folders: lf.write(folder+'\n')
           if lcompress:
-              lf.write('Note that compression of binary output will not be performed.')
+              lf.write('\nNote that compression of binary output will not be performed.\n')
               lcompress = False
-          if lerror: raise
+        if lerror: raise
     # compress binary 3D output fields
     if lcompress and lec:
       with open(logfile, 'a') as lf: # output and error log
