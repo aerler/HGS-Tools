@@ -603,7 +603,7 @@ class HGS(Grok):
       else: open('{}/ERROR'.format(self.rundir),'a').close()
     return 0 if self.rundirOK else 1
     
-  def rewriteRestart(self, backup_folder='restart_', lerror=True, nidx=4):
+  def rewriteRestart(self, backup_folder='restart_', lerror=True, nidx=4, ldryrun=False):
     ''' rewrite grok file for a restart based on existing output files '''
     os.chdir(self.rundir) # move into directory and work with relative path
     # extract end time from time series to find restart time   
@@ -648,20 +648,21 @@ class HGS(Grok):
     idx = ( max(self.restart_folders) if len(self.restart_folders) > 0 else 0 ) + 1 
     restart_folder = backup_folder + '{:04d}'.format(idx)
     self.restart_folders.append(restart_folder)
-    os.mkdir(restart_folder)
-    # backup grok files
-    shutil.copy2(self._targetfile, restart_folder)
-    # move time-series and binary files
-    ts_list = timeseriesFiles(prefix=self.problem, folder=None, ldict=False, llogs=True, lcheck=True)
-    binary_list = binaryFiles(prefix=self.problem, folder=None, nidx=nidx, ldict=False)
-    for backup_file in ts_list + binary_list:
-        shutil.move(backup_file,restart_folder) # relative path
-    # add backup folder to restart file pattern (will be checked when restart files are updated)
-    restart_pattern = os.path.join(restart_folder,restart_pattern)
+    if not ldryrun: # for testing we don't actually want to move files...
+        os.mkdir(restart_folder)
+        # backup grok files
+        shutil.copy2(self._targetfile, restart_folder)
+        # move time-series and binary files
+        ts_list = timeseriesFiles(prefix=self.problem, folder=None, ldict=False, llogs=True, lcheck=True)
+        binary_list = binaryFiles(prefix=self.problem, folder=None, nidx=nidx, ldict=False)
+        for backup_file in ts_list + binary_list:
+            shutil.move(backup_file,restart_folder) # relative path
+        # add backup folder to restart file pattern (will be checked when restart files are updated)
+        restart_pattern = os.path.join(restart_folder,restart_pattern)
     # return name of restart file
     return restart_pattern
     
-  def setupConfig(self, template_folder=None, linput=True, lpidx=True, runtime_override=None):
+  def setupConfig(self, template_folder=None, linput=True, lpidx=True, runtime_override=None, ldryrun=False):
     ''' load config file from template and write configuration to rundir '''
     if template_folder is None:
       template_folder = self.rundir if self.template_folder is None else self.template_folder
@@ -674,7 +675,7 @@ class HGS(Grok):
     if linput: ec += self.generateInputLists(lvalidate=True)
     # rewrite Grok file for restarts
     if self.lrestart:
-      self.ic_files = self.rewriteRestart()      
+      self.ic_files = self.rewriteRestart(ldryrun=ldryrun)      
     # change initial condition files in Grok
     if self.ic_files:
       self.changeICs(ic_pattern=self.ic_files)
@@ -734,7 +735,7 @@ class HGS(Grok):
     ## check prerequisites and run, if necessary
     # Grok configuration
     if not skip_config and not self.configOK:
-      ec = self.setupConfig() # will run with defaults, assuming template is already defined
+      ec = self.setupConfig(ldryrun=ldryrun) # will run with defaults, assuming template is already defined
       if lerror and ec != 0: raise GrokError('Grok configuration did not complete properly.')
     # Grok run
     if not skip_grok and not self.GrokOK: 
@@ -747,7 +748,7 @@ class HGS(Grok):
         raise HGSError('Parallel index file was not written properly.')  
     # set indicator file to 'in progress'
     if self.lindicators: 
-      shutil.move('{}/SCHEDULED'.format(self.rundir),'{}/IN_PROGRESS'.format(self.rundir))  
+      shutil.move('SCHEDULED','IN_PROGRESS') # already in rundir  
     ## run executable while logging output
     with open(logfile, 'w+') as lf: # output and error log
       if ldryrun:
@@ -759,6 +760,20 @@ class HGS(Grok):
         # parse log file for errors
         lec = ( tail(lf, n=2)[0].strip() == '---- NORMAL EXIT ----' )
         # i.e. -2, second line from the end (and different capitalization from Grok!)
+    # concatenate output from restarts (if necesary)
+    if self.lrestart:
+      with open(logfile, 'a') as lf: # output and error log
+        try:
+          self.concatOutput()
+          shutil.move('RESTARTED','CONCATENATED')
+        except:
+          lf.write('\nConcatenation of output from previous (re-)starts failed; please assemble complete ' + 
+                   'output from restart folders manually:')
+          for folder in self.restart_folders: lf.write(folder)
+          if lcompress:
+              lf.write('Note that compression of binary output will not be performed.')
+              lcompress = False
+          if lerror: raise
     # compress binary 3D output fields
     if lcompress and lec:
       with open(logfile, 'a') as lf: # output and error log
@@ -776,7 +791,7 @@ class HGS(Grok):
             lf.write('\nBinary output compression failed; tar exit code: {}\n'.format(ec))
         except:
           lf.write('\nBinary output compression failed for unknown reasons; is \'tar\' availalbe?.\n'.format(ec))
-          raise
+          if lerror: raise
     os.chdir(pwd) # return to previous working directory
     self.HGSOK = lec # set Grok flag
     # set indicator file to indicate result
@@ -797,4 +812,6 @@ class HGS(Grok):
     # but observation_well_flow's require somewhat different method
     # in all cases search from end backwards and drop everything after the last/initial time step
     # finally, we also need to renumber 
-    raise NotImplementedError
+    raise NotImplementedError("Concatenation and assembly of binary and time-series output from " + 
+                              "restarted simulations is not yet implemented; please perform manually " +
+                              "or rerun the ensemble run command with the appropriate assembly option.")

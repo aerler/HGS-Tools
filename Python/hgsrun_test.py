@@ -288,7 +288,7 @@ class HGSTest(GrokTest):
     assert all([old == new for old,new in zip(old_times,new_times)]), old_times
     assert all(np.diff(new_times) > 0), np.diff(new_times)
     # apply modifications for restart
-    restart_file = hgs.rewriteRestart()
+    restart_file = hgs.rewriteRestart(ldryrun=False)
     test_file = os.path.join(self.rundir,restart_file.format(FILETYPE=hgs.olf_tag))
     assert os.path.isfile(test_file), test_file
     # write new restart files into Grok file
@@ -534,7 +534,7 @@ if __name__ == "__main__":
     # list of variable tests
     tests += ['Grok']
     tests += ['HGS']    
-#     tests += ['EnsHGS']
+    tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()

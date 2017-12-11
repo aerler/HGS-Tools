@@ -90,10 +90,11 @@ def main(argv=None): # IGNORE:C0111
     parser.add_argument('--hgsdir', nargs='?', const=None, default=None, type=str, 
                         help="Override the root folder for the HGS license and fall-back executables [default: $HGSDIR or config.yaml]")
     parser.add_argument("--skip-setup", dest="nosetup", action='store_true', help="skip run folder setup; start simulations immediately [default: %(default)s]")
-    parser.add_argument("--only-setup", dest="nosim", action='store_true', help="only set up run folder; don;t start simulation [default: %(default)s]")
+    parser.add_argument("--only-setup", dest="nosim", action='store_true', help="only set up run folder; don't start simulation [default: %(default)s]")
     parser.add_argument("--grok-first", dest="grok", action='store_true', 
                         help="run Grok for all folders during setup [default: %(default)s]")
     parser.add_argument("--skip-grok", dest="skipgrok", action='store_true', help="do not run Grok at all [default: %(default)s]")
+    parser.add_argument("--restart", dest="restart", action='store_true', help="complete an ensemble, restarting simulations 'in progress' [default: %(default)s]")
     parser.add_argument("--dry-run", dest="dryrun", action='store_true', 
                         help="do not actually run simulations [default: %(default)s]")
     parser.add_argument("-np", "-n", "--processes", dest="NP", default=None, type=int, 
@@ -119,6 +120,7 @@ def main(argv=None): # IGNORE:C0111
     lnosim       = args.nosim
     lgrok        = args.grok
     lskipgrok    = args.skipgrok
+    lrestart     = args.restart
     ldryrun      = args.dryrun
     NP           = args.NP
     lserial      = args.serial
@@ -171,6 +173,7 @@ def main(argv=None): # IGNORE:C0111
         del  batch_config['lsetup']
     if 'lgrok' in batch_config: del batch_config['lgrok']
     if lskipgrok: batch_config['skip_grok'] = True
+    if lrestart: batch_config['lrestart'] = True
     if ldryrun: batch_config['ldryrun'] = True
     if NP is not None: batch_config['NP'] = NP
     if lserial or NP == 1: batch_config['lparallel'] = False

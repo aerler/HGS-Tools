@@ -117,6 +117,7 @@ class EnsHGS(object):
   lindicator = True # use indicator files
   loverwrite = False # overwrite existing folders
   lrunfailed = False # rerun failed experiments
+  lrestart   = False # restart of an exisitng ensemble
   
   def __init__(self, inner_list=None, outer_list=None, **kwargs):
     ''' initialize an ensemble of HGS simulations based on HGS arguments and project descriptors;
@@ -128,6 +129,7 @@ class EnsHGS(object):
     self.loverwrite = kwargs.get('loverwrite',self.loverwrite)
     self.lindicator = kwargs.get('lindicator',self.lindicator)
     self.lrunfailed = kwargs.get('lrunfailed',self.lrunfailed)
+    self.lrestart   = kwargs.get('lrestart',self.lrestart)
     # expand argument list (plain, nothing special)
     kwargs_list = expandArgumentList(inner_list=inner_list, outer_list=outer_list, **kwargs)
     # loop over ensemble members
@@ -142,6 +144,7 @@ class EnsHGS(object):
           kwargs[folder_type] = folder.format(**kwargs)
       # check rundir
       rundir = kwargs['rundir']
+      kwargs['restart'] = False # this keyword argument should be controlled by the Ensemble handler
       if rundir in self.rundirs:
         raise ArgumentError("Multiple occurence of run directory:\n '{}'".format(rundir))
       # figure out skipping      
@@ -153,8 +156,13 @@ class EnsHGS(object):
           if self.lreport: print("Skipping experiment folder '{:s}' (scheduled).".format(rundir))
           lskip = True
         elif self.lindicator and os.path.exists('{}/IN_PROGRESS'.format(rundir)):
-          if self.lreport: print("Skipping experiment folder '{:s}' (in progress).".format(rundir))
-          lskip = True
+          if self.lrestart:
+            if self.lreport: print("Restarting experiment in folder '{:s}' (was in progress).".format(rundir))
+            lskip = False
+            kwargs['restart'] = True
+          else:
+            if self.lreport: print("Skipping experiment folder '{:s}' (in progress).".format(rundir))
+            lskip = True
         elif self.lindicator and os.path.exists('{}/COMPLETED'.format(rundir)):
           if self.lreport: print("Skipping experiment folder '{:s}' (completed).".format(rundir))
           lskip = True
