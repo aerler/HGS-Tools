@@ -466,7 +466,7 @@ class Grok(object):
     # return exit code
     return ec
   
-  def runGrok(self, executable=None, logfile=None, batchpfx=None, lerror=True, lcompress=True, ldryrun=False):
+  def runGrok(self, executable=None, logfile=None, batchpfx=None, lerror=True, lcompress=False, ldryrun=False):
     ''' run the Grok executable in the run directory '''
     pwd = os.getcwd() # save present workign directory to return later
     os.chdir(self.rundir) # go into run Grok/HGS folder
@@ -494,7 +494,7 @@ class Grok(object):
         try:
           if os.path.exists(self.grok_dbg):
             # compress using gzip (single file; no shell expansion necessary)
-            subprocess.call(['gzip',self.grok_dbg], stdout=lf, stderr=lf)
+            subprocess.call(['gzip','-f',self.grok_dbg], stdout=lf, stderr=lf)
             if os.path.exists(self.grok_dbg+'.gz'): 
               lf.write('\nCompressed Grok debug output ({}.gz).\n'.format(self.grok_dbg))
             else: raise IOError # just trigger exception (see below)
@@ -652,10 +652,10 @@ class HGS(Grok):
     restart_pattern = tmp.format(IDX=indices[0], FILETYPE='{FILETYPE}')
     # determine new restart backup folder to store time-dependent output
     # N.B.: to prevent data loss, a new folder with a 4-digit running number is created
-    self.restart_folders = numberedPattern(backup_folder, nidx=nidx, folder=None)
-    idx = ( max(self.restart_folders) if len(self.restart_folders) > 0 else 0 ) + 1 
-    restart_folder = backup_folder + '{:04d}'.format(idx)
-    self.restart_folders.append(restart_folder)
+    folder_idxs = numberedPattern(backup_folder, nidx=nidx, folder=None)
+    idx = ( max(folder_idxs) if len(folder_idxs) > 0 else 0 ) + 1 
+    self.restart_folders = [ backup_folder + '{:04d}'.format(idx) for idx in folder_idxs + [idx] ]
+    restart_folder = self.restart_folders[-1] # last element
     if not ldryrun: # for testing we don't actually want to move files...
         os.mkdir(restart_folder)
         # backup grok files

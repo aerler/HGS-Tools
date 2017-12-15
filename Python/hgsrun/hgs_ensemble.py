@@ -157,7 +157,7 @@ class EnsHGS(object):
           lskip = True
         elif self.lindicator and os.path.exists('{}/IN_PROGRESS'.format(rundir)):
           if self.lrestart:
-            shutil.move(os.path.join(rundir,'IN_PROGRESS'),os.path.join(rundir,'SCHEDULED'))
+            shutil.move(os.path.join(rundir,'IN_PROGRESS'),os.path.join(rundir,'RESTARTED'))
             if self.lreport: print("Restarting experiment in folder '{:s}' (was in progress).".format(rundir))
             lskip = False
             kwargs['restart'] = True
