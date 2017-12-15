@@ -9,6 +9,19 @@ mainly functions that parse configuration and output files.
 
 import os, subprocess, glob
 
+# filename patterns
+grok_file = '{PROBLEM:s}.grok' # the Grok configuration file; default includes problem name
+# binary files
+restart_file = '{PROBLEM:s}o.hen' # restart file name
+out_files = '{PROBLEM:s}o.{FILETYPE}.{IDX}' # general pattern for output files
+# N.B.: eventually IDX should have the format '{IDX:04d}'
+head_files = dict(pm = 'head_pm', olf = 'head_olf', chan = 'head_Chan')
+# timeseries files
+newton_file = '{PROBLEM:s}o.newton_info.dat' # newton info time series file
+water_file = '{PROBLEM:s}o.water_balance.dat' # water balance time series file
+hydro_files = '{PROBLEM:s}o.hydrograph.{TAG}.dat' # hydrograph time series file
+well_files = '{PROBLEM:s}o.observation_well_flow.{TAG}.dat' # observation well time series file 
+
 
 ## general utility 
 
@@ -83,31 +96,39 @@ def numberedPattern(name_pattern, nidx, folder=None):
 
 
 # function to collect all time-dependent binary output files
-def binaryFiles(prefix, folder=None, nidx=4, ldict=True):
+ignore_files = ['{PROBLEM:s}o.ElemK_pm.0001'] # files to ignore when backing up
+def binaryFiles(prefix, folder=None, nidx=4, ldict=True, ignore_list=None):
     ''' function to collect all time-dependent binary output files '''
+    if ignore_list is None: ignore_list = ignore_files
     if folder: 
         pwd = os.getcwd()
         os.chdir(folder)
     # find binary file pattern
-    pattern = prefix + 'o.*.' + '[0-9]'*nidx 
+    pattern = out_files.format(PROBLEM=prefix, FILETYPE='*', IDX='[0-9]'*nidx )
     filenames = glob.glob(pattern)
     if folder: 
         os.chdir(pwd)
     # reorganize files
+    ignore_list = [ignore.format(PROBLEM=prefix) for ignore in ignore_list]
     if ldict:
         # split head files and store in dictionary
-        pm_files = []; olf_files = []; chan_files = []; other_files = []        
+        binary_files = dict(); head_dict= dict()
+        for tag,pattern in head_files.items():
+            head_tag = 'head_{}'.format(tag)
+            binary_files[head_tag] = []
+            head_dict[head_tag] = out_files.format(PROBLEM=prefix,FILETYPE=pattern,IDX='')
+        binary_files['others'] = [] # collect the rest here 
+        # typically binary_files will contain the following lists: head_pm, head_olf, head_chan, others 
         for filename in filenames:
-            if 'o.head_pm.' in filename: pm_files.append(filename)
-            elif 'o.head_olf.' in filename: olf_files.append(filename)
-            elif 'o.head_Chan.' in filename: chan_files.append(filename)
-            else:
-                # omit unwanted file
-                if not filename.endswith('o.ElemK_pm.0001'): other_files.append(filename)
-        binary_files = dict(head_pm=pm_files,head_olf=olf_files,head_Chan=chan_files,others=other_files)
+            lmatch = False
+            for head_tag,head_file in head_dict.items():
+                if filename.startswith(head_file): 
+                  binary_files[head_tag].append(filename); lmatch = True; break
+            if not lmatch and not filename in ignore_list: 
+                binary_files['others'].append(filename)
     else:
         # only remove unwanted files
-        binary_files = [filename for filename in filenames if not filename.endswith('o.ElemK_pm.0001')]
+        binary_files = [filename for filename in filenames if not filename in ignore_list]
     return binary_files
 #TOTO: remove hard-coding of file patterns and add wrapper as class method to Grok
 
@@ -127,17 +148,17 @@ def timeseriesFiles(prefix, folder=None, ldict=True, llogs=True, lcheck=True):
                     raise IOError(log_file)
         ts_dict['logs'] = log_files        
     # special files
-    special_files = [ prefix+name for name in ['o.newton_info.dat','o.water_balance.dat',] ]
+    special_files = [ name.format(PROBLEM=prefix) for name in [newton_file, water_file,] ]
     if lcheck: 
         for special_file in special_files:
             if not os.path.exists(special_file): 
                 raise IOError(special_file)
     ts_dict['special'] = special_files
     # hydrographs
-    pattern = prefix + 'o.hydrograph.*.dat' 
+    pattern = hydro_files.format(PROBLEM=prefix, TAG='*')
     ts_dict['hydrographs']= glob.glob(pattern)
     # observation wells
-    pattern = prefix + 'o.observation_well_flow.*.dat' 
+    pattern = well_files.format(PROBLEM=prefix, TAG='*') 
     ts_dict['wells']= glob.glob(pattern)
     if folder: 
         os.chdir(pwd)

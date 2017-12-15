@@ -18,6 +18,8 @@ from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS, update
 import datetime as dt
 # local imports
 from hgs.misc import interpolateIrregular, convertDate
+# import filename patterns
+from hgsrun.misc import hydro_files, well_files, newton_file, water_file
 
 ## HGS Meta-data
 
@@ -48,25 +50,38 @@ hgs_variables = {'surface':'discharge','porous media':'seepage','total':'flow'} 
 
 
 ## function to load HGS station timeseries
-def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=None, title=None, lcheckComplete=True,
+def loadHGS_StnTS(station=None, well=None, varlist=None, varatts=None, folder=None, name=None, title=None, lcheckComplete=True,
                   start_date=None, end_date=None, run_period=None, period=None, lskipNaN=False, basin=None, lkgs=True,
-                  WSC_station=None, basin_list=None, filename=None, prefix=None, scalefactors=None, **kwargs):
+                  WSC_station=None, basin_list=None, filename=None, prefix=None, scalefactors=None, meta_data=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
-  if folder is None or ( filename is None and station is None ): raise ArgumentError
-  # try to find meta data for gage station from WSC
-  HGS_station = station
-  if basin is not None and basin_list is not None:
-    station_name = station
-    station = getGageStation(basin=basin, station=station if WSC_station is None else WSC_station, 
-                             basin_list=basin_list) # only works with registered basins
-    if station_name is None: station_name = station.name # backup, in case we don't have a HGS station name
-    metadata = station.getMetaData() # load station meta data
-    if metadata is None: raise GageStationError(name)
+  if folder is None or ( filename is None and station is None and well is None ): raise ArgumentError
+  # distinguish between special timeseries files, hydrographs, and observation wells
+  if meta_data is None: meta_data = dict()
+  if station == 'water_balance' or well == 'water_balance': 
+    filename = water_file
+    HGS_name = 'water_balance'; long_name = 'Integrated Water Balance'
+  elif station == 'newton_info' or well == 'newton_info': 
+    filename = newton_file
+    HGS_name = 'newton_info'; long_name = 'Newton Iteration Information'
+  elif station and well: raise ArgumentError
+  elif well is not None:
+    filename = well_files
+    HGS_name = well; long_name = well
+  elif station is not None:
+    filename = hydro_files
+    HGS_name = station; long_name = station
+    # try to find meta data for gage station from WSC
+    if basin is not None and basin_list is not None:
+      station = getGageStation(basin=basin, station=station if WSC_station is None else WSC_station, 
+                               basin_list=basin_list) # only works with registered basins
+      if long_name is None: long_name = station.name # backup, in case we don't have a HGS station name
+      metadata = station.getMetaData() # load station meta data
+      #if metadata is None: raise GageStationError(name)
   else: 
-    metadata = dict(); station = None; station_name =  None    
+    metadata = dict(); long_name = None; HGS_name = None    
   # prepare name expansion arguments (all capitalized)
-  expargs = dict(ROOT_FOLDER=root_folder, STATION=HGS_station, NAME=name, TITLE=title,
+  expargs = dict(ROOT_FOLDER=root_folder, STATION=HGS_name, WELL=HGS_name, NAME=name, TITLE=title,
                  PREFIX=prefix, BASIN=basin, WSC_STATION=WSC_station)
   for key,value in metadata.items():
       if isinstance(value,basestring):
@@ -78,23 +93,12 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   for key,value in kwargs.items():
     KEY = key.upper() # we only use capitalized keywords, and non-capitalized keywords are only used/converted
     if KEY == key or KEY not in kwargs: expargs[KEY] = value # if no capitalized version is defined
-  # read folder and infer prefix, if necessary
-  folder = folder.format(**expargs)
-  if not os.path.exists(folder): raise IOError(folder)
-  if expargs['PREFIX'] is None:
-    with open(os.path.join(folder,prefix_file), 'r') as pfx:
-      expargs['PREFIX'] = prefix = ''.join(pfx.readlines()).strip()      
-  # now assemble file name for station timeseries
-  filename = filename.format(**expargs)
-  filepath = os.path.join(folder,filename)
-  if not os.path.exists(filepath): IOError(filepath)
-  if station_name is None: 
-      station_name = filename[filename.index('hydrograph.')+1:-4] if station is None else station
   # set meta data (and allow keyword expansion of name and title)
   metadata['problem'] = prefix
-  metadata['station_name'] = metadata.get('long_name', station_name)
+  metadata['station_name'] = metadata.get('long_name', long_name)
+  metadata['basin'] = basin if basin else 'n/a'
   if name is not None: name = name.format(**expargs) # name expansion with capitalized keyword arguments
-  else: name = 'HGS_{:s}'.format(station_name)
+  else: name = 'HGS_{:s}'.format(long_name)
   metadata['name'] = name
   if title is None: 
     title = ' (HGS, {problem:s})'.format(**metadata)
@@ -102,6 +106,7 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
     else: title = name + title # assume already correctly capitalized
   else: title = title.format(**expargs) # name expansion with capitalized keyword arguments
   metadata['long_name'] = metadata['title'] = title
+
   # now determine start data for date_parser
   if end_date is None: 
       if start_date and run_period: end_date = start_date + run_period 
@@ -115,15 +120,30 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   start_year,start_month,start_day = convertDate(start_date)
   if start_day != 1 or end_day != 1: 
     raise NotImplementedError('Currently only monthly data is supported.')
-#   import functools
-#   date_parser = functools.partial(date_parser, year=start_year, month=start_month, day=start_day)
-#   # now load data using pandas ascii reader
-#   data_frame = pd.read_table(filepath, sep='\s+', header=2, dtype=np.float64, index_col=['time'], 
-#                              date_parser=date_parser, names=ascii_varlist)
-#   # resample to monthly data
-#   data_frame = data_frame.resample(resampling).agg(np.mean)
-#       data = data_frame[flowvar].values
+  # generate regular monthly time steps
+  start_datetime = np.datetime64(dt.datetime(year=start_year, month=start_month, day=start_day), 'M')
+  end_datetime = np.datetime64(dt.datetime(year=end_year, month=end_month, day=end_day), 'M')
+  time_monthly = np.arange(start_datetime, end_datetime+np.timedelta64(1, 'M'), dtype='datetime64[M]')
+  assert time_monthly[0] == start_datetime, time_monthly[0]
+  assert time_monthly[-1] == end_datetime, time_monthly[-1] 
+  # construct time axis
+  start_time = 12*(start_year - 1979) + start_month -1
+  end_time = 12*(end_year - 1979) + end_month -1
+  time = Axis(name='time', units='month', atts=dict(long_name='Month since 1979-01'), 
+              coord=np.arange(start_time, end_time)) # not including the last, e.g. 1979-01 to 1980-01 is 12 month
+  assert len(time_monthly) == end_time-start_time+1
 
+  ## load data
+  # read folder and infer prefix, if necessary
+  folder = folder.format(**expargs)
+  if not os.path.exists(folder): raise IOError(folder)
+  if expargs['PREFIX'] is None:
+    with open(os.path.join(folder,prefix_file), 'r') as pfx:
+      expargs['PREFIX'] = prefix = ''.join(pfx.readlines()).strip()      
+  # now assemble file name for station timeseries
+  filename = filename.format(PROBLEM=prefix,TAG=HGS_name)
+  filepath = os.path.join(folder,filename)
+  if not os.path.exists(filepath): IOError(filepath)
   # parse header
   if varlist is None: varlist = variable_list[:] # default list 
   with open(filepath, 'r') as f:
@@ -142,13 +162,6 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   usecols = tuple(vardict[v] for v in variable_order) # variable columns that need to be loaded (except time, which is col 0)
   assert 0 not in usecols, usecols
   
-  # generate regular monthly time steps
-  start_datetime = np.datetime64(dt.datetime(year=start_year, month=start_month, day=start_day), 'M')
-  end_datetime = np.datetime64(dt.datetime(year=end_year, month=end_month, day=end_day), 'M')
-  time_monthly = np.arange(start_datetime, end_datetime+np.timedelta64(1, 'M'), dtype='datetime64[M]')
-  assert time_monthly[0] == start_datetime, time_monthly[0]
-  assert time_monthly[-1] == end_datetime, time_monthly[-1] 
-  
   # load data as tab separated values
   data = np.genfromtxt(filepath, dtype=np.float64, delimiter=None, skip_header=3, usecols = (0,)+usecols)
   assert data.shape[1] == len(usecols)+1, data.shape
@@ -162,16 +175,10 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
   # call function to interpolate irregular HGS timeseries to regular monthly timseries  
   flow_data = interpolateIrregular(old_time=time_series, flow_data=flow_data, new_time=time_monthly, start_date=start_datetime, 
                                    lkgs=lkgs, lcheckComplete=lcheckComplete, usecols=usecols, interp_kind='linear', fill_value=np.NaN)
-  
-  # construct time axis
-  start_time = 12*(start_year - 1979) + start_month -1
-  end_time = 12*(end_year - 1979) + end_month -1
-  time = Axis(name='time', units='month', atts=dict(long_name='Month since 1979-01'), 
-              coord=np.arange(start_time, end_time)) # not including the last, e.g. 1979-01 to 1980-01 is 12 month
-  assert len(time_monthly) == end_time-start_time+1
   assert flow_data.shape == (len(time),len(variable_order)), (flow_data.shape,len(time),len(variable_order))
   
-  # construct dataset
+  
+  ## construct dataset
   dataset = Dataset(atts=metadata)
   dataset.station = station # add gage station object, if available (else None)
   
@@ -203,9 +210,11 @@ def loadHGS_StnTS(station=None, varlist=None, varatts=None, folder=None, name=No
           raise VariableError(fluxatts)
         data = data / den # need to make a copy
         dataset += Variable(data=data, axes=(time,), **fluxatts)
+        
   # apply analysis period
   if period is not None:
       dataset = dataset(years=period)
+      
   # adjust scalefactors, if necessary
   if scalefactors:
       if isinstance(scalefactors,dict):
@@ -277,7 +286,7 @@ if __name__ == '__main__':
   # settings
   basin_name = 'GRW'
   WSC_station = 'Grand River_Brantford'
-  hgs_station = 'GR_Brantford'
+  hgs_station = 'Station_GR_Brantford'
   filename = '{PREFIX:s}o.hydrograph.Station_{STATION:s}.dat'
 
 #   test_mode = 'gage_station'

@@ -15,7 +15,8 @@ import bisect
 # internal imports
 from hgsrun.input_list import generateInputFilelist, resolveInterval
 from hgsrun.misc import lWin, symlink_ms, GrokError, HGSError, timeseriesFiles,\
-  binaryFiles
+  binaryFiles, well_files, hydro_files, water_file, newton_file, out_files,\
+  head_files, restart_file, grok_file
 from hgsrun.misc import parseGrokFile, clearFolder, numberedPattern
 from geodata.misc import ArgumentError
 from utils.misc import tail
@@ -37,16 +38,17 @@ class Grok(object):
   batchpfx = 'batch.pfx' # a file that defines the HGS problem name for Grok
   grok_log = 'log.grok' # save stdout and stderr in this file
   grok_dbg = 'grok.dbg' # Grok debug output
-  grok_file = '{PROBLEM:s}.grok' # the Grok configuration file; default includes problem name
-  restart_file = '{PROBLEM:s}o.hen' # restart file name
-  out_files = '{PROBLEM:s}o.{FILETYPE}.{{IDX:04d}}' # porous media head output (for restart)
-  pm_tag = 'head_pm'
-  olf_tag = 'head_olf'
-  chan_tag = 'head_Chan'
-  newton_file = '{PROBLEM:s}o.newton_info.dat' # newton info time series file
-  water_file = '{PROBLEM:s}o.water_balance.dat' # water balance time series file
-  hydro_file = '{PROBLEM:s}o.hydrograph.{{TAG}}.dat' # hydrograph time series file
-  well_file = '{PROBLEM:s}o.observation_well_flow.{{TAG}}.dat' # observation well time series file 
+  # for easier maintenance HGS internal filenames are defined in hgsrun.misc
+  grok_file = grok_file # the Grok configuration file; default includes problem name
+  restart_file = restart_file # restart file name
+  out_files = out_files # general pattern for output files
+  pm_tag = head_files['pm'] # porous media heads
+  olf_tag = head_files['olf'] # overland flow heads
+  chan_tag = head_files['chan'] # channel flow heads
+  newton_file = newton_file # newton_info file
+  water_file = water_file # water_balance file
+  hydro_file = hydro_files # hydrographs
+  well_file = well_files # observation wells
   lchannel = None # whether or not we are using 1D channels  
   rundir = None # folder where the experiment is set up and executed
   project = None # a project designator used for file names
@@ -83,14 +85,14 @@ class Grok(object):
     self.grok_file = self.grok_file.format(PROBLEM=self.problem) # default name
     self.restart_file = self.restart_file.format(PROBLEM=self.problem) # default name
     # binary files for restart
-    self.pm_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.pm_tag) # default name
-    self.olf_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.olf_tag) # default name
-    self.chan_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.chan_tag) # default name
+    self.pm_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.pm_tag, IDX='{IDX:04d}') # default name
+    self.olf_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.olf_tag, IDX='{IDX:04d}') # default name
+    self.chan_files = self.out_files.format(PROBLEM=self.problem, FILETYPE=self.chan_tag, IDX='{IDX:04d}') # default name
     # time-series files (for later concatenatenation)
     self.newton_file = self.newton_file.format(PROBLEM=self.problem)
     self.water_file = self.water_file.format(PROBLEM=self.problem)
-    self.hydro_file = self.hydro_file.format(PROBLEM=self.problem)
-    self.well_file = self.well_file.format(PROBLEM=self.problem)
+    self.hydro_file = self.hydro_file.format(PROBLEM=self.problem, TAG='{TAG:s}')
+    self.well_file = self.well_file.format(PROBLEM=self.problem, TAG='{TAG:s}')
     # input configuration
     self.setInputMode(input_mode=input_mode, input_interval=input_interval,
                       input_vars=input_vars, input_prefix=input_prefix,
@@ -645,7 +647,7 @@ class HGS(Grok):
     # now we know that we are actually restarting, so set RESTART indicator
     open('RESTARTED','a').close()
     # assemble name for restart file pattern
-    tmp = self.out_files.format(PROBLEM=self.problem, FILETYPE='{FILETYPE}')
+    tmp = self.out_files.format(PROBLEM=self.problem, FILETYPE='{FILETYPE}', IDX='{IDX:04d}')
     # N.B.: the double-format is necessary, because IDX is enclosed in double-braces (see Grok.__init__)      
     restart_pattern = tmp.format(IDX=indices[0], FILETYPE='{FILETYPE}')
     # determine new restart backup folder to store time-dependent output
