@@ -28,49 +28,71 @@ root_folder = getRootFolder(dataset_name=dataset_name, fallback_name='WRF') # ge
 prefix_file = 'batch.pfx' # text file that contians the HGS problem prefix (also HGS convention)
 
 # variable attributes and name
-variable_attributes_mms = dict(sfroff = dict(name='sfroff', units='mm/s', atts=dict(long_name='Surface Runoff')),    # surface flow rate over area
-                               ugroff = dict(name='ugroff', units='mm/s', atts=dict(long_name='Subsurface Runoff')), # subsurface flow rate over area
-                               runoff = dict(name='runoff', units='mm/s', atts=dict(long_name='Total Runoff')),      # total flow rate over area
+variable_attributes_mms = dict(# hydrograph variables
                                discharge = dict(name='discharge', units='m^3/s', atts=dict(long_name='Surface Flow Rate')),      # surface flow rate
                                seepage   = dict(name='seepage'  , units='m^3/s', atts=dict(long_name='Subsurface Flow Rate')),   # subsurface flow rate
-                               flow      = dict(name='flow'     , units='m^3/s', atts=dict(long_name='Total Flow Rate')),      ) # total flow rate
+                               flow      = dict(name='flow'     , units='m^3/s', atts=dict(long_name='Total Flow Rate')),        # total flow rate
+                               sfroff = dict(name='sfroff', units='mm/s', atts=dict(long_name='Surface Runoff')),    # surface flow rate over area
+                               ugroff = dict(name='ugroff', units='mm/s', atts=dict(long_name='Subsurface Runoff')), # subsurface flow rate over area
+                               runoff = dict(name='runoff', units='mm/s', atts=dict(long_name='Total Runoff')),      # total flow rate over area
+                               # Newton iteration diagnostics
+                               absolute_error = dict(name='error', units='n/a', atts=dict(long_name='Absolute Error')), # I don't know the units...
+                               residual_error = dict(name='residual', units='n/a', atts=dict(long_name='Residual Error')),
+                               number_of_iterations = dict(name='niter', units='#', atts=dict(long_name='Number of Iterations')),
+                               number_of_solver_iterations = dict(name='nsiter', units='#', atts=dict(long_name='Number of Solver Iterations')),
+                               time_step = dict(name='delta_t', units='s', atts=dict(long_name='Time Step')),
+                               # water balance variables
+                               #TODO: add water balance variables... 18...
+                               # add outer boundary, precip, PET, AET, infiltration, exfiltration, storage?
+                               outerboundary = dict(name='outflow', units='m^3/s', atts=dict(long_name='Outer Boundary Flow')),
+                               rainfall = dict(name='tot_precip', units='m^3/s', atts=dict(long_name='Basin-integrated Precipitation')),
+                               pet = dict(name='tot_pet', units='m^3/s', atts=dict(long_name='Basin-integrated Potential ET')),
+                               tot_et = dict(name='tot_et', units='m^3/s', atts=dict(long_name='Basin-integrated Actual ET')),
+                               infilt = dict(name='infil', units='m^3/s', atts=dict(long_name='Basin-integrated Infiltration')),
+                               exfilt = dict(name='exfil', units='m^3/s', atts=dict(long_name='Basin-integrated Exfiltration')),
+                               delta_stor_int = dict(name='delta_storage', units='m^3/s', atts=dict(long_name='Basin-integrated Storage Change')),
+                               )
 # optional unit conversion
 mms_to_kgs = {'mm/s':'kg/m^2/s', 'm^3/s':'kg/s'}
 variable_attributes_kgs = dict()
 for varname,varatts in variable_attributes_mms.items():
     varatts = varatts.copy()
-    varatts['units'] = mms_to_kgs[varatts['units']]
+    varatts['units'] = mms_to_kgs.get(varatts['units'],varatts['units'])
     variable_attributes_kgs[varname] = varatts
 # list of variables to load
 variable_list = variable_attributes_mms.keys() # also includes coordinate fields    
 flow_to_flux = dict(discharge='sfroff', seepage='ugroff', flow='runoff') # relationship between flux and flow variables
 # N.B.: computing surface flux rates from gage flows also requires the drainage area
-hgs_varlist = ['time','discharge','seepage','flow'] # internal use only; needs to have 'time'
+# hgs_varlist = ['time','discharge','seepage','flow'] # internal use only; needs to have 'time'
 hgs_variables = {'surface':'discharge','porous media':'seepage','total':'flow'} # mapping of HGS variable names GeoPy conventions
 
 
 ## function to load HGS station timeseries
 def loadHGS_StnTS(station=None, well=None, varlist=None, varatts=None, folder=None, name=None, title=None, lcheckComplete=True,
                   start_date=None, end_date=None, run_period=None, period=None, lskipNaN=False, basin=None, lkgs=True,
-                  WSC_station=None, basin_list=None, filename=None, prefix=None, scalefactors=None, meta_data=None, **kwargs):
+                  WSC_station=None, basin_list=None, filename=None, prefix=None, scalefactors=None, metadata=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None or ( filename is None and station is None and well is None ): raise ArgumentError
   # distinguish between special timeseries files, hydrographs, and observation wells
-  if meta_data is None: meta_data = dict()
+  if metadata is None: metadata = dict()
   if station == 'water_balance' or well == 'water_balance': 
-    filename = water_file
+    filename = water_file; well = None; zone = None
     HGS_name = 'water_balance'; long_name = 'Integrated Water Balance'
+    file_title = 'transient water balance summary'
   elif station == 'newton_info' or well == 'newton_info': 
-    filename = newton_file
+    filename = newton_file; well = None; zone = None;  lkgs = False # don't change units... too messy
     HGS_name = 'newton_info'; long_name = 'Newton Iteration Information'
+    file_title = 'transient newton iteration summary'
   elif station and well: raise ArgumentError
   elif well is not None:
-    filename = well_files
+    filename = well_files; zone = well # zone is used for file verification later on
     HGS_name = well; long_name = well
+    file_title = 'flow data at observation well:'
   elif station is not None:
-    filename = hydro_files
+    filename = hydro_files; zone = station
     HGS_name = station; long_name = station
+    file_title = station+' hydrograph'
     # try to find meta data for gage station from WSC
     if basin is not None and basin_list is not None:
       station = getGageStation(basin=basin, station=station if WSC_station is None else WSC_station, 
@@ -79,7 +101,8 @@ def loadHGS_StnTS(station=None, well=None, varlist=None, varatts=None, folder=No
       metadata = station.getMetaData() # load station meta data
       #if metadata is None: raise GageStationError(name)
   else: 
-    metadata = dict(); long_name = None; HGS_name = None    
+    if filename is None: raise ArgumentError
+    long_name = None; HGS_name = None; file_title = None
   # prepare name expansion arguments (all capitalized)
   expargs = dict(ROOT_FOLDER=root_folder, STATION=HGS_name, WELL=HGS_name, NAME=name, TITLE=title,
                  PREFIX=prefix, BASIN=basin, WSC_STATION=WSC_station)
@@ -93,6 +116,15 @@ def loadHGS_StnTS(station=None, well=None, varlist=None, varatts=None, folder=No
   for key,value in kwargs.items():
     KEY = key.upper() # we only use capitalized keywords, and non-capitalized keywords are only used/converted
     if KEY == key or KEY not in kwargs: expargs[KEY] = value # if no capitalized version is defined
+
+  # read folder and infer prefix, if necessary
+  folder = folder.format(**expargs)
+  if not os.path.exists(folder): raise IOError(folder)
+  if expargs['PREFIX'] is None:
+    with open(os.path.join(folder,prefix_file), 'r') as pfx:
+      expargs['PREFIX'] = prefix = ''.join(pfx.readlines()).strip()  
+  if zone is None: zone = prefix # this only applies to newton and water balance files    
+
   # set meta data (and allow keyword expansion of name and title)
   metadata['problem'] = prefix
   metadata['station_name'] = metadata.get('long_name', long_name)
@@ -134,36 +166,44 @@ def loadHGS_StnTS(station=None, well=None, varlist=None, varatts=None, folder=No
   assert len(time_monthly) == end_time-start_time+1
 
   ## load data
-  # read folder and infer prefix, if necessary
-  folder = folder.format(**expargs)
-  if not os.path.exists(folder): raise IOError(folder)
-  if expargs['PREFIX'] is None:
-    with open(os.path.join(folder,prefix_file), 'r') as pfx:
-      expargs['PREFIX'] = prefix = ''.join(pfx.readlines()).strip()      
   # now assemble file name for station timeseries
   filename = filename.format(PROBLEM=prefix,TAG=HGS_name)
   filepath = os.path.join(folder,filename)
   if not os.path.exists(filepath): IOError(filepath)
   # parse header
-  if varlist is None: varlist = variable_list[:] # default list 
   with open(filepath, 'r') as f:
       line = f.readline(); lline = line.lower() # 1st line
-      if not "hydrograph" in lline: raise GageStationError(line,filepath)
+      if "title" not in lline : raise GageStationError(line,filepath)
+      if file_title and file_title.lower() not in lline : raise GageStationError(line,filepath)
       # parse variables and determine columns
       line = f.readline(); lline = line.lower() # 2nd line
       if not "variables" in lline: raise GageStationError(line)
-      variable_order = [v.strip('"').lower() for v in line[line.find('"'):].strip().split(',')]
+      variable_order = [v for v in line[line.find('=')+1:].strip().split(',') if len(v) > 0]
+      # clean up a little and remove some problematic characters
+      variable_order = [v.strip().strip('"').strip().lower() for v in variable_order]
+      for c,r in zip((' ','-','(',')'),('_','_','','')):
+          variable_order = [v.replace(c,r) for v in variable_order]
+      # this line is just for verification
+      line = f.readline(); lline = line.lower() # 3rd line
+      if "zone" not in lline : raise GageStationError(line,filepath)
+      if zone.lower() not in lline : raise GageStationError(line,filepath)
   # figure out varlist and data columns
-  if variable_order[0] == 'time': del variable_order[0] # only keep variables
+  if variable_order[0].lower() == 'time': del variable_order[0] # only keep variables
   else: raise GageStationError(variable_order)
-  variable_order = [hgs_variables[v] for v in variable_order] # replace HGS names with GeoPy names
+  variable_order = [hgs_variables.get(v,v) for v in variable_order] # replace HGS names with GeoPy names
+  if varlist is None: varlist = variable_order[:] # default: load all
   vardict = {v:i+1 for i,v in enumerate(variable_order)} # column mapping; +1 because time was removed
   variable_order = [v for v in variable_order if v in varlist or flow_to_flux[v] in varlist]
   usecols = tuple(vardict[v] for v in variable_order) # variable columns that need to be loaded (except time, which is col 0)
   assert 0 not in usecols, usecols
   
   # load data as tab separated values
-  data = np.genfromtxt(filepath, dtype=np.float64, delimiter=None, skip_header=3, usecols = (0,)+usecols)
+  if well:
+      # well files need special treatment
+      raise NotImplementedError
+  else:
+      # all other files follow the same format
+      data = np.genfromtxt(filepath, dtype=np.float64, delimiter=None, skip_header=3, usecols = (0,)+usecols)
   assert data.shape[1] == len(usecols)+1, data.shape
   if lskipNaN:
       data = data[np.isnan(data).sum(axis=1)==0,:]
@@ -184,30 +224,38 @@ def loadHGS_StnTS(station=None, well=None, varlist=None, varatts=None, folder=No
   
   # unit options: cubic meters or kg
   if lkgs:
-    flow_units = 'kg/s'
+    flow_units = 'kg/s'; flux_units = 'kg/m^2/s'
     variable_attributes = variable_attributes_kgs
-    den = metadata['shp_area'] 
+    den = metadata.get('shp_area',None) 
+  elif HGS_name == 'newton_info':
+    flow_units = None; flux_units = None; den = None
+    variable_attributes = variable_attributes_mms    
   else:
-    flow_units = 'm^3/s'
+    flow_units = 'm^3/s'; flux_units = 'mm/s'
     variable_attributes = variable_attributes_mms
-    den = metadata['shp_area'] / 1000.
+    den = metadata['shp_area'] / 1000. if 'shp_area' in metadata else None
     
   # create variables
   for i,flowvar in enumerate(variable_order):
       data = flow_data[:,i]
-      fluxvar = flow_to_flux[flowvar]      
-      flow_units = 'kg/s' if lkgs else 'm^3/s'
       if flowvar in varlist:
-        flowatts = variable_attributes[flowvar]
+        if flowvar in variable_attributes:
+            flowatts = variable_attributes[flowvar]
+        else:
+            flowatts = dict(name=flowvar, units=flow_units)
         # convert variables and put into dataset (monthly time series)
-        if flowatts['units'] != flow_units: 
+        if flow_units and flowatts['units'] != flow_units: 
           raise VariableError("Hydrograph data is read as kg/s; flow variable does not match.\n{}".format(flowatts))
         dataset += Variable(data=data, axes=(time,), **flowatts)
-      if fluxvar in varlist and 'shp_area' in metadata:
+      fluxvar = flow_to_flux.get(flowvar,None)      
+      if ( fluxvar and fluxvar in varlist ) and ( den and den > 0 ):
         # compute surface flux variable based on drainage area
-        fluxatts = variable_attributes[fluxvar]
-        if fluxatts['units'] == flow_units and fluxatts['units'] not in ('kg/m^2/s','mm/s'): 
-          raise VariableError(fluxatts)
+        if fluxvar in variable_attributes:
+            fluxatts = variable_attributes[fluxvar]
+        else:
+            fluxatts = dict(name=fluxvar, units=flux_units)
+        if flux_units and fluxatts['units'] != flux_units: 
+          raise VariableError("Hydrograph data is read as kg/s; flux variable does not match.\n{}".format(fluxatts))
         data = data / den # need to make a copy
         dataset += Variable(data=data, axes=(time,), **fluxatts)
         
@@ -285,8 +333,9 @@ if __name__ == '__main__':
 
   # settings
   basin_name = 'GRW'
-  WSC_station = 'Grand River_Brantford'
-  hgs_station = 'Station_GR_Brantford'
+#   hgs_station = 'Station_GR_Brantford'; WSC_station = 'Grand River_Brantford'
+  hgs_station = 'water_balance'; WSC_station = None
+#   hgs_station = 'newton_info'; WSC_station = None
   filename = '{PREFIX:s}o.hydrograph.Station_{STATION:s}.dat'
 
 #   test_mode = 'gage_station'
