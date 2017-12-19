@@ -12,7 +12,8 @@ import pandas as pd
 from scipy.interpolate import interp1d
 from warnings import warn
 # internal imports
-from geodata.misc import DataError
+from geodata.misc import DataError, ArgumentError
+from datasets.WSC import GageStationError
 
 
 # a function to resolve a data
@@ -41,7 +42,7 @@ def date_parser(seconds, year=1979, month=1, day=1, **kwargs):
 
 
 # interpolation function for HGS hydrographs etc.
-def interpolateIrregular(old_time, flow_data, new_time, start_date=None, lkgs=True, lcheckComplete=True,  
+def interpolateIrregular(old_time, data, new_time, start_date=None, lkgs=True, lcheckComplete=True,  
                          usecols=None, interp_kind='linear', fill_value=np.NaN):
     ''' a mass-conservative function to interpolate irregular HGS timeseries output to a regular time axis 
         the function works by first integrating the flux, then interpolating the cumulative flux, and subsequently
@@ -54,16 +55,24 @@ def interpolateIrregular(old_time, flow_data, new_time, start_date=None, lkgs=Tr
     if new_time[0] != 0: warn('New time axis does not start at zero ({}).'.format(new_time[0]))
     # original time deltas in seconds
     time_diff = old_time.copy(); time_diff[1:] = np.diff(old_time) # time period between time steps
-    assert np.all( time_diff > 0 ), time_diff.min()
-    time_diff = time_diff.reshape((len(time_diff),1)) # reshape to make sure broadcasting works
+    if not np.all( time_diff > 0 ):
+      imin = time_diff.argmin()
+      raise ValueError(time_diff.min(),imin,old_time[imin-1:imin+1])
+    # reshape to make sure broadcasting works
+    time_diff = time_diff.reshape((len(time_diff),1))
+    if data.ndim > 2:
+        oldshp = data.shape[1:]; ncols = np.prod(oldshp) # remember for recovery
+        data = data.reshape((len(old_time),ncols)) # now simple 2D array
+    else: 
+      oldshp = None; ncols = data.shape[1]
     # integrate flow over time steps before resampling
-    flow_data[1:,:] -= np.diff(flow_data, axis=0)/2. # get average flow between time steps
-    flow_data *= time_diff # integrate flow in time interval by multiplying average flow with time period
-    flow_data = np.cumsum(flow_data, axis=0) # integrate by summing up total flow per time interval
+    data[1:,:] -= np.diff(data, axis=0)/2. # get average flow between time steps
+    data *= time_diff # integrate flow in time interval by multiplying average flow with time period
+    data = np.cumsum(data, axis=0) # integrate by summing up total flow per time interval
     # interpolate integrated flow to new time axis
-    #flow_data = np.interp(new_time, xp=old_time[:,0], fp=flow_data[:,0],).reshape((len(new_time),1))
+    #data = np.interp(new_time, xp=old_time[:,0], fp=data[:,0],).reshape((len(new_time),1))
     old_time = np.concatenate(([0],old_time), axis=0) # integrated flow at time zero must be zero...
-    flow_data = np.concatenate(([[0,]*len(usecols)],flow_data), axis=0) # ... this is probably better than interpolation
+    data = np.concatenate(([[0,]*ncols],data), axis=0) # ... this is probably better than interpolation
     # N.B.: we are adding zeros here so we don't have to extrapolate to the left; on the right we just fill in NaN's
     if ( new_time[-1] - old_time[-1] ) > 3*86400. and lcheckComplete: 
         warn("Data record ends more than 3 days befor end of period: {} days".format((new_time[-1]-old_time[-1])/86400.))
@@ -72,15 +81,107 @@ def interpolateIrregular(old_time, flow_data, new_time, start_date=None, lkgs=Tr
           raise DataError("Data record ends more than 5 days befor end of period: {} days".format((new_time[-1]-old_time[-1])/86400.))
         else:
           warn("Data record ends more than 5 days befor end of period: {} days".format((new_time[-1]-old_time[-1])/86400.))
-    flow_interp = interp1d(x=old_time, y=flow_data, kind=interp_kind, axis=0, copy=False, 
+    flow_interp = interp1d(x=old_time, y=data, kind=interp_kind, axis=0, copy=False, 
                            bounds_error=False, fill_value=fill_value, assume_sorted=True) 
-    flow_data = flow_interp(new_time) # evaluate with call
+    data = flow_interp(new_time) # evaluate with call
     # compute monthly flow rate from interpolated integrated flow
-    flow_data = np.diff(flow_data, axis=0) / np.diff(new_time, axis=0).reshape((len(new_time)-1,1))
-    if lkgs: flow_data *= 1000 # convert from m^3/s to kg/s
+    data = np.diff(data, axis=0) / np.diff(new_time, axis=0).reshape((len(new_time)-1,1))
+    if lkgs: data *= 1000 # convert from m^3/s to kg/s
     # return interpolated flow data
-    return flow_data
-
+    if oldshp:
+        data = data.reshape((len(new_time)-1,)+oldshp) # return to old shape
+    return data
+  
+  
+    # function to parse observation well output
+def parseObsWells(filepath, variables=None, layers=None, lskipNaN=True):
+    ''' a function to parse observation well output and return a three dimansional array, similar to
+        genfromtxt, except with an additional depth/layer dimension at the end (time,variable,layer) '''
+    # load file contents (all at once)
+    with open(filepath,'r') as f:
+        lines = f.readlines()
+    ln = len(lines)
+    # validate header
+    line = lines[0].lower()
+    if "title" not in line: raise GageStationError((line,filepath))
+    line = lines[1].lower()
+    if "variables" not in line: raise GageStationError((line,filepath))
+    varlist = [v for v in line[line.find('=')+1:].strip().split(',') if len(v) > 0]
+    lv = len(varlist)
+    if variables is None: 
+        ve = lv # process all columns
+    elif isinstance(variables, (list,tuple)):
+        if lv < len(variables): raise ArgumentError((variables,varlist))
+        ve = len(variables)
+    elif isinstance(variables, (int,np.integer)):
+        variables = (variables,)
+        ve = 1
+    else: TypeError(variables)
+    assert ve <= lv, (ve,lv)
+    line = lines[2].lower()
+    if "zone" != line[:4]: raise GageStationError((line[:4],filepath))
+    if "solutiontime" != line[22:34] : raise GageStationError((line,filepath))
+    # determine number of layers
+    i = 3
+    while 'zone' not in lines[i]: i += 1
+    line = lines[i].lower()
+    if "zone" != line[:4]: raise GageStationError(line,filepath)
+    if "solutiontime" != line[22:34] : raise GageStationError((line,filepath))
+    nlay = i - 3; te = (ln-2)/(nlay+1)
+    assert (nlay+1)*te == ln-2, (ln,nlay,te)
+    if layers is None: 
+        #layers = tuple(range(1,nlay+1))
+        le = nlay # process all layers/rows
+    elif isinstance(layers, (list,tuple)):
+        if nlay < len(layers): raise ArgumentError((layers,nlay))
+        le = len(layers)
+    elif isinstance(layers, (int,np.integer)):
+        layers = (layers,)
+        le = 1
+    else: raise TypeError(layers)
+    assert le <= nlay, (le,nlay)
+    # allocate array
+    time = np.zeros((te,))
+    data = np.zeros((te,ve,le))
+    # walk through lines and pick values
+    line_iter = lines.__iter__() # return an iterator over all lines
+    line_iter.next(); line_iter.next() # discard first two lines
+    # initialize first time-step 
+    n = -1; k = nlay; te1 = te-1
+    if layers: 
+        layers.append(-1) # this is a dummy to match nothing at the end
+        llayers = True
+    else: llayers = False
+    while n < te1 or k < nlay:
+      line = line_iter.next() # should work flawlessly, if I got the indices right...
+      if k == nlay:
+          assert line[:4] == 'zone', line[:4]
+          assert "SOLUTIONTIME" == line[22:34], line[22:34]
+          # prepare next time step
+          k = 0 # initialize a new time-step
+          if llayers: 
+              l = 0; klay = layers[0]
+          n += 1
+          time[n] = np.float64(line[36:])          
+      else:
+          if not llayers or k == klay:
+              elements = line.split() # split fields, but only process those that we want
+              values = [np.float64(elements[i]) for i in variables]
+              # insert values into array
+              if not llayers: l = k
+              data[n,:,l] = values
+              if llayers: # advance layer counter
+                  l += 1; klay = layers[l]
+          # else just skip 
+          k += 1
+    # make sure we read all lines/time steps
+    try: 
+      print(line_iter.next()) # this should raise a StopIteration exception
+      raise ValueError("It appears the file was not read completely...")
+    except StopIteration: pass # exception is right here
+    # return array 
+    return time,data
+  
 
 if __name__ == '__main__':
     pass
