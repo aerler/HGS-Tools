@@ -94,7 +94,7 @@ def interpolateIrregular(old_time, data, new_time, start_date=None, lkgs=True, l
   
   
     # function to parse observation well output
-def parseObsWells(filepath, variables=None, layers=None, lskipNaN=True):
+def parseObsWells(filepath, variables=None, constants=None, layers=None, lskipNaN=True):
     ''' a function to parse observation well output and return a three dimansional array, similar to
         genfromtxt, except with an additional depth/layer dimension at the end (time,variable,layer) '''
     # load file contents (all at once)
@@ -108,16 +108,28 @@ def parseObsWells(filepath, variables=None, layers=None, lskipNaN=True):
     if "variables" not in line: raise GageStationError((line,filepath))
     varlist = [v for v in line[line.find('=')+1:].strip().split(',') if len(v) > 0]
     lv = len(varlist)
+    # validate constants (variables with no time-dependence))
+    if constants is None: 
+        ce = 0 # assume no constants
+        constants = []
+    elif isinstance(constants, (list,tuple)):
+        ce = len(constants)
+    elif isinstance(constants, (int,np.integer)):
+        constants = (constants,)
+        ce = 1
+    else: TypeError(constants)
+    if lv < len(constants): raise ArgumentError((constants,varlist))
+    # validate variables (variables with time-dependence)
     if variables is None: 
         ve = lv # process all columns
+        variables = range(lv)
     elif isinstance(variables, (list,tuple)):
-        if lv < len(variables): raise ArgumentError((variables,varlist))
         ve = len(variables)
     elif isinstance(variables, (int,np.integer)):
         variables = (variables,)
         ve = 1
     else: TypeError(variables)
-    assert ve <= lv, (ve,lv)
+    if lv < len(variables)+ce: raise ArgumentError((variables,varlist))
     line = lines[2].lower()
     if "zone" != line[:4]: raise GageStationError((line[:4],filepath))
     if "solutiontime" != line[22:34] : raise GageStationError((line,filepath))
@@ -141,14 +153,16 @@ def parseObsWells(filepath, variables=None, layers=None, lskipNaN=True):
     else: raise TypeError(layers)
     assert le <= nlay, (le,nlay)
     # allocate array
-    time = np.zeros((te,))
-    data = np.zeros((te,ve,le))
+    time = np.zeros((te,)) # time coordinate
+    data = np.zeros((te,ve,le)) # time-dependent variables
+    const = np.zeros((ce,le)) # variables that are not time-dependent
     # walk through lines and pick values
     line_iter = lines.__iter__() # return an iterator over all lines
     line_iter.next(); line_iter.next() # discard first two lines
     # initialize first time-step 
     n = -1; k = nlay; te1 = te-1
     if layers: 
+        layers.sort() # make sure the list is sorted
         layers.append(-1) # this is a dummy to match nothing at the end
         llayers = True
     else: llayers = False
@@ -170,8 +184,15 @@ def parseObsWells(filepath, variables=None, layers=None, lskipNaN=True):
               # insert values into array
               if not llayers: l = k
               data[n,:,l] = values
-              if llayers: # advance layer counter
+              # process constants during first time-step
+              if n == 0:
+                  values = [np.float64(elements[i]) for i in constants]
+                  # insert values into array
+                  const[:,l] = values
+              # advance layer counter
+              if llayers:
                   l += 1; klay = layers[l]
+                  
           # else just skip 
           k += 1
     # make sure we read all lines/time steps
@@ -180,7 +201,7 @@ def parseObsWells(filepath, variables=None, layers=None, lskipNaN=True):
       raise ValueError("It appears the file was not read completely...")
     except StopIteration: pass # exception is right here
     # return array 
-    return time,data
+    return time,data,const
   
 
 if __name__ == '__main__':

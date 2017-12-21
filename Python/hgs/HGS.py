@@ -53,11 +53,13 @@ variable_attributes_mms = dict(# hydrograph variables
                                # observation wells
                                h    = dict(name='head', units='m', atts=dict(long_name='Head at Well')),
                                s    = dict(name='sat', units='', atts=dict(long_name='Relative Saturation')),
-                               x    = dict(name='x', units='m', atts=dict(long_name='X Coord.')),
-                               y    = dict(name='y', units='m', atts=dict(long_name='Y Coord.')),
-                               z    = dict(name='z', units='m', atts=dict(long_name='Elevation (M.S.L.)')),
-                               node = dict(name='node', units='', atts=dict(long_name='Node Number')),
                                )
+constant_attributes = dict(# variables that are not time-dependent
+                           x    = dict(name='x', units='m', atts=dict(long_name='X Coord.')),
+                           y    = dict(name='y', units='m', atts=dict(long_name='Y Coord.')),
+                           z    = dict(name='z', units='m', atts=dict(long_name='Elevation (M.S.L.)')),
+                           node = dict(name='node', units='', dtype=np.int64, atts=dict(long_name='Node Number')),
+                           )
 # optional unit conversion
 mms_to_kgs = {'mm/s':'kg/m^2/s', 'm^3/s':'kg/s'}
 variable_attributes_kgs = dict()
@@ -73,7 +75,7 @@ hgs_varmap = {value['name']:key for key,value in variable_attributes_mms.items()
 
 ## function to load HGS station timeseries
 def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varatts=None, folder=None, name=None, title=None, lcheckComplete=True,
-                  start_date=None, end_date=None, run_period=None, period=None, lskipNaN=False, basin=None, lkgs=True,
+                  start_date=None, end_date=None, run_period=None, period=None, lskipNaN=False, basin=None, lkgs=True, z_axis='z',
                   WSC_station=None, basin_list=None, filename=None, prefix=None, scalefactors=None, metadata=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
@@ -189,7 +191,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
       variable_order = [v for v in line[line.find('=')+1:].strip().split(',') if len(v) > 0]
       # clean up a little and remove some problematic characters
       variable_order = [v.strip().strip('"').strip().lower() for v in variable_order]
-      for c,r in zip((' ','-','(',')'),('_','_','','')):
+      for c,r in {' ':'_','-':'_','(':'',')':''}.items():
           variable_order = [v.replace(c,r) for v in variable_order]
       # this line is just for verification
       line = f.readline(); lline = line.lower() # 3rd line
@@ -202,38 +204,52 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
   elif well is not None: 
       offset = 0 # observation wells have different time stamps
   else: raise GageStationError(variable_order)
-  if varlist is None: 
+  if varlist.lower() == 'all': 
       varlist = variable_order[:] # load all in the file
-  elif varlist.lower() == 'default': 
+  elif varlist is None or varlist.lower() == 'default': 
       varlist = [varname for varname in variable_attributes_mms.keys() if varname in variable_order] # load all that are known
+      varlist += [varname for varname in constant_attributes.keys() if varname in variable_order] # load all constants
   else:
-      varlist = [hgs_varmap[varname] for varname in varlist] # translate back to internal HGS names
+      varlist = [hgs_varmap.get(varname,varname) for varname in varlist] # translate back to internal HGS names
+      if z_axis.lower() == 'z' and 'z' not in varlist: varlist.append('z') # needed for vertical coordinate
   vardict = {v:i+offset for i,v in enumerate(variable_order)} # column mapping; +1 because time was removed
   variable_order = [v for v in variable_order if v in varlist or flow_to_flux.get(v,False) in varlist]
-  usecols = tuple(vardict[v] for v in variable_order) # variable columns that need to be loaded (except time, which is col 0)
-  assert offset-1 not in usecols, usecols
+  constant_order = [v for v in variable_order if v in constant_attributes]
+  variable_order = [v for v in variable_order if v not in constant_attributes]
+  varcols = tuple(vardict[v] for v in variable_order) # variable columns that need to be loaded (except time, which is col 0)
+  constcols = tuple(vardict[v] for v in constant_order) # constants columns that need to be loaded
+  assert offset-1 not in varcols, varcols
   
   # load vardata as tab separated values
   if well:
       # well files need special treatment
       lsqueeze = isinstance(layers,(int,np.integer))
-      time_series,data = parseObsWells(filepath, variables=usecols, layers=layers, lskipNaN=lskipNaN)
-      assert data.shape[1] == len(usecols), data.shape
+      time_series,data,const = parseObsWells(filepath, variables=varcols, constants=constcols, 
+                                             layers=layers, lskipNaN=lskipNaN)
+      assert data.shape[1] == len(varcols), data.shape
       nlay = data.shape[2] # number of layers
       if lsqueeze:
           assert nlay == 1, data.shape 
           data = data.squeeze()
           layer = None
-          assert data.shape == (len(time_series),len(usecols),), data.shape
+          assert data.shape == (len(time_series),len(varcols),), data.shape
       else:
-          layer = Axis(name='i_lay', units='', coord=np.arange(1,nlay+1))
-          assert data.shape == (len(time_series),len(usecols),len(layer)), data.shape
+          # create vertical axis
+          if z_axis.lower() == 'z':
+              iz = constant_order.index('z',)
+              layer = Axis(coord=const[iz,:], **constant_attributes['z'])
+          elif z_axis.lower() == 'i': 
+              layer = Axis(name='i_lay', units='', coord=np.arange(1,nlay+1))
+          else:
+              raise ArgumentError(z_axis)
+          assert data.shape == (len(time_series),len(varcols),len(layer)), data.shape
   else:
       # all other files follow the same format
-      data = np.genfromtxt(filepath, dtype=np.float64, delimiter=None, skip_header=3, usecols = (0,)+usecols)
-      assert data.shape[1] == len(usecols)+1, data.shape
+      assert len(constcols) == 0, constcols
+      data = np.genfromtxt(filepath, dtype=np.float64, delimiter=None, skip_header=3, usecols = (0,)+varcols)
+      assert data.shape[1] == len(varcols)+1, data.shape
       time_series = data[:,0]; data = data[:,1:]
-      assert data.shape == (len(time_series),len(usecols)), data.shape
+      assert data.shape == (len(time_series),len(varcols)), data.shape
       layer = None # no layer axis
       if lskipNaN:
           data = data[np.isnan(data).sum(axis=1)==0,:]
@@ -242,7 +258,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
   
   # call function to interpolate irregular HGS timeseries to regular monthly timseries  
   data = interpolateIrregular(old_time=time_series, data=data, new_time=time_monthly, start_date=start_datetime, 
-                                   lkgs=lkgs, lcheckComplete=lcheckComplete, usecols=usecols, interp_kind='linear', fill_value=np.NaN)
+                                   lkgs=lkgs, lcheckComplete=lcheckComplete, usecols=varcols, interp_kind='linear', fill_value=np.NaN)
   assert data.shape[0] == len(time), (data.shape,len(time),len(variable_order))
   
   
@@ -262,7 +278,22 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
     flow_units = 'm^3/s'; flux_units = 'mm/s'
     variable_attributes = variable_attributes_mms
     den = metadata['shp_area'] / 1000. if 'shp_area' in metadata else None
-    
+        
+  # add constants to dataset (only for wells at the moment)
+  for i,varname in enumerate(constant_order):
+    if varname != layer.name: # skip z-axis
+      if layer: 
+          vardata = const[i,:]
+          # check if there is a layer-dependence
+          if np.all(vardata == vardata[0]): vardata = vardata[0]
+      else: 
+          vardata = const[i] # an actual constant...
+      #dataset.atts[varname] = np.asscalar(vardata) # just a constant... 
+      axes = () if vardata.size == 1 else (layer,)
+      if varname in constant_attributes: varatts = constant_attributes[varname]
+      else: varatts = dict(name=varname, units=flow_units)
+      dataset += Variable(data=vardata, axes=axes, **varatts) # add variable
+  
   # create variables
   for i,varname in enumerate(variable_order):
       if layer: 
@@ -274,10 +305,8 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
       # process variable as is first 
       # N.B.: we need to check again, because sometimes we only want the flux variable
       if varname in varlist:
-        if varname in variable_attributes:
-            varatts = variable_attributes[varname]
-        else:
-            varatts = dict(name=varname, units=flow_units)
+        if varname in variable_attributes: varatts = variable_attributes[varname]
+        else: varatts = dict(name=varname, units=flow_units)
         # convert variables and put into dataset (monthly time series)
         if flow_units and varatts['units'] != flow_units: 
           raise VariableError("Hydrograph vardata is read as kg/s; flow variable does not match.\n{}".format(varatts))
@@ -286,10 +315,8 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
       fluxvar = flow_to_flux.get(varname,None)      
       if ( fluxvar and fluxvar in varlist ) and ( den and den > 0 ):
         # compute surface flux variable based on drainage area
-        if fluxvar in variable_attributes:
-            fluxatts = variable_attributes[fluxvar]
-        else:
-            fluxatts = dict(name=fluxvar, units=flux_units)
+        if fluxvar in variable_attributes: fluxatts = variable_attributes[fluxvar]
+        else: fluxatts = dict(name=fluxvar, units=flux_units)
         if flux_units and fluxatts['units'] != flux_units: 
           raise VariableError("Hydrograph vardata is read as kg/s; flux variable does not match.\n{}".format(fluxatts))
         vardata = vardata / den # need to make a copy
@@ -421,6 +448,10 @@ if __name__ == '__main__':
     print('')
     clim = dataset.climMean()
     print(clim)
+    if dataset.hasAxis('z'):
+        print('')
+        print(dataset.x[:],dataset.y[:],)
+        print(dataset.z[:])
     
     if hgs_station == 'Station_GR_Brantford':
         test_results = np.asarray([24793.523584608138, 25172.635322536684, 39248.71087752686, 73361.80217956303, 64505.67974315114, 
