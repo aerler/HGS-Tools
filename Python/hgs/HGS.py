@@ -51,7 +51,7 @@ variable_attributes_mms = dict(# hydrograph variables
                                delta_stor_int = dict(name='delta_storage', units='m^3/s', atts=dict(long_name='Basin-integrated Storage Change')),
                                #TODO: add remaining 11 water balance variables...
                                # observation wells
-                               h    = dict(name='head', units='m', atts=dict(long_name='Head at Well')),
+                               h    = dict(name='head', units='m', atts=dict(long_name='Pressure Head at Well')),
                                s    = dict(name='sat', units='', atts=dict(long_name='Relative Saturation')),
                                )
 constant_attributes = dict(# variables that are not time-dependent
