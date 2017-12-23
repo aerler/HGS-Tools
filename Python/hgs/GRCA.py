@@ -14,23 +14,36 @@ import numpy.ma as ma
 # internal imports
 from datasets.common import days_per_month, name_of_month, getRootFolder, loadObservations
 from warnings import warn
+from geodata.misc import DateError, ArgumentError
 
 ## GRCA Meta-data
 
 dataset_name = 'GRCA'
+default_period = (2000,2015) # approximate data availability
 root_folder = getRootFolder(dataset_name=dataset_name) # get dataset root folder based on environment variables
+tsfile = dataset_name.lower()+'{0:s}_monthly.nc' # formatted NetCDF file
+avgfile = dataset_name.lower()+'{0:s}_clim{1:s}.nc' # formatted NetCDF file
+avgfolder = root_folder + dataset_name.lower()+'avg/' # prefix
+
 
 # variable attributes and name (basically no alterations necessary...)
 varatts = dict(h = dict(name='head', units='m', atts=dict(long_name='Pressure Head at Well')), # head in observation well
                # constants
-               well_depth = dict(name='d', units='m', atts=dict(long_name='Well Depth')), # well depth from surface
+               well_depth = dict(name='depth', units='m', atts=dict(long_name='Well Depth')), # well depth from surface
                wel_piezom = dict(name='d_piezo', units='m', atts=dict(long_name='Depth of Piezometer')), # where the head is measured
-               elva_groun = dict(name='zs', units='m', atts=dict(long_name='Elevation (M.S.L.)')), # surface elevation
+               screen        = dict(name='screen', units='', atts=dict(long_name='Screen Type')), 
+               screen_depth  = dict(name='d_scr', units='m', atts=dict(long_name='Screen Depth')), # screen level depth...                
+               screen_top    = dict(name='d_st', units='m', atts=dict(long_name='Screen Top Depth')), # ... from the surface
+               screen_bottom = dict(name='d_sb', units='m', atts=dict(long_name='Screen Bottom Depth')), 
+               elva_groun = dict(name='zs', units='m', atts=dict(long_name='Surface Elevation (M.S.L.)')), # surface elevation
+               z_t        = dict(name='z_t', units='m', atts=dict(long_name='Screen Top Elevation (M.S.L.)')), # screen level elevation
+               z_b        = dict(name='z_b', units='m', atts=dict(long_name='Screen Bottom Elevation (M.S.L.)')), # screen level elevation
+               z          = dict(name='z', units='m', atts=dict(long_name='Screen/Sampling Elevation (M.S.L.)')), # elevation where the measurement is taken
                longitude  = dict(name='lon', units='deg E', atts=dict(long_name='Longitude')), # geographic longitude field
                latitude   = dict(name='lat', units='deg N', atts=dict(long_name='Latitude')), # geographic latitude field
-               # axis 
-               z = dict(name='z', units='m', atts=dict(long_name='Sampling Elevation (M.S.L.)')), # elevation where the measurement is taken
-               time = dict(name='time', units='month', atts=dict(long_name='Month of the Year')),) # time coordinate
+               # axes 
+               well = dict(name='well', units='', atts=dict(long_name='Well Index Number')), # well number
+               time = dict(name='time', units='month', atts=dict(long_name='Month since 1979-01')),) # time coordinate
 # N.B.: the time-series time offset is chose such that 1979 begins with the origin (time=0)
 # list of variables to load
 varlist = varatts.keys() # also includes coordinate fields    
@@ -39,16 +52,9 @@ varlist = varatts.keys() # also includes coordinate fields
 ## Functions that provide access to well-formatted PRISM NetCDF files
 
 # pre-processed climatology files (varatts etc. should not be necessary)
-avgfile = dataset_name.lower()+'{0:s}_clim{1:s}.nc' # formatted NetCDF file
-avgfolder = root_folder + dataset_name.lower()+'avg/' # prefix
-# function to load these files...
-def loadGRCA(name=dataset_name, period=None, grid=None, resolution=None, varlist=None, 
+def loadGRCA(name=dataset_name, period=default_period, grid=None, resolution=None, varlist=None, 
               varatts=None, folder=avgfolder, filelist=None, lautoregrid=True):
   ''' Get the pre-processed monthly PRISM climatology as a DatasetNetCDF. '''
-  # only the climatology is available
-  if period is not None: 
-    warn('Only the full climatology is currently available: setting \'period\' to None.')
-    period = None
   # load standardized climatology dataset with PRISM-specific parameters  
   dataset = loadObservations(name=name, folder=folder, period=period, grid=grid, station=None, 
                              varlist=varlist, varatts=varatts, filepattern=avgfile, filelist=filelist, 
@@ -56,20 +62,7 @@ def loadGRCA(name=dataset_name, period=None, grid=None, resolution=None, varlist
   # return formatted dataset
   return dataset
 
-def loadGRCA_Stn(name=dataset_name, period=None, station=None, resolution=None, varlist=None, 
-              varatts=None, folder=avgfolder, filelist=None):
-  ''' Get the pre-processed monthly PRISM climatology at station locations as a DatasetNetCDF. '''
-  # only the climatology is available
-  if period is not None: 
-    warn('Only the full climatology is currently available: setting \'period\' to None.')
-    period = None
-  # load standardized climatology dataset with PRISM-specific parameters  
-  dataset = loadObservations(name=name, folder=folder, grid=None, station=station, shape=None, 
-                             varlist=varlist, varatts=varatts, filepattern=avgfile, filelist=filelist, 
-                             lautoregrid=False, period=period, mode='climatology')
-  # return formatted dataset
-  return dataset
-
+loadGRCA_Stn = loadGRCA
 
 ## Dataset API
 
@@ -114,68 +107,167 @@ def getWellName(name):
   return well_id, well_no
 
 # loads data from original XLS files and returns Pandas data_frame
-def loadXLS(well, filename='', folder=grca_folder):
+def loadXLS(well, filename='W{WELL_ID:03d}{TAG}.xlsx', folder=grca_folder, loutliers=True, sampling='M', period=(2000,2015), ltrim=False):
+  # figure out filename
+  well_id, well_no = getWellName(well)
+  tag = '-{WELL_NO:d}'.format(WELL_NO=well_no) if well_no > 1 else ''
+  well = filename.format(WELL_ID=well_id, WELL_NO=well_no, TAG=tag)
   # local imports
-  from numpy.ma import zeros
-  # return array
-  return data
+  import pandas as pd
+  # load data and resample to monthly
+  df = pd.read_excel(os.path.join(folder, well), sheet_name='ChartData', header=0, #skiprows=[0], 
+                     index_col=None, names=None, parse_dates=True)
+  # validate header
+  t_label, h_label = df.columns 
+  assert 'Set' in t_label, t_label
+  assert 'Water Level' in h_label, h_label
+  assert 'Logger' in h_label, h_label
+  assert 'W' in h_label, h_label
+  assert str(well_id) in h_label, h_label
+  df.rename(columns={t_label:'time',h_label:'head'}, inplace=True) # rename columns
+  # clean data
+  df = df[np.isfinite(df['head'])] # remove NaN's
+  df.drop_duplicates(subset='time', keep='first', inplace=True) # remove duplicates
+  df.set_index(['time'], inplace=True, verify_integrity=True) # set time as index for aggregation
+  #print(df['head']['2012-08'])
+  # remove outliers
+  if loutliers:
+      df = df[( ( df['head'] - df['head'].mean() ) / df['head'].std() ).abs() < 3]
+  # resample to monthly
+  if sampling: 
+      df = df.resample(sampling).mean()
+  # reindex time axis
+  if period:
+      period = [str(p) for p in period]
+      if (not ltrim) and df.index[0] < pd.to_datetime(period[0]): raise DateError(period)
+      if (not ltrim) and df.index[-1] > pd.to_datetime(period[1]): raise DateError(period)
+      df = df.reindex(pd.date_range(str(period[0]), str(period[1]), freq=sampling,))
+  # return dataset
+  return df
 
 # function to meta data from database file
-def loadMetadata(well, filename='metadata.dbf', format='W{WELL_ID:07d}-{WELL_NO:1d}', folder=grca_folder):
+def loadMetadata(well, filename='metadata.dbf', wellname='W{WELL_ID:07d}-{WELL_NO:1d}', folder=grca_folder):
   # clean up well name
   well_id, well_no = getWellName(well)
-  well = format.format(WELL_ID=well_id, WELL_NO=well_no)
+  well = wellname.format(WELL_ID=well_id, WELL_NO=well_no)
   # open database and get relevant entry
   #from simpledbf import Dbf5
   from dbfread import DBF
   table = DBF(os.path.join(grca_folder,filename))
+  meta = None
   for record in table:
       if record['PGMN_WELL'] == well: 
           meta = record.copy()
+  if meta is None: 
+      raise ArgumentError(well)
   # parse screen information
   screen_type,screen_depth= meta['SCREEN_HOL'].split(':')
   meta['Screen'] = screen_type.title()
   screen_hilo = []
+  lunit = False
   for hilo in screen_depth.split('-'):
-      if hilo[-1] != 'M': raise ValueError(hilo)
-      screen_hilo.append(float(hilo[:-1]))
+      if hilo[-1] == 'M':
+        lunit = True 
+        screen_hilo.append(float(hilo[:-1]))
+      else: screen_hilo.append(float(hilo))
+  if not lunit: raise ValueError(screen_depth)
   assert len(screen_hilo) == 2, screen_hilo
-  meta['Screen_top'] = screen_hilo[0]
-  meta['Screen_bottom'] = screen_hilo[1]
-  meta['Screen_depth'] = ( screen_hilo[0] + screen_hilo[1] ) / 2.
-  meta['z'] = meta['ELVA_GROUN'] - meta['Screen_depth']
-  meta['z_t'] = meta['ELVA_GROUN'] - meta['Screen_top']
-  meta['z_b'] = meta['ELVA_GROUN'] - meta['Screen_bottom']
+  meta['screen_top'] = screen_hilo[0]
+  meta['screen_bottom'] = screen_hilo[1]
+  meta['screen_depth'] = ( screen_hilo[0] + screen_hilo[1] ) / 2.
+  meta['z']   = meta['ELVA_GROUN'] - meta['screen_depth']
+  meta['z_t'] = meta['ELVA_GROUN'] - meta['screen_top']
+  meta['z_b'] = meta['ELVA_GROUN'] - meta['screen_bottom']
   # return coordinate arrays (in degree)
   return meta
 
 if __name__ == '__main__':
     
-#   mode = 'test_climatology'
+  mode = 'test_climatology'
 #   mode = 'test_timeseries'
 #   mode = 'convert_XLS'
-  mode = 'test_load_XLS'
+#   mode = 'test_load_XLS'
   
   # do some tests
   if mode == 'test_climatology':
     
     # load point climatology
     print('')
-    dataset = loadGRCA_Stn(station='')
+    dataset = loadGRCA()
     print(dataset)
     print('')
     print(dataset.time)
     print(dataset.time.coord)
+    print('')
+    print(dataset.PGMN_WELL)
+    print(dataset.PGMN_WELL[:])
 
+
+  ## convert from XLS files to netcdf
+  elif mode == 'convert_XLS': 
+      
+      # imports
+      from glob import glob
+      from geodata.base import Dataset, Axis, Variable
+      from geodata.netcdf import writeNetCDF
+      
+      
+      # load list if well files and generate list of wells
+      well_files = glob(os.path.join(grca_folder,'W*.xlsx'))
+      well_files.sort()
+      wells = [os.path.basename(name[:-5]) for name in well_files]
+      print(wells)
+      
+      # dataset
+      period = default_period
+      time_ax = Axis(coord=np.arange(12*(period[1]-period[0]))+252, **varatts['time']) # origin: 1979-01
+      well_ax = Axis(coord=np.arange(len(wells))+1, name='well', units='') 
+      dataset = Dataset(name='grca', title='GRCA Observation Wells')
+      # add meta data
+      meta_dicts = [loadMetadata(well) for well in wells]
+      for key in meta_dicts[0].keys():
+          if key in varatts: atts = varatts[key]
+          elif key.lower() in varatts: atts = varatts[key.lower()]
+          else: atts = dict(name=key, units='')
+          if atts['units']: data = np.asarray([wmd[key] for wmd in meta_dicts], dtype=np.float64)
+          else: data = np.asarray([wmd[key] for wmd in meta_dicts])
+          dataset += Variable(data=data, axes=(well_ax,), **atts)
+      # add names
+      dataset += Variable(data=wells, axes=(well_ax,), name='well_name', units='', 
+                          atts=dict(long_name='Short Well Name'))
+      for varname in ('d_piezo','well_name','depth'):
+          print('')
+          print(dataset[varname])
+          print(dataset[varname][:])      
+      # add well heads
+      data = np.zeros((len(well_ax),len(time_ax),))
+      # load data for wells...
+#       for i,well in enumerate(wells):
+#           df = loadXLS(well, loutliers=True, sampling='M', period=period, ltrim=False)
+#           data[i,:] = df['head']
+      # add head variable
+      dataset += Variable(data=data, axes=(well_ax,time_ax), **varatts['h'])
+      
+      # write dataset to disk
+      # timeseries
+      print(''); print(dataset); print('')
+      filepath = os.path.join(avgfolder,tsfile.format('',))
+      writeNetCDF(dataset, ncfile=filepath, feedback=True)
+      # climatology
+      clim_ds = dataset.climMean()
+      print(''); print(clim_ds); print('')      
+      filepath = os.path.join(avgfolder,avgfile.format('','_{}-{}'.format(*period)))
+      writeNetCDF(clim_ds, ncfile=filepath, feedback=True)
 
   ## test load function for XLS files
   elif mode == 'test_load_XLS': 
 
-    meta = loadMetadata(well='W178', )
-    # inspect dictionary
-    for item in meta.items(): print(item)
-
-  ## convert XLS files to NetCDF
-  elif mode == 'convert_XLS': 
-    
-    raise NotImplementedError
+#     # load Metadata
+#     meta = loadMetadata(well='W178', )
+#     # inspect dictionary
+#     for item in meta.items(): print(item)
+  
+      # load timeseries data from XLS files
+      data = loadXLS(well='W347-3')
+      # inspect data
+      print(data)
