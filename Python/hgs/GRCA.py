@@ -52,17 +52,43 @@ varlist = varatts.keys() # also includes coordinate fields
 ## Functions that provide access to well-formatted PRISM NetCDF files
 
 # pre-processed climatology files (varatts etc. should not be necessary)
-def loadGRCA(name=dataset_name, period=default_period, grid=None, resolution=None, varlist=None, 
-              varatts=None, folder=avgfolder, filelist=None, lautoregrid=True):
-  ''' Get the pre-processed monthly PRISM climatology as a DatasetNetCDF. '''
-  # load standardized climatology dataset with PRISM-specific parameters  
-  dataset = loadObservations(name=name, folder=folder, period=period, grid=grid, station=None, 
+def loadGRCA(name=dataset_name, well=None, period=default_period, varlist=None, varatts=None, 
+             folder=avgfolder, filelist=None, lload=True):
+  ''' Get the pre-processed monthly climatology of GRCA well heads as a DatasetNetCDF. '''
+  # load standardized climatology dataset with GRCA-specific parameters  
+  dataset = loadObservations(name=name, folder=folder, period=period, grid=None, station=None, 
                              varlist=varlist, varatts=varatts, filepattern=avgfile, filelist=filelist, 
-                             lautoregrid=lautoregrid, mode='climatology')
+                             lautoregrid=False, mode='climatology')
+  if well:
+      # identify well based on name
+      well_id, well_no = getWellName(well)
+      well_names = dataset.well_name[:]
+      well_idx = -1      
+      for i,well_name in enumerate(well_names):
+          wid,wno = getWellName(well_name)
+          if wid == well_id and wno == well_no:
+              well_idx = i
+              break
+      if well_idx < 0: 
+          raise ValueError(well)
+      # slice out well
+      dataset.load()
+      dataset = dataset(well=well_idx, lidx=True)
   # return formatted dataset
   return dataset
-
 loadGRCA_Stn = loadGRCA
+
+# pre-processed timeseries files (varatts etc. should not be necessary)
+def loadGRCA_TS(name=dataset_name, well=None, varlist=None, varatts=None, 
+                folder=avgfolder, filelist=None, lload=True):
+  ''' Get the pre-processed monthly timeseries for GRCA well heads as a DatasetNetCDF. '''
+  # load standardized time-series dataset with GRCA-specific parameters  
+  dataset = loadObservations(name=name, folder=folder, period=None, grid=None, station=None, 
+                             varlist=varlist, varatts=varatts, filepattern=tsfile, filelist=filelist, 
+                             lautoregrid=False, mode='climatology')
+  # return formatted dataset
+  return dataset
+loadGRCA_StnTS = loadGRCA_TS
 
 ## Dataset API
 
@@ -92,6 +118,11 @@ def getWellName(name):
   well_no = 1 # default, unless specified
   if isinstance(name,basestring):
       well = name.upper()
+      if '.' in well:
+          well = well.split('.')
+          if len(well) == 2: well = well[0]
+          elif len(well) > 2: well = '.'.join(well[:-1])
+          else: raise ArgumentError 
       if '-' in well: 
           well_id,well_no = well.split('-')
           well_no = int(well_no)
@@ -107,15 +138,20 @@ def getWellName(name):
   return well_id, well_no
 
 # loads data from original XLS files and returns Pandas data_frame
-def loadXLS(well, filename='W{WELL_ID:03d}{TAG}.xlsx', folder=grca_folder, loutliers=True, sampling='M', period=(2000,2015), ltrim=False):
+def loadXLS(well=None, filename=None, filename_pattern='W{WELL_ID:03d}{TAG}.xlsx', folder=grca_folder, loutliers=True, sampling='M', period=(2000,2015), ltrim=False):
   # figure out filename
-  well_id, well_no = getWellName(well)
-  tag = '-{WELL_NO:d}'.format(WELL_NO=well_no) if well_no > 1 else ''
-  well = filename.format(WELL_ID=well_id, WELL_NO=well_no, TAG=tag)
+  if well and filename: raise ArgumentError
+  elif well:
+      well_id, well_no = getWellName(well)
+      tag = '-{WELL_NO:d}'.format(WELL_NO=well_no) if well_no > 1 else ''
+      filename = filename_pattern.format(WELL_ID=well_id, WELL_NO=well_no, TAG=tag)
+  elif filename:
+      well_id, well_no = getWellName(filename) 
+  else: raise ArgumentError
   # local imports
   import pandas as pd
   # load data and resample to monthly
-  df = pd.read_excel(os.path.join(folder, well), sheet_name='ChartData', header=0, #skiprows=[0], 
+  df = pd.read_excel(os.path.join(folder, filename), sheet_name='ChartData', header=0, #skiprows=[0], 
                      index_col=None, names=None, parse_dates=True)
   # validate header
   t_label, h_label = df.columns 
@@ -191,17 +227,29 @@ if __name__ == '__main__':
   # do some tests
   if mode == 'test_climatology':
     
-    # load point climatology
+    # load climatology
     print('')
-    dataset = loadGRCA()
+    dataset = loadGRCA(well='W178')
     print(dataset)
     print('')
     print(dataset.time)
     print(dataset.time.coord)
     print('')
-    print(dataset.PGMN_WELL)
-    print(dataset.PGMN_WELL[:])
+    print(dataset.well_name)
+    print(dataset.well_name[:])
 
+  if mode == 'test_timeseries':
+    
+    # load time-series
+    print('')
+    dataset = loadGRCA_TS()
+    print(dataset)
+    print('')
+    print(dataset.time)
+    print(dataset.time.coord)
+    print('')
+    print(dataset.well_name)
+    print(dataset.well_name[:])
 
   ## convert from XLS files to netcdf
   elif mode == 'convert_XLS': 
@@ -240,11 +288,14 @@ if __name__ == '__main__':
           print(dataset[varname])
           print(dataset[varname][:])      
       # add well heads
-      data = np.zeros((len(well_ax),len(time_ax),))
+      data = np.zeros((len(well_ax),len(time_ax),)) # allocate array
       # load data for wells...
-#       for i,well in enumerate(wells):
-#           df = loadXLS(well, loutliers=True, sampling='M', period=period, ltrim=False)
-#           data[i,:] = df['head']
+      print('\nLoading Well Data:')
+      for i,well_file in enumerate(well_files):
+          print('  '+wells[i])
+          df = loadXLS(filename=os.path.basename(well_file), folder=os.path.dirname(well_file), 
+                       loutliers=True, sampling='M', period=period, ltrim=False)
+          data[i,:] = df['head']
       # add head variable
       dataset += Variable(data=data, axes=(well_ax,time_ax), **varatts['h'])
       
