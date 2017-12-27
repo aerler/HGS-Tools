@@ -49,7 +49,25 @@ varatts = dict(h = dict(name='head', units='m', atts=dict(long_name='Pressure He
 varlist = varatts.keys() # also includes coordinate fields    
 
 
-## Functions that provide access to well-formatted PRISM NetCDF files
+## Functions that provide access to well-formatted GeoPy NetCDF files
+
+def sliceWellName(well, dataset):
+  ''' helper function to slice out a particular station '''
+  # identify well based on name
+  well_id, well_no = getWellName(well)
+  well_names = dataset.well_name[:]
+  well_idx = -1      
+  for i,well_name in enumerate(well_names):
+      wid,wno = getWellName(well_name)
+      if wid == well_id and wno == well_no:
+          well_idx = i
+          break
+  if well_idx < 0: 
+      raise ValueError(well)
+  # slice out well
+  dataset = dataset(well=well_idx, lidx=True)  
+  # return sliced dataset
+  return dataset
 
 # pre-processed climatology files (varatts etc. should not be necessary)
 def loadGRCA(name=dataset_name, well=None, period=default_period, varlist=None, varatts=None, 
@@ -59,21 +77,9 @@ def loadGRCA(name=dataset_name, well=None, period=default_period, varlist=None, 
   dataset = loadObservations(name=name, folder=folder, period=period, grid=None, station=None, 
                              varlist=varlist, varatts=varatts, filepattern=avgfile, filelist=filelist, 
                              lautoregrid=False, mode='climatology')
-  if well:
-      # identify well based on name
-      well_id, well_no = getWellName(well)
-      well_names = dataset.well_name[:]
-      well_idx = -1      
-      for i,well_name in enumerate(well_names):
-          wid,wno = getWellName(well_name)
-          if wid == well_id and wno == well_no:
-              well_idx = i
-              break
-      if well_idx < 0: 
-          raise ValueError(well)
-      # slice out well
-      dataset.load()
-      dataset = dataset(well=well_idx, lidx=True)
+  # post-processing
+  if well: dataset = sliceWellName(well, dataset)
+  if lload: dataset.load()
   # return formatted dataset
   return dataset
 loadGRCA_Stn = loadGRCA
@@ -86,6 +92,9 @@ def loadGRCA_TS(name=dataset_name, well=None, varlist=None, varatts=None,
   dataset = loadObservations(name=name, folder=folder, period=None, grid=None, station=None, 
                              varlist=varlist, varatts=varatts, filepattern=tsfile, filelist=filelist, 
                              lautoregrid=False, mode='climatology')
+  # post-processing
+  if well: dataset = sliceWellName(well, dataset)
+  if lload: dataset.load()
   # return formatted dataset
   return dataset
 loadGRCA_StnTS = loadGRCA_TS
@@ -219,8 +228,8 @@ def loadMetadata(well, filename='metadata.dbf', wellname='W{WELL_ID:07d}-{WELL_N
 
 if __name__ == '__main__':
     
-  mode = 'test_climatology'
-#   mode = 'test_timeseries'
+#   mode = 'test_climatology'
+  mode = 'test_timeseries'
 #   mode = 'convert_XLS'
 #   mode = 'test_load_XLS'
   
@@ -229,7 +238,7 @@ if __name__ == '__main__':
     
     # load climatology
     print('')
-    dataset = loadGRCA(well='W178')
+    dataset = loadGRCA()
     print(dataset)
     print('')
     print(dataset.time)
@@ -242,14 +251,14 @@ if __name__ == '__main__':
     
     # load time-series
     print('')
-    dataset = loadGRCA_TS()
+    dataset = loadGRCA_TS(well='W178')
     print(dataset)
     print('')
     print(dataset.time)
     print(dataset.time.coord)
-    print('')
-    print(dataset.well_name)
-    print(dataset.well_name[:])
+#     print('')
+#     print(dataset.well_name)
+#     print(dataset.well_name[:])
 
   ## convert from XLS files to netcdf
   elif mode == 'convert_XLS': 
