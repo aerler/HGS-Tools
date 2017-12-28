@@ -50,6 +50,7 @@ if os.name == "nt":
   
   # replace os symlink with this function
   os.symlink = symlink_ms
+else: symlink_ms = None # avoid import errors
 
   
 # some named exceptions
