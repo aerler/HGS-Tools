@@ -276,7 +276,7 @@ class Grok(object):
         if self.lchannel:
             ic_file_chan = ic_pattern.format(FILETYPE=self.chan_tag)
             if not os.path.exists(ic_file_chan): IOError(ic_file_chan) 
-    else: raise ArgumentError('Restart filetype not recognized:',ic_pattern)
+    else: raise ArgumentError('Restart filetype not recognized: {}'.format(ic_pattern))
     # see if we are using .hen restart files
     hen_file,i = self.getParam('restart file for heads', dtype=str, llist=False, lindex=True, lerror=False)
     if hen_file:
@@ -529,8 +529,10 @@ class HGS(Grok):
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, output_interval='default',
                input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, pet_folder=None,
                input_folder='../climate_forcing', template_folder=None, linked_folders=None, NP=1, lindicator=True,
-               grok_bin='grok.exe', hgs_bin='phgs.exe', lrestart=False):
-    ''' initialize HGS instance with a few more parameters: number of processors... '''
+               grok_bin='grok.exe', hgs_bin='phgs.exe', lrestart=False, ic_files=None):
+    ''' initialize HGS instance with a few more parameters: number of processors... also ic_files, which is
+        the file pattern for initial condition files; it must contain '{FILETYPE}' and will be expanded by 
+        the ensemble class EnsHGS.'''
     # call parent constructor (Grok)
     super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
                              output_interval=output_interval, input_vars=input_vars, input_prefix=input_prefix,
@@ -548,6 +550,10 @@ class HGS(Grok):
     self.NP = NP # number of processors
     self.lindicators = lindicator # use indicator files
     self.lrestart = lrestart # complete an interrupted run
+    if ic_files:
+        if not ( '{FILETYPE}' in ic_files or ic_files.endswith('.hen') ):
+            raise HGSError('IC file name/pattern must contain \'{{FILETYPE}}\' or be a \'.hen\' file:\n {}'.format(ic_files))
+        self.ic_files = ic_files # initial condition file pattern (path will be expanded)
     
   def setupRundir(self, template_folder=None, bin_folder='{HGSDIR:s}', loverwrite=None, lschedule=True):
     ''' copy entire run folder from a template folder and link executables '''
@@ -653,7 +659,7 @@ class HGS(Grok):
     # determine new restart backup folder to store time-dependent output
     # N.B.: to prevent data loss, a new folder with a 4-digit running number is created
     folder_idxs = numberedPattern(backup_folder, nidx=nidx, folder=None)
-    idx = ( max(folder_idxs) if len(folder_idxs) > 0 else 0 ) + 1 
+    idx = ( max(folder_idxs) if len(folder_idxs) > 0 else 0 ) + 1 # IS USED!
     self.restart_folders = [ backup_folder + '{:04d}'.format(idx) for idx in folder_idxs + [idx] ]
     restart_folder = self.restart_folders[-1] # last element
     if not ldryrun: # for testing we don't actually want to move files...

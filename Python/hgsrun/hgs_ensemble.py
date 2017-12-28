@@ -136,12 +136,17 @@ class EnsHGS(object):
     self.members = []; self.rundirs = []; self.hgsargs = [] # ensemble lists
     for kwargs in kwargs_list:
       # isolate folder variables and perform variable substitution
-      for folder_type in ('template_folder','input_folder','pet_folder','rundir'):
-        if folder_type in kwargs:
-          folder = kwargs[folder_type]
-          if not isinstance(folder,basestring): raise TypeError(folder)
-          # perform keyword substitution with all available arguments
-          kwargs[folder_type] = folder.format(**kwargs)
+      for folder_type in ('rundir','template_folder','input_folder','pet_folder','ic_files'):
+          if folder_type in kwargs:
+              folder = kwargs[folder_type]
+              if isinstance(folder,basestring):
+                # perform keyword substitution with all available arguments
+                if folder_type is 'ic_files':
+                    # we need to preserve '{FILETYPE}' for later 
+                    kwargs[folder_type] = folder.format(FILETYPE='{FILETYPE}', **kwargs)
+                else: kwargs[folder_type] = folder.format(**kwargs)
+              elif folder is None: pass
+              else: raise TypeError(folder)
       # check rundir
       rundir = kwargs['rundir']
       kwargs['restart'] = False # this keyword argument should be controlled by the Ensemble handler

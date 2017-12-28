@@ -438,8 +438,9 @@ class EnsHGSTest(unittest.TestCase):
     # initialize ensemble with general and rundir arguments
     enshgs = EnsHGS(rundir=rundir, project=self.hgs_testcase, runtime=self.runtime,
                     input_mode=['steady-state','periodic'], input_interval=self.input_interval, 
-                    NP=self.NP, **rundir_args)
+                    NP=self.NP, ic_files='{rundir}/restart/{A}-{B}-{C}.{FILETYPE}.0000', **rundir_args)
     assert len(enshgs) == 4, len(enshgs)
+    print(enshgs.ic_files)
     # test expansion of folder arguments
     for As in rundir_args['A']:
       for Bs in rundir_args['B']:
@@ -532,8 +533,8 @@ if __name__ == "__main__":
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-    tests += ['Grok']
-    tests += ['HGS']    
+#     tests += ['Grok']
+#     tests += ['HGS']    
     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
