@@ -53,7 +53,14 @@ hgsdir   = os.getenv('HGSDIR',) # HGS license file
 # clim_data    = data_root+'/Test/grw2/test-run/clim/climate_forcing/'
 # ts_data      = data_root+'/Test/grw2/test-run/timeseries/climate_forcing/'
 
-# use small Payne River model for testing
+# # use small Payne River model for testing
+# hgs_testcase = 'prw' # name of test project (for file names)
+# hgs_template = data_root+'/SNW/Templates/PRW-V1/' 
+# test_prefix  = 'prw1' # pefix for climate input
+# clim_data    = data_root+'/SNW/prw1/test-run/clim/climate_forcing/'
+# ts_data      = None # data_root+'/SNW/prw1/test-run/timeseries/climate_forcing/'
+
+# use small Payne River model with Channels for testing 
 hgs_testcase = 'test' # name of test project (for file names)
 hgs_template = data_root+'/Test/Templates/PRC-test/' 
 test_prefix  = 'snw1' # pefix for climate input
@@ -200,6 +207,9 @@ class HGSTest(GrokTest):
     # grok test files
     self.grok_input  = '{}/{}.grok'.format(self.hgs_template,self.hgs_testcase)
     self.grok_output = '{}/{}.grok'.format(self.rundir,self.hgs_testcase)
+    # prevent errors with datasets that only have climatologies
+    if self.ts_data is None: 
+        self.input_mode = 'periodic' 
     # data sources
     if self.input_mode == 'periodic':
         input_folder = self.clim_data
@@ -312,8 +322,8 @@ class HGSTest(GrokTest):
     logfile = '{}/log.grok'.format(hgs.rundir)
     assert hgs.GrokOK is None, hgs.GrokOK
     # climate data
-    if not os.path.isdir(self.clim_data): raise IOError(self.clim_data)
-    if not os.path.isdir(self.ts_data): raise IOError(self.ts_data)
+    if self.clim_data and not os.path.isdir(self.clim_data): raise IOError(self.clim_data)
+    if self.ts_data and not os.path.isdir(self.ts_data): raise IOError(self.ts_data)
     # run Grok
     if not os.path.isfile(exe): raise IOError(exe)
     ec = hgs.runGrok(executable=exe, logfile=logfile, lerror=False, linput=lbin, ldryrun=not lbin)

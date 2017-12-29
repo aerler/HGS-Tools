@@ -634,7 +634,7 @@ class HGS(Grok):
         return # no restart necessary - just start from beginning
     times_todo = out_times[restart_index:]
     if len(times_todo) == 0:
-        raise HGSError("Simulations appears to be complete --- no restart necesary/possible.")          
+        raise HGSError("Simulations appears to be complete --- no restart necessary/possible.")          
     restart_time = times_done[-1]
     # set new time parameters in Grok file
     self.setParam('output times', times_todo, formatter='{:e}', )
