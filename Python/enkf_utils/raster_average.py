@@ -9,6 +9,7 @@ for HGS input, based on a time raster table.
 
 # imports
 import os
+import pandas as pd
 # GeoPy imports
 from geodata.gdal import Shape, GridDefinition
 from utils.ascii import readRasterArray
@@ -64,13 +65,61 @@ def readTimeRaster(filepath, folder=None, lvalidate=True):
         filelist.append(filename)
     # return
     return times, filelist
+  
+# write time raster table based on datetime and file pattern
+def writeTimeRaster(inc_file, date_range=None, filepattern=None, date_format='%Y%m%d', 
+                    lvalidate=True, lfeedback=False):
+    ''' take a datetime and filepattern and write an include file '''
+    # date settings
+    begin = pd.to_datetime(date_range[0])
+    end   = pd.to_datetime(date_range[1])
+    freq  = date_range[2]
+    datelist = pd.date_range(begin, end, freq=freq)
+    model_time = ( datelist - begin ).astype('timedelta64[s]')
+    # open file and write
+    if lfeedback: 
+        print("Writing include file '{}':".format(inc_file))
+    with open(inc_file, 'w') as f:
+        # loop over dates
+        for delta,date in zip(model_time,datelist):
+            # assemble raster filename
+            date_str = date.strftime(date_format)
+            raster = filepattern.format(date_str)
+            if lvalidate and not os.path.exists(raster):
+                raise IOError(raster)
+            # assemble line
+            line = '{:>20s}   {:s}\n'.format(str(delta), raster)
+            f.write(line)
+            if lfeedback: print(line[:-2]) # omit linebreak
+    # done...
+
+
+# write simple time table based on datetime
+def writeTimeTable(inc_file, date_range=None, lfeedback=False):
+    ''' take a datetime write an include file with time values (for output times) '''
+    # date settings
+    begin = pd.to_datetime(date_range[0])
+    end   = pd.to_datetime(date_range[1])
+    freq  = date_range[2]
+    datelist = pd.date_range(begin, end, freq=freq)
+    model_time = ( datelist - begin ).astype('timedelta64[s]')
+    # open file and write
+    if lfeedback: 
+        print("Writing include file '{}':".format(inc_file))
+    with open(inc_file, 'w') as f:
+        # loop over dates
+        for time in model_time:
+            # assemble line
+            line = '{:>20s}\n'.format(str(time))
+            f.write(line)
+            if lfeedback: print(line[:-2]) # omit linebreak
+    # done...
 
 
 # write time value table
 def writeTimeValue(filepath=None, times=None, values=None):
-    ''' write a time value file for HGS input '''
-    with open(filepath, 'w') as f:
-      
+    ''' write a time value file for HGS input using a list of time-stamps and values'''
+    with open(filepath, 'w') as f:     
         # loop over times/values
         for time,value in zip(times,values):        
             # assemble line
@@ -80,42 +129,81 @@ def writeTimeValue(filepath=None, times=None, values=None):
 
 if __name__ == '__main__':
     
-    # ascii data
-    folder = 'D:/Data/HGS/SNW/EnKF/TWC/forcing/'
-    inc_files = {'precip.inc':'precip_values.inc', 'pet.inc':'pet_values.inc'}
-    # shape data
-    shape_name = 'WholePRW' # Payne River Watershed
-    shape_folder = 'C:/Users/aerler/Data/shapes/Basins/Payne River Watershed/'
-    
-    
-    # define projection of raster
-    ## parameters for South Nation grids
-    projection = "+proj=utm +zone=18 +north +ellps=NAD83 +datum=NAD83 +units=m +no_defs"
-    
-    # move into work dir
-    os.chdir(folder)
+    # execution mode
+    mode = 'write_time_inc'
+#     mode = 'write_raster_inc'
+#     mode = 'raster_average'
 
-    # load Shape file
-    shape = Shape(name=shape_name, shapefile=shape_name, folder=shape_folder, load=True, ldebug=True)
-    
-    # loop over include files
-    for inc_file,new_inc_file in inc_files.items():
+    if mode == 'write_time_inc':
+      
+        # definitions
+        folder = 'D:/Data/HGS/SNW/EnKF/TWC/forcing/'
+        inc_file = 'output.inc'
+        date_range = ('2017-05-01', '2017-12-31', '1D')
         
-        print("\nProcessing '{}':\n".format(inc_file))
-        # read inc file
-        times, filelist = readTimeRaster(filepath=inc_file, folder=folder, lvalidate=True)
-        print(times)
-        print(filelist)
-        
-        # load rasters and average over shape
+        os.chdir(folder)
+        # write file
         print('')
-        timeseries = averageRasters(filelist=filelist, projection=projection, shape=shape)
-        assert len(timeseries) == len(filelist)
+        writeTimeTable(inc_file, date_range=date_range, lfeedback=True)
+        if not os.path.exists(inc_file): 
+            raise IOError(inc_file)
+    
+    elif mode == 'write_raster_inc':
+      
+        # definitions
+        folder = 'D:/Data/HGS/SNW/EnKF/TWC/forcing/'
+        inc_files = {'precip.inc':'HistoricDailyTransientRaster_TWC/RainPLUSsnowmelt_{:s}.asc', 
+                     'pet.inc':'HistoricDailyTransientRaster_TWC/PET_{:s}.asc'}
+        date_range = ('2017-05-01', '2017-12-31', '1D')
         
-        # write new inc file
-        writeTimeValue(filepath=new_inc_file, times=times, values=timeseries)
-        print(new_inc_file); print('')
-        if not os.path.exists(new_inc_file):
-            raise IOError(new_inc_file)
+        os.chdir(folder)
+        # loop over file types
+        for inc_file,filepattern in inc_files.items():
+            # write files
+            print('')
+            writeTimeRaster(inc_file, date_range=date_range, filepattern=filepattern, lfeedback=True)
+            if not os.path.exists(inc_file): 
+                raise IOError(inc_file)
+        
+    
+    elif mode == 'raster_average':
+      
+        # ascii data
+        folder = 'D:/Data/HGS/SNW/EnKF/TWC/forcing/'
+        inc_files = {'precip.inc':'precip_values.inc', 'pet.inc':'pet_values.inc'}
+        # shape data
+        shape_name = 'WholePRW' # Payne River Watershed
+        shape_folder = 'C:/Users/aerler/Data/shapes/Basins/Payne River Watershed/'
+        
+        
+        # define projection of raster
+        ## parameters for South Nation grids
+        projection = "+proj=utm +zone=18 +north +ellps=NAD83 +datum=NAD83 +units=m +no_defs"
+        
+        # move into work dir
+        os.chdir(folder)
+    
+        # load Shape file
+        shape = Shape(name=shape_name, shapefile=shape_name, folder=shape_folder, load=True, ldebug=True)
+        
+        # loop over include files
+        for inc_file,new_inc_file in inc_files.items():
+            
+            print("\nProcessing '{}':\n".format(inc_file))
+            # read inc file
+            times, filelist = readTimeRaster(filepath=inc_file, folder=folder, lvalidate=True)
+            print(times)
+            print(filelist)
+            
+            # load rasters and average over shape
+            print('')
+            timeseries = averageRasters(filelist=filelist, projection=projection, shape=shape)
+            assert len(timeseries) == len(filelist)
+            
+            # write new inc file
+            writeTimeValue(filepath=new_inc_file, times=times, values=timeseries)
+            print(new_inc_file); print('')
+            if not os.path.exists(new_inc_file):
+                raise IOError(new_inc_file)
         
         
