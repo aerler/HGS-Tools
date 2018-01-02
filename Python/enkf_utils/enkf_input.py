@@ -9,6 +9,7 @@ A collection of functions to generate EnKF input files.
 # imports 
 import os
 import numpy as np
+import pandas as pd
 from glob import glob
 from collections import OrderedDict
 # internal/local imports
@@ -178,14 +179,50 @@ def writeEnKFobs(enkf_folder=None, obs_wells=None, filename='obs_head.dat', stde
     return filepath
 
 
+def readKister(filepath=None, period=None, resample='1D', missing=None, header=3, name='value', 
+               lpad=True, lvalues=True):
+    ''' read a Kister csv file and slice and resample timeseries '''
+    df = pd.read_csv(filepath, header=header, index_col=0, parse_dates=True, names=('time',name))
+    # slice
+    if period: 
+        begin,end = pd.to_datetime(period[0]),pd.to_datetime(period[1])
+        df = df[begin:end]
+    if resample:
+        df = df.resample(resample).mean()
+    if period and resample and lpad:
+        # extend time axis/index, if necessary, and pad with missing values
+        df = df.reindex(pd.date_range(begin,end, freq=resample))
+    if lvalues: data = df.values.squeeze()
+    else: data = df 
+    # return data as pandas dataframe or as numpy array
+    return data
+    
+
 if __name__ == '__main__':
     
-    # execution mode
-#     mode = 'write_ic_file'
-    mode = 'write_bdy_file'
-#     mode = 'write_obs_file'
+    # execution taskes
+    tasks = []
+#     tasks += ['test_read_kister']
+#     tasks += ['write_ic_file']
+#     tasks += ['write_bdy_file']
+    tasks += ['write_obs_file']
 
-    if mode == 'write_ic_file':
+    if 'test_read_kister' in tasks:
+      
+        # test file
+        csv_file = 'D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'
+        time_sampling = ('2017-05-01', '2017-12-31', '1D')
+        
+        # load data
+        data = readKister(filepath=csv_file, period=time_sampling[:2], resample=time_sampling[2])
+        # test
+        datelist = pd.date_range(pd.to_datetime(time_sampling[0]), pd.to_datetime(time_sampling[1]), 
+                                 freq=time_sampling[2])
+        assert len(datelist) == len(data), (data.shape,len(datelist))
+        print((data.shape,len(datelist)))
+        
+    
+    if 'write_ic_file' in tasks:
       
         # definitions
         prefix = 'prw'
@@ -198,7 +235,7 @@ if __name__ == '__main__':
         if not os.path.exists(pm_file): raise IOError(pm_file)
         if not os.path.exists(olf_file): raise IOError(olf_file)
         
-    elif mode == 'write_bdy_file':
+    if 'write_bdy_file' in tasks:
       
         # definitions
         bdy_files = {'precip.inc':'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/precip_values.inc',
@@ -215,13 +252,40 @@ if __name__ == '__main__':
         else:
             if not os.path.exists(filelist): raise IOError(filelist)
         
-    elif mode == 'write_obs_file':
+    if 'write_obs_file' in tasks:
       
         # definitions
-        ntime = 245; stderr = 0.25 # make some fake data... larger than 10,000 indicates missing value
-        obs_wells = [dict(node=468, data=np.ones((ntime,))*88888),
-                     dict(node=1516, error=stderr, data=np.ones((ntime,))*99999)]
-        enkf_folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/input_deterministic/'        
+        lreal = True    
+        enkf_folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/input_deterministic/'
+        time_sampling = ('2017-05-01', '2017-12-31', '1D')   
+        datelist = pd.date_range(pd.to_datetime(time_sampling[0]), pd.to_datetime(time_sampling[1]), 
+                                 freq=time_sampling[2]) 
+        ntime = len(datelist) 
+        stderr = 0.25 # observation error
+        missing = 99999 # larger than 10,000 indicates missing value
+        # actual observation wells
+        obs_wells = [
+                     # W268-1, 48.52-61.32m, sheet 2-3, possibly 1 (1-2 according to Omar)
+                     dict(name='W268-1', z=-35.0, sheet=1, node= 2617, csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
+                     dict(name='W268-1', z=57.08, sheet=2, node= 5501, csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
+                     dict(name='W268-1', z=58.08, sheet=3, node= 8385, csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
+                     # W350-2, 104.13-107.13m, sheet 3, possibly 4 (3-4 according to Omar)
+                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
+                     dict(name='W350-2', z=109.93, sheet=4, node=10569, csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
+                     # W350-3, 87.33-96.73m, sheet 2 (2-3 according to Omar)
+                     dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=1.5, # very unreliable well 
+                          csv='D:/Data/HGS/SNW/EnKF/Kister/W350-3.csv'),
+                     ]
+        for obs_well in obs_wells:
+            #print(obs_well) # feedback without data        
+            if lreal:
+                # load actual observation data
+                obs_well['data'] = readKister(filepath=obs_well['csv'], 
+                                              period=time_sampling[:2], resample=time_sampling[2], 
+                                              missing=missing, lpad=True, lvalues=True)
+            else:  
+                # create fake/missing data (for equivalent open loop testing)
+                obs_well['data'] = np.ones((ntime,))*missing
         
         # create boundary files
         obs_file = writeEnKFobs(enkf_folder=enkf_folder, obs_wells=obs_wells, stderr=stderr)
