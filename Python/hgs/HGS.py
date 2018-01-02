@@ -74,9 +74,11 @@ flow_to_flux = dict(discharge='sfroff', seepage='ugroff', flow='runoff') # relat
 hgs_varmap = {value['name']:key for key,value in variable_attributes_mms.items()}
 
 ## function to load HGS station timeseries
-def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varatts=None, folder=None, name=None, title=None, lcheckComplete=True,
-                  start_date=None, end_date=None, run_period=None, period=None, lskipNaN=False, basin=None, lkgs=True, z_axis='z',
-                  WSC_station=None, basin_list=None, filename=None, prefix=None, scalefactors=None, metadata=None, **kwargs):
+def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varatts=None, folder=None, name=None, 
+                  title=None, lcheckComplete=True, start_date=None, end_date=None, run_period=None, period=None, 
+                  lskipNaN=False, basin=None, lkgs=True, z_axis='z', time_axis='simple', resample='M',  
+                  WSC_station=None, basin_list=None, filename=None, prefix=None, scalefactors=None, 
+                  metadata=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None or ( filename is None and station is None and well is None ): raise ArgumentError
@@ -150,7 +152,9 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
 
   # now determine start vardata for date_parser
   if end_date is None: 
-      if start_date and run_period: end_date = start_date + run_period 
+      if start_date and run_period: 
+          start_year,start_month,start_day = convertDate(start_date)
+          end_date = start_year + run_period 
       elif period: end_date = period[1]
       else: raise ArgumentError("Need to specify either 'start_date' & 'run_period' or 'period' to infer 'end_date'.")
   end_year,end_month,end_day = convertDate(end_date)
@@ -159,20 +163,29 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
       elif period: start_date = period[0]
       else: raise ArgumentError("Need to specify either 'end_date' & 'run_period' or 'period' to infer 'start_date'.")
   start_year,start_month,start_day = convertDate(start_date)
-  if start_day != 1 or end_day != 1: 
-    raise NotImplementedError('Currently only monthly vardata is supported.')
   # generate regular monthly time steps
-  start_datetime = np.datetime64(dt.datetime(year=start_year, month=start_month, day=start_day), 'M')
-  end_datetime = np.datetime64(dt.datetime(year=end_year, month=end_month, day=end_day), 'M')
-  time_monthly = np.arange(start_datetime, end_datetime+np.timedelta64(1, 'M'), dtype='datetime64[M]')
-  assert time_monthly[0] == start_datetime, time_monthly[0]
-  assert time_monthly[-1] == end_datetime, time_monthly[-1] 
+  start_datetime = np.datetime64(dt.datetime(year=start_year, month=start_month, day=start_day), resample)
+  end_datetime = np.datetime64(dt.datetime(year=end_year, month=end_month, day=end_day), resample)
+  time_resampled = np.arange(start_datetime, end_datetime+np.timedelta64(1, resample), dtype='datetime64[{}]'.format(resample))
+  assert time_resampled[0] == start_datetime, time_resampled[0]
+  assert time_resampled[-1] == end_datetime, time_resampled[-1] 
   # construct time axis
-  start_time = 12*(start_year - 1979) + start_month -1
-  end_time = 12*(end_year - 1979) + end_month -1
-  time = Axis(name='time', units='month', atts=dict(long_name='Month since 1979-01'), 
-              coord=np.arange(start_time, end_time)) # not including the last, e.g. 1979-01 to 1980-01 is 12 month
-  assert len(time_monthly) == end_time-start_time+1
+  if time_axis.lower() == 'simple':
+      start_time = 12*(start_year - 1979) + start_month -1
+      end_time = 12*(end_year - 1979) + end_month -1
+      time = Axis(name='time', units='month', atts=dict(long_name='Month since 1979-01'), 
+                  coord=np.arange(start_time, end_time)) # not including the last, e.g. 1979-01 to 1980-01 is 12 month
+      assert len(time_resampled) == end_time-start_time+1
+  elif time_axis.lower() == 'datetime':
+      if resample.lower() == 'y': units = 'year'
+      elif resample.lower() == 'm': units = 'month'
+      elif resample.lower() == 'd': units = 'day'
+      elif resample.lower() == 'h': units = 'hour'
+      else: units = resample
+      long_name = '{}s since {}'.format(units.title(),str(time_resampled[0])) # hope this makes sense...
+      time = Axis(name='time', units=units, atts=dict(long_name=long_name), coord=time_resampled[:-1])
+  else:
+      raise ArgumentError(time_axis)
 
   ## load vardata
   # now assemble file name for station timeseries
@@ -257,7 +270,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
           raise DataError("Missing values (NaN) encountered in timeseries file; use 'lskipNaN' to ignore.\n('{:s}')".format(filepath))    
   
   # call function to interpolate irregular HGS timeseries to regular monthly timseries  
-  data = interpolateIrregular(old_time=time_series, data=data, new_time=time_monthly, start_date=start_datetime, 
+  data = interpolateIrregular(old_time=time_series, data=data, new_time=time_resampled, start_date=start_datetime, 
                                    lkgs=lkgs, lcheckComplete=lcheckComplete, usecols=varcols, interp_kind='linear', fill_value=np.NaN)
   assert data.shape[0] == len(time), (data.shape,len(time),len(variable_order))
   
@@ -404,7 +417,7 @@ if __name__ == '__main__':
 #   hgs_station = 'Station_GR_Brantford'; WSC_station = 'Grand River_Brantford'
   # V3 GRW model
   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_v3_wrfpet'
-#   hgs_station = '{WSC_ID0:s}'; WSC_station = 'Grand River_Brantford'
+  hgs_station = '{WSC_ID0:s}'; WSC_station = 'Grand River_Brantford'
 #   hgs_station = 'water_balance'; WSC_station = None
 #   hgs_station = 'newton_info'; WSC_station = None
   hgs_well = 'W0000347_3'
@@ -412,7 +425,8 @@ if __name__ == '__main__':
 
 
 #   test_mode = 'gage_station'
-  test_mode = 'dataset'
+#   test_mode = 'dataset'
+  test_mode = 'time_axis'
 #   test_mode = 'ensemble'
 
 
@@ -422,7 +436,38 @@ if __name__ == '__main__':
     ds = loadWSC_StnTS(station=WSC_station, basin=basin_name, period=(1974,2004), 
                             basin_list=basin_list, filetype='monthly', scalefactors=1e-3)
     print(ds)
+  
+  elif test_mode == 'time_axis':
+
+    hgs_name = 'HGS-{BASIN:s}' # will be expanded
+#       hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
+#       hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/NRCan/annual_15/hgs_run'
     
+
+    # load dataset
+    lkgs = True
+    dataset = loadHGS_StnTS(station=hgs_station, well=None, folder=hgs_folder, layers=None, #[16,17,18], 
+                            start_date='1979-01-01', end_date='1989-01-01', time_axis='datetime', resample='D',
+                            basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, lkgs=lkgs,
+                            lskipNaN=True, lcheckComplete=True, varlist='default', scalefactors=1e-4,
+                            PRD='', DOM=2, CLIM='clim_15', BC='AABC_', EXP='erai-g', name='{EXP:s} ({BASIN:s})')
+    # N.B.: there is not record of actual calendar time in HGS, so periods are anchored through start_date/run_period
+    # and print
+    print(dataset)
+    print('')
+    print(dataset.name)
+    print(dataset.prettyPrint(short=True))
+    
+    # some view time axis
+    print('')
+    print(dataset.time)
+    print(dataset.time[:])
+
+#     # test climatology... currently only works with month
+#     print('')
+#     clim = dataset.climMean()
+#     print(clim)
+  
   elif test_mode == 'dataset':
 
     hgs_name = 'HGS-{BASIN:s}' # will be expanded

@@ -191,16 +191,18 @@ def loadXLS(well=None, filename=None, filename_pattern='W{WELL_ID:03d}{TAG}.xlsx
   return df
 
 # function to meta data from database file
-def loadMetadata(well, filename='metadata.dbf', wellname='W{WELL_ID:07d}-{WELL_NO:1d}', folder=grca_folder):
+def loadMetadata(well, filename='metadata.dbf', wellname='W{WELL_ID:07d}-{WELL_NO:1d}', 
+                 llistWells=False, folder=grca_folder):
   # clean up well name
   well_id, well_no = getWellName(well)
   well = wellname.format(WELL_ID=well_id, WELL_NO=well_no)
   # open database and get relevant entry
   #from simpledbf import Dbf5
   from dbfread import DBF
-  table = DBF(os.path.join(grca_folder,filename))
+  table = DBF(os.path.join(folder,filename))
   meta = None
   for record in table:
+      if llistWells: print(record['PGMN_WELL'])
       if record['PGMN_WELL'] == well: 
           meta = record.copy()
   if meta is None: 
@@ -229,9 +231,9 @@ def loadMetadata(well, filename='metadata.dbf', wellname='W{WELL_ID:07d}-{WELL_N
 if __name__ == '__main__':
     
 #   mode = 'test_climatology'
-  mode = 'test_timeseries'
+#   mode = 'test_timeseries'
 #   mode = 'convert_XLS'
-#   mode = 'test_load_XLS'
+  mode = 'test_load_XLS'
   
   # do some tests
   if mode == 'test_climatology':
@@ -322,12 +324,14 @@ if __name__ == '__main__':
   ## test load function for XLS files
   elif mode == 'test_load_XLS': 
 
-#     # load Metadata
-#     meta = loadMetadata(well='W178', )
-#     # inspect dictionary
-#     for item in meta.items(): print(item)
+      # print Metadata for South Nation Watershed
+      meta = loadMetadata(well='W350-3', llistWells=True, 
+                          folder='C:/Users/aerler/Data/GRCA/SNCA Data/')
+      # inspect dictionary
+      print('')
+      for item in meta.items(): print(item)
   
-      # load timeseries data from XLS files
-      data = loadXLS(well='W347-3')
-      # inspect data
-      print(data)
+#       # load timeseries data from XLS files
+#       data = loadXLS(well='W347-3')
+#       # inspect data
+#       print(data)

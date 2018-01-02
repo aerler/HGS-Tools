@@ -19,7 +19,10 @@ from datasets.WSC import GageStationError
 # a function to resolve a data
 def convertDate(date):
   ''' convert a data into a common format '''
-  if isinstance(date, (tuple,list)):
+  if isinstance(date, basestring):
+    date = pd.to_datetime(date)
+    year = date.year; month = date.month; day = date.day
+  elif isinstance(date, (tuple,list)):
     year = date[0] # need these for time axis (day not really...)
     month = date[1] if len(date) > 1 else 1
     day = date[2] if len(date) > 2 else 1
