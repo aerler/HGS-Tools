@@ -29,7 +29,7 @@ def writeEnKFini(enkf_folder=None, prefix=None, input_folders=None, glob_pattern
     prefixo = prefix + 'o'
     # loop over OM and OLF
     pm_file = os.path.join(enkf_folder,'inihead.dat'); pm_data = []
-    olf_file = os.path.join(enkf_folder,'headolf.dat'); olf_data = []
+    olf_file = os.path.join(enkf_folder,'iniheadolf.dat'); olf_data = []
     ## load data
     # loop over folders and timesteps
     npm = None; nolf = None
@@ -57,6 +57,15 @@ def writeEnKFini(enkf_folder=None, prefix=None, input_folders=None, glob_pattern
                 raise ValueError("Total number of nodes does not match in input files: {} != {}".format(nolf,tmp))
             head_olf = reader.read_var("head_olf", nolf)
             olf_data.append(head_olf.values)
+            # read number of elements for printing later
+            if lfeedback:
+                nepm = len(reader.read_elements('pm'))
+                neolf = len(reader.read_elements('olf'))
+    # print number of elements
+    if lfeedback:
+        print("Number of PM elements: {}".format(nepm))
+        print("Number of OLF elements: {}".format(neolf))
+        print('')
     # assemble data into arrays and transpose 
     # N.B.: in the EnKF IC file the rows are nodes and the columns are realisations
     pm_data = np.stack(pm_data).squeeze().transpose()
@@ -203,9 +212,9 @@ if __name__ == '__main__':
     # execution taskes
     tasks = []
 #     tasks += ['test_read_kister']
-#     tasks += ['write_ic_file']
+    tasks += ['write_ic_file']
 #     tasks += ['write_bdy_file']
-    tasks += ['write_obs_file']
+#     tasks += ['write_obs_file']
 
     if 'test_read_kister' in tasks:
       
@@ -261,7 +270,7 @@ if __name__ == '__main__':
         datelist = pd.date_range(pd.to_datetime(time_sampling[0]), pd.to_datetime(time_sampling[1]), 
                                  freq=time_sampling[2]) 
         ntime = len(datelist) 
-        stderr = 0.25 # observation error
+        stderr = 0.1 # observation error
         missing = 99999 # larger than 10,000 indicates missing value
         # actual observation wells
         obs_wells = [
@@ -273,7 +282,7 @@ if __name__ == '__main__':
                      dict(name='W350-2', z=106.81, sheet=3, node= 7685, csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
                      dict(name='W350-2', z=109.93, sheet=4, node=10569, csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
                      # W350-3, 87.33-96.73m, sheet 2 (2-3 according to Omar)
-                     dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=1.5, # very unreliable well 
+                     dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=0.3, # very unreliable well 
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-3.csv'),
                      ]
         for obs_well in obs_wells:
@@ -288,7 +297,8 @@ if __name__ == '__main__':
                 obs_well['data'] = np.ones((ntime,))*missing
         
         # create boundary files
-        obs_file = writeEnKFobs(enkf_folder=enkf_folder, obs_wells=obs_wells, stderr=stderr)
+        obs_file = writeEnKFobs(enkf_folder=enkf_folder, obs_wells=obs_wells, stderr=stderr,
+                                filename='obs_head.dat' if lreal else 'fake_head.dat')
         if not os.path.exists(obs_file): raise IOError(obs_file)
         
         

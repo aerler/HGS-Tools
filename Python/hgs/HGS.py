@@ -76,9 +76,9 @@ hgs_varmap = {value['name']:key for key,value in variable_attributes_mms.items()
 ## function to load HGS station timeseries
 def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varatts=None, folder=None, name=None, 
                   title=None, lcheckComplete=True, start_date=None, end_date=None, run_period=None, period=None, 
-                  lskipNaN=False, basin=None, lkgs=True, z_axis='z', time_axis='simple', resample='M',  
-                  WSC_station=None, basin_list=None, filename=None, prefix=None, scalefactors=None, 
-                  metadata=None, **kwargs):
+                  lskipNaN=False, basin=None, lkgs=True, z_axis='z', time_axis='simple', resample='M', 
+                  llastIncl=False, WSC_station=None, basin_list=None, filename=None, prefix=None, 
+                  scalefactors=None, metadata=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None or ( filename is None and station is None and well is None ): raise ArgumentError
@@ -166,6 +166,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
   # generate regular monthly time steps
   start_datetime = np.datetime64(dt.datetime(year=start_year, month=start_month, day=start_day), resample)
   end_datetime = np.datetime64(dt.datetime(year=end_year, month=end_month, day=end_day), resample)
+  if llastIncl: end_datetime += np.timedelta64(1, resample)
   time_resampled = np.arange(start_datetime, end_datetime+np.timedelta64(1, resample), dtype='datetime64[{}]'.format(resample))
   assert time_resampled[0] == start_datetime, time_resampled[0]
   assert time_resampled[-1] == end_datetime, time_resampled[-1] 
@@ -445,10 +446,11 @@ if __name__ == '__main__':
     
 
     # load dataset
-    lkgs = True
     dataset = loadHGS_StnTS(station=hgs_station, well=None, folder=hgs_folder, layers=None, #[16,17,18], 
-                            start_date='1979-01-01', end_date='1989-01-01', time_axis='datetime', resample='D',
-                            basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, lkgs=lkgs,
+                            start_date='1979-01-01', time_axis='datetime', resample='D', 
+#                             end_date='1988-12-31', llastIncl=True,
+                            end_date='1989-01-01', llastIncl=False,
+                            basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, lkgs=False,
                             lskipNaN=True, lcheckComplete=True, varlist='default', scalefactors=1e-4,
                             PRD='', DOM=2, CLIM='clim_15', BC='AABC_', EXP='erai-g', name='{EXP:s} ({BASIN:s})')
     # N.B.: there is not record of actual calendar time in HGS, so periods are anchored through start_date/run_period
@@ -458,10 +460,15 @@ if __name__ == '__main__':
     print(dataset.name)
     print(dataset.prettyPrint(short=True))
     
-    # some view time axis
+    # view time axis
     print('')
     print(dataset.time)
     print(dataset.time[:])
+
+    # some variable
+    print('')
+    print(dataset.discharge)
+    print(dataset.discharge.plot)
 
 #     # test climatology... currently only works with month
 #     print('')
