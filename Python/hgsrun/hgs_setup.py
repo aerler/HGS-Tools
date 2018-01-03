@@ -543,7 +543,7 @@ class HGS(Grok):
     # prepare linked folders
     if linked_folders is None: linked_folders = ('etprop', 'gb', 'icbc', 'prop', 'soil', # original 
                                                  'grid', 'init_con', 'K_maps', 'landcover', 'mprops', 'node_lists', # extended
-                                                 'pks_table', 'retent_tables', 'inc', # even more...
+                                                 'pks_table', 'retent_tables', 'inc','Streams', # even more...
                                                  'et_props', 'mpropgen', 'observation_data', 'soil_zones', 'zone_assignment',)
     linked_folders = tuple(lf[:-1] if lf[-1] == '/' else lf for lf in linked_folders) # trim slash
     self.linked_folders = linked_folders
