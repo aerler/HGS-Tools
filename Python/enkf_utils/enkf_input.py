@@ -40,7 +40,7 @@ def writeEnKFini(enkf_folder=None, prefix=None, input_folders=None, glob_pattern
             raise IOError(glob_path)
         # loop over file list and load data
         for ic_file in filelist:
-            idx = int(ic_file[-1*len(glob_pattern):]) # get index number
+            idx = int(ic_file[-4:]) # get index number
             reader = binary.IO(prefixo,os.path.dirname(ic_file),idx)
             # extract data and validate PM data
             coords_pm = reader.read_coordinates_pm()
@@ -183,7 +183,7 @@ def writeEnKFobs(enkf_folder=None, obs_wells=None, filename='obs_head.dat', stde
     # write to file
     with open(filepath, 'w') as f:
         f.write(header)
-        np.savetxt(f, data, delimiter='   ')
+        np.savetxt(f, data, delimiter=' ', fmt=' %.18f ')
     if lfeedback: print("\nWrote observation well data to file:\n '{}'".format(filepath))
     # return filepath
     return filepath
@@ -202,6 +202,8 @@ def readKister(filepath=None, period=None, resample='1D', missing=None, header=3
     if period and resample and lpad:
         # extend time axis/index, if necessary, and pad with missing values
         df = df.reindex(pd.date_range(begin,end, freq=resample))
+    if missing:
+        df[np.isnan(df)] = missing 
     if lvalues: data = df.values.squeeze()
     else: data = df 
     # return data as pandas dataframe or as numpy array
@@ -211,18 +213,18 @@ def readKister(filepath=None, period=None, resample='1D', missing=None, header=3
 if __name__ == '__main__':
     
     ## settings
-#     # available range
-#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/' # folder where files a written
-#     date_range = ('2017-05-01', '2017-12-31', '1D') # date range for files
-#     glob_pattern = '015?'
+    # available range
+    folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_may/' # folder where files a written
+    date_range = ('2017-05-01', '2017-12-31', '1D') # date range for files
+    glob_pattern = '00[012]?' # first 30 x 2
     # just december
-    folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_december/' # folder where files a written
-    date_range = ('2017-12-01', '2017-12-31', '1D') # date range for files
-    glob_pattern = '0215' # output timesteps to use for initial conditions
+#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_december/' # folder where files a written
+#     date_range = ('2017-12-01', '2017-12-31', '1D') # date range for files
+#     glob_pattern = '021?' # output timesteps to use for initial conditions; 0215 is Dec. 1st
     
     # work folder setup
     if not os.path.exists(folder): os.mkdir(folder)
-    input_folder = 'input_deterministic/'
+    input_folder = 'input_data/'
     enkf_folder = os.path.join(folder,input_folder)
     if not os.path.exists(enkf_folder): os.mkdir(enkf_folder)
 
@@ -263,6 +265,9 @@ if __name__ == '__main__':
                                                 input_folders=input_folders, glob_pattern=glob_pattern)
         if not os.path.exists(pm_file): raise IOError(pm_file)
         if not os.path.exists(olf_file): raise IOError(olf_file)
+        
+        # create dummy file for initial K values (not read, but still needed)
+        open(os.path.join(enkf_folder,'k_dummy.dat'), 'w').close()
                 
         print('\n===\n')
     
