@@ -128,18 +128,39 @@ def writeTimeValue(filepath=None, times=None, values=None):
             
 
 if __name__ == '__main__':
-    
-    # execution mode
-    mode = 'write_time_inc'
-#     mode = 'write_raster_inc'
-#     mode = 'raster_average'
+  
+    # patch symlink on Windows
+    from hgsrun.misc import symlink_ms
+    if os.name == "nt":
+      os.symlink = symlink_ms # replace os symlink with this function
 
-    if mode == 'write_time_inc':
+    ## settings
+#     # available range
+#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/forcing/' # folder where files a written
+#     date_range = ('2017-05-01', '2017-12-31', '1D') # date range for files
+    # just december
+    folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_december/' # folder where files a written
+    date_range = ('2017-12-01', '2017-12-31', '1D') # date range for files
+    
+    # work folder setup
+    if not os.path.exists(folder): os.mkdir(folder)
+    forcing_folder = 'D:/Data/HGS/SNW/EnKF/TWC/forcing/HistoricDailyTransientRaster_TWC/'
+    local_forcing_folder = 'climate_forcing'
+    if not os.path.exists(os.path.join(folder,local_forcing_folder)):
+        os.symlink(forcing_folder,os.path.join(folder,local_forcing_folder))
+    
+    # task execution
+    tasks = []
+    tasks += ['write_time_inc'  ]
+    tasks += ['write_raster_inc']
+    tasks += ['raster_average'  ]
+
+    if 'write_time_inc' in tasks:
       
         # definitions
-        folder = 'D:/Data/HGS/SNW/EnKF/TWC/forcing/'
+        #folder = 'D:/Data/HGS/SNW/EnKF/TWC/forcing/'
         inc_file = 'output.inc'
-        date_range = ('2017-05-01', '2017-12-31', '1D')
+        #date_range = ('2017-05-01', '2017-12-31', '1D')
         
         os.chdir(folder)
         # write file
@@ -147,14 +168,17 @@ if __name__ == '__main__':
         writeTimeTable(inc_file, date_range=date_range, lfeedback=True)
         if not os.path.exists(inc_file): 
             raise IOError(inc_file)
-    
-    elif mode == 'write_raster_inc':
+        
+        print('\n===\n')
+
+    if 'write_raster_inc' in tasks:
       
         # definitions
-        folder = 'D:/Data/HGS/SNW/EnKF/TWC/forcing/'
-        inc_files = {'precip.inc':'HistoricDailyTransientRaster_TWC/RainPLUSsnowmelt_{:s}.asc', 
-                     'pet.inc':'HistoricDailyTransientRaster_TWC/PET_{:s}.asc'}
-        date_range = ('2017-05-01', '2017-12-31', '1D')
+        #folder = 'D:/Data/HGS/SNW/EnKF/TWC/forcing/'
+        
+        inc_files = {'precip.inc':local_forcing_folder+'/RainPLUSsnowmelt_{:s}.asc', 
+                     'pet.inc':local_forcing_folder+'/PET_{:s}.asc'}
+        #date_range = ('2017-05-01', '2017-12-31', '1D')
         
         os.chdir(folder)
         # loop over file types
@@ -164,12 +188,13 @@ if __name__ == '__main__':
             writeTimeRaster(inc_file, date_range=date_range, filepattern=filepattern, lfeedback=True)
             if not os.path.exists(inc_file): 
                 raise IOError(inc_file)
-        
-    
-    elif mode == 'raster_average':
+            
+        print('\n===\n')
+
+    if 'raster_average' in tasks:
       
         # ascii data
-        folder = 'D:/Data/HGS/SNW/EnKF/TWC/forcing/'
+        #folder = 'D:/Data/HGS/SNW/EnKF/TWC/forcing/'
         inc_files = {'precip.inc':'precip_values.inc', 'pet.inc':'pet_values.inc'}
         # shape data
         shape_name = 'WholePRW' # Payne River Watershed
@@ -204,6 +229,6 @@ if __name__ == '__main__':
             writeTimeValue(filepath=new_inc_file, times=times, values=timeseries)
             print(new_inc_file); print('')
             if not os.path.exists(new_inc_file):
-                raise IOError(new_inc_file)
+                raise IOError(new_inc_file)        
         
-        
+        print('\n===\n')
