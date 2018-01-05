@@ -8,6 +8,7 @@ Survey of Canada; the vardata is stored in human-readable text files and tables.
 '''
 
 # external imports
+import datetime as dt
 import numpy as np
 import os
 # internal imports
@@ -15,7 +16,6 @@ from geodata.misc import ArgumentError, VariableError, DataError, isNumber, Data
 from datasets.common import BatchLoad, getRootFolder
 from geodata.base import Dataset, Variable, Axis, concatDatasets
 from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS, updateScalefactor
-import datetime as dt
 # local imports
 from hgs.misc import interpolateIrregular, convertDate, parseObsWells
 # import filename patterns
