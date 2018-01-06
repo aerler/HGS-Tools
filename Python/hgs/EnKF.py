@@ -21,6 +21,7 @@ from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS, update
 from hgs.misc import convertDate
 from enkf_utils.enkf_input import readKister
 from enkf_utils.enkf_output import loadHydro, loadObs 
+from cloudpickle.cloudpickle import instance
 
 ## EnKF Meta-vardata
 
@@ -32,13 +33,18 @@ variable_attributes = dict()
 # hydrograph variables
 class Hydro(object):
     name = 'hydro'
-    atts = dict(discharge_mms = dict(name='discharge', units='m^3/s', atts=dict(long_name='Surface Flow Rate')), 
-                discharge_kgs = dict(name='discharge', units='kg/s', atts=dict(long_name='Surface Flow Rate')),)
+    atts = dict(discharge = dict(name='discharge', units='m^3/s', atts=dict(long_name='Surface Flow Rate')),)
+    varlist = ['discharge']
 variable_attributes.update(Hydro.atts)
 # observation wells
 class Obs(object):
     name = 'obs'
-    atts = dict(head = dict(name='head', units='m', atts=dict(long_name='Pressure Head at Well')),)
+    atts = {'h-meas': dict(name='hobs', units='m', atts=dict(long_name='Observed Total Head')),
+            'h-pert': dict(name='hper', units='m', atts=dict(long_name='Perturbed Observed Head')),
+            'pert'  : dict(name='hdif', units='m', atts=dict(long_name='Total Head Difference')),
+            'h-sim' : dict(name='hsim', units='m', atts=dict(long_name='Simulated Total Head')),
+            'h-anal': dict(name='hana', units='m', atts=dict(long_name='Analyzed Total Head')),}
+    varlist = ['hobs','hper','hdif','hsim','hana'] # order in file
 variable_attributes.update(Obs.atts)
 # axes
 class Axes(object):    
@@ -50,6 +56,7 @@ class Axes(object):
                 observation = dict(name='observation', units='#', dtype=np.int64, atts=dict(long_name='Observation Number')),
                 )
 variable_attributes.update(Axes.atts)
+
 
 # helper functions
 
@@ -95,7 +102,7 @@ def timeAxis(start_date=None, end_date=None, sampling=None, date_range=None, tim
 
 
 ## function to load HGS station timeseries
-def loadEnKF_StnTS(folder=None, varlist='default', varatts=None, name='enkf', title='EnKF', basin=None,  
+def loadEnKF_StnTS(folder=None, varlist='all', varatts=None, name='enkf', title='EnKF', basin=None,  
                    start_date=None, end_date=None, sampling=None, period=None, date_range=None,  
                    llastIncl=True, WSC_station=None, basin_list=None, filenames=None, prefix=None, 
                    time_axis='datetime', scalefactors=None, metadata=None, lkgs=False, out_dir='out/', 
@@ -104,9 +111,17 @@ def loadEnKF_StnTS(folder=None, varlist='default', varatts=None, name='enkf', ti
     out_folder = os.path.join(folder,'out/') # default output folder
     if not os.path.exists(out_folder): raise IOError(out_folder)
     # default values
-    if isinstance(varlist,basestring) and varlist == 'default': 
-        varlist = ['discharge']
+    if isinstance(varlist,basestring) and varlist == 'hydro': 
+        varlist = Hydro.varlist
+    elif isinstance(varlist,basestring) and varlist == 'obs': 
+        varlist = Obs.varlist
+    elif isinstance(varlist,basestring) and varlist == 'all':
+        varlist = Hydro.varlist + Obs.varlist
+    elif not instance(varlist,(tuple,list)): 
+        raise TypeError(varlist)
     if varatts is None: varatts = variable_attributes.copy()
+    varmap = {varatt['name']:enkf_name for enkf_name,varatt in varatts.items()} 
+    varlist = [varmap[var] for var in varlist]
     # figure out time axis
     time = timeAxis(start_date=start_date, end_date=end_date, sampling=sampling, date_range=date_range, 
                     time_axis=time_axis, llastIncl=llastIncl, ntime=ntime, varatts=varatts)
@@ -115,9 +130,30 @@ def loadEnKF_StnTS(folder=None, varlist='default', varatts=None, name='enkf', ti
     pass 
     # initialize Dataset
     dataset = Dataset(name=name, title=title if title else name.title(), atts=metadata)
-    ensemble = None
+    ensemble = None; observation = None
     # load observation/innovation data
-    pass
+    if any([var in Obs.atts for var in varlist]):
+        # load data
+        vardata = loadObs(varlist=[var for var in varlist if var in Obs.atts], 
+                          folder=out_folder, lpandas=False)
+        # create Axes
+        ntime,nobs,nreal = vardata.values()[0].shape
+        if ensemble is None:
+            # construct ensemble axis
+            ensemble = Axis(atts=varatts['ensemble'], coord=np.arange(1, nreal+1))
+        elif len(ensemble) != nreal:
+            raise AxisError(ensemble)
+        if observation is None:
+            # construct ensemble axis
+            observation = Axis(atts=varatts['observation'], coord=np.arange(1, nobs+1))
+        elif len(observation) != nobs:
+            raise AxisError(observation)
+        # create variables
+        for varname,data in vardata.items():
+            dataset += Variable(atts=varatts[varname], data=data, axes=(time,observation,ensemble))
+        # load YAML data, if available
+        
+          
     # load discharge/hydrograph data
     if 'discharge' in varlist:
         data = loadHydro(folder=out_folder, nreal=nreal, ntime=ntime)
@@ -127,10 +163,11 @@ def loadEnKF_StnTS(folder=None, varlist='default', varatts=None, name='enkf', ti
             ensemble = Axis(atts=varatts['ensemble'], coord=np.arange(1, nreal+1))
         elif len(ensemble) != nreal:
             raise AxisError(ensemble)
-        if lkgs: data *= 1000.
-        dataset += Variable(atts=varatts['discharge_kgs' if lkgs else 'discharge_mms'],
-                            data=data, axes=(time,ensemble))  
-    
+        atts = varatts['discharge']
+        if lkgs: 
+            data *= 1000.
+            if atts['units'] == 'm^3/s': atts['units'] = 'kg/s' 
+        dataset += Variable(atts=atts, data=data, axes=(time,ensemble))      
     # return formatted Dataset 
     if scalefactors is not None and scalefactors != 1: raise NotImplementedError
     return dataset
@@ -167,9 +204,11 @@ def loadKister_StnTS(station=None, well=None, folder=None, varlist='default', va
         else: filepath = station
         data = readKister(filepath=filepath, period=(start_date,end_date), resample=sampling, lvalues=True)
         ntime = len(data)
-        if lkgs: data *= 1000.
-        dataset += Variable(atts=varatts['discharge_kgs' if lkgs else 'discharge_mms'],
-                            data=data, axes=(time,))            
+        atts = varatts['discharge']
+        if lkgs: 
+            data *= 1000.
+            if atts['units'] == 'm^3/s': atts['units'] = 'kg/s' 
+        dataset += Variable(atts=atts, data=data, axes=(time,))            
     # return formatted Dataset 
     if scalefactors is not None and scalefactors != 1: raise NotImplementedError
     return dataset

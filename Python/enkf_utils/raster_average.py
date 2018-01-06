@@ -136,11 +136,11 @@ if __name__ == '__main__':
 
     ## settings
     # available range
-    folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_may/' # folder where files a written
-    date_range = ('2017-05-01', '2017-12-31', '1D') # date range for files
+#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_may/' # folder where files a written
+#     date_range = ('2017-05-01', '2017-12-31', 'D') # date range for files
 #     # just december
-#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_december/' # folder where files a written
-#     date_range = ('2017-12-01', '2017-12-31', '1D') # date range for files
+    folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_december/' # folder where files a written
+    date_range = ('2017-12-01', '2017-12-31', 'D') # date range for files
     
     # work folder setup
     if not os.path.exists(folder): os.mkdir(folder)
