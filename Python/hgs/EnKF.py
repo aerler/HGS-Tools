@@ -7,10 +7,10 @@ This module contains meta data and access functions for EnKF output files.
 '''
 
 # external imports
+import os, yaml
 import datetime as dt
 import numpy as np
 import pandas as pd
-import os
 # GeoPy imports
 from datasets.common import getRootFolder
 from geodata.misc import ArgumentError, VariableError, DataError, isNumber, DatasetError,\
@@ -39,13 +39,24 @@ variable_attributes.update(Hydro.atts)
 # observation wells
 class Obs(object):
     name = 'obs'
-    atts = {'h-meas': dict(name='hobs', units='m', atts=dict(long_name='Observed Total Head')),
-            'h-pert': dict(name='hper', units='m', atts=dict(long_name='Perturbed Observed Head')),
-            'pert'  : dict(name='hdif', units='m', atts=dict(long_name='Total Head Difference')),
-            'h-sim' : dict(name='hsim', units='m', atts=dict(long_name='Simulated Total Head')),
-            'h-anal': dict(name='hana', units='m', atts=dict(long_name='Analyzed Total Head')),}
-    varlist = ['hobs','hper','hdif','hsim','hana'] # order in file
+    atts = {'h-meas': dict(name='h_obs', units='m', atts=dict(long_name='Observed Total Head')),
+            'h-pert': dict(name='h_per', units='m', atts=dict(long_name='Perturbed Observed Head')),
+            'pert'  : dict(name='h_dif', units='m', atts=dict(long_name='Total Head Difference')),
+            'h-sim' : dict(name='h_sim', units='m', atts=dict(long_name='Simulated Total Head')),
+            'h-anal': dict(name='h_ana', units='m', atts=dict(long_name='Analyzed Total Head')),}
+    varlist = ['h_obs','h_per','h_dif','h_sim','h_ana'] # order in file
 variable_attributes.update(Obs.atts)
+# meta data /constants for observation wells
+class ObsMeta(object):
+    name = 'obs_meta'
+    atts = dict(name  = dict(name='well_name', units='',  atts=dict(long_name='Designation of Observation Well')),
+                z     = dict(name='z_node',    units='m', atts=dict(long_name='Elevation of Observation Point')),
+                sheet = dict(name='sheet',     units='#', atts=dict(long_name='Grid Sheet of Observation Point')),
+                node  = dict(name='node',      units='#', atts=dict(long_name='Node Number of Observation Point')),
+                error = dict(name='h_error',   units='m', atts=dict(long_name='Total Head Error of Observation')),
+                bias  = dict(name='h_bias',    units='m', atts=dict(long_name='Total Head Bias of Observation')),)
+    varlist = ['well_name', 'z_node', 'sheet', 'node', 'h_bias',]
+variable_attributes.update(ObsMeta.atts)
 # axes
 class Axes(object):    
     name = 'axes'
@@ -106,7 +117,7 @@ def loadEnKF_StnTS(folder=None, varlist='all', varatts=None, name='enkf', title=
                    start_date=None, end_date=None, sampling=None, period=None, date_range=None,  
                    llastIncl=True, WSC_station=None, basin_list=None, filenames=None, prefix=None, 
                    time_axis='datetime', scalefactors=None, metadata=None, lkgs=False, out_dir='out/', 
-                   nreal=None, ntime=None, **kwargs):
+                   yaml_file='../input_data/obs_meta.yaml', lYAML=True, nreal=None, ntime=None, **kwargs):
     ''' load EnKF ensemble data as formatted GeoPy Dataset '''
     out_folder = os.path.join(folder,'out/') # default output folder
     if not os.path.exists(out_folder): raise IOError(out_folder)
@@ -152,8 +163,25 @@ def loadEnKF_StnTS(folder=None, varlist='all', varatts=None, name='enkf', title=
         for varname,data in vardata.items():
             dataset += Variable(atts=varatts[varname], data=data, axes=(time,observation,ensemble))
         # load YAML data, if available
-        
-          
+        if lYAML:
+            # load YAML file
+            yaml_path = os.path.join(out_folder,yaml_file)
+            if not os.path.exists(yaml_path): raise IOError(yaml_path)
+            with open(yaml_path, 'r') as yf:
+                obs_meta = yaml.load(yf)
+            if obs_meta is None: raise IOError(yaml_path) # not a YAML file? 
+            # constant create variables            
+            for cvar,cval in obs_meta[0].items():
+                if isinstance(cval,basestring): dtype,missing = np.string_,''
+                elif isinstance(cval, (np.integer,int)): dtype,missing = np.int_,0
+                elif isinstance(cval, (np.inexact,float)): dtype,missing = np.float_,np.NaN
+                else: dtype = None # skip
+                if dtype:
+                    data = np.asarray([missing if obs[cvar] is None else obs[cvar] for obs in obs_meta], 
+                                      dtype=dtype)
+                    if cvar in varatts: atts = varatts[cvar]
+                    else: atts = dict(name=cvar, units='')
+                    dataset += Variable(atts=atts, data=data, axes=(observation,))
     # load discharge/hydrograph data
     if 'discharge' in varlist:
         data = loadHydro(folder=out_folder, nreal=nreal, ntime=ntime)
@@ -217,12 +245,12 @@ def loadKister_StnTS(station=None, well=None, folder=None, varlist='default', va
 if __name__ == '__main__':
     
     ## settings
-#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test_open_dec/' # experiment folder
+    folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test_open_dec/' # experiment folder
 #     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test_closed_dec/' # experiment folder
-#     date_range = ('2017-12-01', '2017-12-31', 'D'); ntime = None
+    date_range = ('2017-12-01', '2017-12-31', 'D'); ntime = None
 
-    folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test_closed_may/' # experiment folder
-    date_range = ('2017-05-01', '2017-12-31', 'D'); ntime = 166
+#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test_closed_may/' # experiment folder
+#     date_range = ('2017-05-01', '2017-12-31', 'D'); ntime = 166
     
     # check sample folder
     if not os.path.exists(folder): raise IOError(folder)
