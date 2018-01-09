@@ -245,9 +245,9 @@ def loadKister_StnTS(station=None, well=None, folder=None, varlist='default', va
 if __name__ == '__main__':
     
     ## settings
-    folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test_open_dec/' # experiment folder
-#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test_closed_dec/' # experiment folder
-    date_range = ('2017-12-01', '2017-12-31', 'D'); ntime = None
+#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test_open_dec/' # experiment folder
+    folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test_closed_dec/' # experiment folder
+    date_range = ('2017-12-01', '2017-12-31', 'D'); ntime = 28
 
 #     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test_closed_may/' # experiment folder
 #     date_range = ('2017-05-01', '2017-12-31', 'D'); ntime = 166

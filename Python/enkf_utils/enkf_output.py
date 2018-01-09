@@ -46,6 +46,8 @@ def loadObs(filename='obs_h.dat', folder=None, varlist=None, lpandas=False):
     filepath = os.path.join(folder,filename)
     if lpandas:
         vardata = pd.read_csv(filepath)
+        # mark missing values
+        vardata[vardata > 10000.] = np.NaN
         # N.B.: because each time step has information for all observations and 
         #       all realizations, each variable actually has three dimensions
     else:
@@ -67,6 +69,8 @@ def loadObs(filename='obs_h.dat', folder=None, varlist=None, lpandas=False):
         assert (ntime*nobs*nreal,nvars) == data.shape, (ntime,nobs,nreal,nvars)
         # reshape array
         data = data.reshape((ntime,nobs,nreal,nvars))
+        # detect missing values
+        data[data > 10000.] = np.NaN
         # pick variables
         vardata = dict()
         for varname in varlist:
@@ -84,13 +88,13 @@ if __name__ == '__main__':
     out_folder = os.path.join(folder,'out/') # default output folder
     if not os.path.exists(out_folder): raise IOError(out_folder)
     
-    mode = 'test_load_hydro'
-#     mode = 'test_load_obs'
+#     mode = 'test_load_hydro'
+    mode = 'test_load_obs'
     
     # do some tests
     if mode == 'test_load_hydro':
         
-        data = loadHydro(folder=out_folder, nreal=20, ntime=31, dtype='float64')
+        data = loadHydro(folder=out_folder, nreal=90, ntime=31, dtype='float64')
         
 #         data = data[0,:].reshape((1,20))
         print(data.mean(),data.std(axis=0).mean()) # mean and ensemble spread 

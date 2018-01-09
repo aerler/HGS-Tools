@@ -14,7 +14,7 @@ from glob import glob
 from collections import OrderedDict
 # internal/local imports
 from hgs_output import binary 
-from geodata.misc import ArgumentError
+from geodata.misc import ArgumentError, isNumber
 # Graham's package to read HGS binary data: https://github.com/Aquanty/hgs_output
 # This package requires Cython-compiled code; on Windows the easiest way to get 
 # this to work is via a Wheel installation file, which can be obtained here:
@@ -24,7 +24,7 @@ from geodata.misc import ArgumentError
 ## helper functions
 
 def readKister(filepath=None, period=None, resample='1D', missing=None, bias=None, 
-               header=3, name='value', lpad=True, lvalues=True):
+               header=3, name='value', lpad=True, lvalues=True, outliers=None):
     ''' read a Kister csv file and slice and resample timeseries '''
     df = pd.read_csv(filepath, header=header, index_col=0, parse_dates=True, names=('time',name))
     # slice
@@ -36,6 +36,9 @@ def readKister(filepath=None, period=None, resample='1D', missing=None, bias=Non
     if period and resample and lpad:
         # extend time axis/index, if necessary, and pad with missing values
         df = df.reindex(pd.date_range(begin,end, freq=resample))
+    if outliers is not None:
+        # remove values that are more than 'outliers' x standard deviation away from the mean
+        df[( ( df[name] - df[name].mean() ) / df[name].std() ).abs() > outliers] = np.NaN
     if bias is not None:
         df += bias 
     if missing:
@@ -120,10 +123,17 @@ def writeEnKFini(enkf_folder=None, prefix=None, input_folders=None, glob_pattern
   
   
 def writeEnKFbdy(enkf_folder=None, bdy_files=None, filename='flux_bc.dat', mode='deterministic', 
-                 nreal=None, scalefactors=None, default_factor=0.1, lfeedback=True):
+                 nreal=None, scalefactors=None, intermittency=None, default_factor=0.1, lfeedback=True):
     ''' read flux boundary conditions from HGS/Grok .inc files and write an EnKF broundary condition file '''
     if isinstance(bdy_files, dict): bdy_files = OrderedDict(bdy_files) 
     else: raise TypeError(bdy_files)
+    if scalefactors is None: scalefactors = dict()
+    elif isinstance(scalefactors,(np.integer,int,np.inexact,float)): 
+        default_factor = scalefactors
+        scalefactors = dict()
+    elif not isinstance(scalefactors,dict): raise TypeError(scalefactors)
+    if intermittency is None: intermittency = dict()
+    elif not isinstance(intermittency,dict): raise TypeError(intermittency)
     if not os.path.exists(enkf_folder): raise IOError(enkf_folder)
     filepath = os.path.join(enkf_folder,filename) # assemble complete path or trunk
     nbdy = len(bdy_files)
@@ -160,13 +170,34 @@ def writeEnKFbdy(enkf_folder=None, bdy_files=None, filename='flux_bc.dat', mode=
         if lfeedback: print("\nWriting 'stochastic' boundary conditions, one file per timestep:")
         if nreal is None: raise ValueError(nreal)
         # variable-dependent scale factors
-        bdy_factors = []
+        bdy_factors = []; bdy_nooccurence = []
         for bdy_file in bdy_files.keys():
             if bdy_file in scalefactors: bdy_factors.append(scalefactors[bdy_file])
             elif default_factor: bdy_factors.append(default_factor)
             else: raise ValueError(bdy_file)
+            if bdy_file in intermittency: bdy_nooccurence.append(intermittency[bdy_file])
+            else: bdy_nooccurence.append(1.) # always occur
         bdy_factors = np.asarray(bdy_factors).reshape((1,nbdy)).repeat(nreal, axis=0)
         bf_1 = 1-bdy_factors; bf_2 = 2*bdy_factors # shortcuts used below
+        # compute actual occurence
+        actual_occurence = ( bdy_data > 0 ).sum(axis=0, dtype=bdy_data.dtype) / ntime
+        if lfeedback:
+            print('Actual Occurence: {}'.format(actual_occurence))
+        actual_occurence = actual_occurence.reshape((1,nbdy)).repeat(nreal, axis=0)
+        # probability of no occurence, given actual occurence
+        bdy_nooccurence = np.asarray(bdy_nooccurence).reshape((1,nbdy)).repeat(nreal, axis=0)
+        if lfeedback:
+            print('No Occurence: {}'.format(bdy_nooccurence.mean(axis=0)))
+        # probability of occurence, given no actual occurence
+        bdy_occurence = actual_occurence * bdy_nooccurence / ( 1. - actual_occurence )
+        if lfeedback:
+            print('New Occurence: {}'.format(bdy_occurence.mean(axis=0)))
+        # generate random values        
+        mean = bdy_data.mean(axis=0)
+        std  = bdy_data.std(axis=0)
+        from scipy.stats import expon
+        fake_date = np.stack([expon.rvs(loc=mean[i], scale=std[i], size=ntime) for i in range(nbdy)], axis=1)
+        assert fake_date.shape == (ntime,nbdy), fake_date.shape
         # loop over timesteps
         filetrunk = filepath; filelist = []
         for i in range(ntime):
@@ -174,6 +205,12 @@ def writeEnKFbdy(enkf_folder=None, bdy_files=None, filename='flux_bc.dat', mode=
             # prepare data
             scalefactor = np.random.ranf((nreal,nbdy))*bf_2 + bf_1 # uniform random distribution
             rnd_data = bdy_data[i,:].reshape((1,nbdy)).repeat(nreal, axis=0) * scalefactor
+            random_occurence = fake_date[i,:].reshape((1,nbdy)).repeat(nreal, axis=0) * scalefactor
+            # make random occurences
+            lsetZero = np.logical_and( rnd_data > 0, np.random.ranf((nreal,nbdy)) < bdy_nooccurence )
+            lcreateNew = np.logical_and( rnd_data == 0, np.random.ranf((nreal,nbdy)) < bdy_occurence )
+            rnd_data[lsetZero] = 0
+            rnd_data = np.where(lcreateNew, random_occurence, rnd_data)
             # open file and write header
             with open(filepath, 'w') as f: 
                 f.writelines(header)
@@ -199,7 +236,7 @@ def writeEnKFobs(enkf_folder=None, obs_wells=None, filename='obs_head.dat', lfee
     for i,obs in enumerate(obs_wells):
         if 'error' in obs: error = obs['error']
         else: raise ValueError(obs)
-        header += '{:5d}   {:8d}   {:18f}\n'.format(i+1, obs['node'], error)
+        header += '{:5d}   {:8d}   {:18f}\n'.format(i+1, obs['node'], error**2)
         ntime = max(ntime,len(obs['data']))
     if lfeedback: print(header)
     # assemble time series
@@ -232,14 +269,14 @@ if __name__ == '__main__':
     
     ## settings
     # available range
-#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_may/' # folder where files a written
-#     date_range = ('2017-05-01', '2017-12-31', '1D') # date range for files
-#     glob_pattern = '00[012]?' # first 30 x 2
+    folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_may/' # folder where files a written
+    date_range = ('2017-05-01', '2017-12-31', '1D') # date range for files
+    glob_pattern = '00[0123]?'; nreal = 80 # first 40 x 2
     # just december
-    folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_december/' # folder where files a written
-    date_range = ('2017-12-01', '2017-12-31', '1D') # date range for files
-#     glob_pattern = '021?' # output timesteps to use for initial conditions; 0215 is Dec. 1st
-    glob_pattern = '02??' # output timesteps to use for initial conditions; 0215 is Dec. 1st
+#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_december/' # folder where files a written
+#     date_range = ('2017-12-01', '2017-12-31', '1D') # date range for files
+# #     glob_pattern = '021?' # output timesteps to use for initial conditions; 0215 is Dec. 1st
+#     glob_pattern = '02??' # output timesteps to use for initial conditions; 0215 is Dec. 1st
     
     # work folder setup
     if not os.path.exists(folder): os.mkdir(folder)
@@ -296,12 +333,13 @@ if __name__ == '__main__':
         bdy_files = {'precip.inc': os.path.join(folder,'precip_values.inc'),
                      'pet.inc'   : os.path.join(folder,'pet_values.inc'),}
         scalefactors = {'precip.inc':0.5, 'pet.inc':0.2,}
+        intemittency = {'precip.inc':0.2, 'pet.inc':0.,}
         #enkf_folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/input_deterministic/'        
         
         # create boundary files
         for mode in ('deterministic','stochastic'):
             filelist = writeEnKFbdy(enkf_folder=enkf_folder, bdy_files=bdy_files, mode=mode, 
-                                    nreal=nreal, scalefactors=scalefactors)
+                                    nreal=nreal, scalefactors=scalefactors, intermittency=intemittency)
             if isinstance(filelist,(list,tuple)):
                 for bdy_file in filelist:
                     if not os.path.exists(bdy_file): raise IOError(bdy_file)
@@ -318,25 +356,25 @@ if __name__ == '__main__':
         datelist = pd.date_range(pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1]), 
                                  freq=date_range[2]) 
         ntime = len(datelist) 
-        stderr = 0.01 # observation error
+        stderr = 0.02 # observation error
         missing = 99999 # larger than 10,000 indicates missing value
         # actual observation wells
         obs_wells = [
                      # W268-1, 48.52-61.32m, sheet 2-3, possibly 1 (1-2 according to Omar)
-                     dict(name='W268-1', z=-35.0, sheet=1, node= 2617, bias=54, 
+                     dict(name='W268-1', z=-35.0, sheet=1, node= 2617, bias=55.2, 
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-                     dict(name='W268-1', z=57.08, sheet=2, node= 5501, bias=54, 
+                     dict(name='W268-1', z=57.08, sheet=2, node= 5501, bias=55.2, 
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-                     dict(name='W268-1', z=58.08, sheet=3, node= 8385, bias=54,
+                     dict(name='W268-1', z=58.08, sheet=3, node= 8385, bias=55.2,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
                      # W350-2, 104.13-107.13m, sheet 3, possibly 4 (3-4 according to Omar)
-                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, 
+                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-1.65,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
-                     dict(name='W350-2', z=109.93, sheet=4, node=10569, 
+                     dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-1.65, 
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
                      # W350-3, 87.33-96.73m, sheet 2 (2-3 according to Omar)
-                     dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=0.3, # very unreliable well 
-                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-3.csv'),
+                     dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=0.1, # very unreliable well 
+                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-3.csv', bias=-1.65,)
                      ]
                
         
@@ -354,14 +392,15 @@ if __name__ == '__main__':
                     # load actual observation data
                     obs_well['data'] = readKister(filepath=obs_well['csv'], bias=obs_well['bias'],
                                                   period=date_range[:2], resample=date_range[2], 
-                                                  missing=missing, lpad=True, lvalues=True)
+                                                  missing=missing, lpad=True, lvalues=True,
+                                                  outliers=3)
                 else:  
                     # create fake/missing data (for equivalent open loop testing)
                     obs_well['data'] = np.ones((ntime,))*missing
             
             # create boundary files
             obs_file = writeEnKFobs(enkf_folder=enkf_folder, obs_wells=obs_wells, filename=filename, 
-                                    lYAML=True)
+                                    lYAML=True, )
             if not os.path.exists(obs_file): raise IOError(obs_file)
         
         print('\n===\n')
