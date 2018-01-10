@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 from glob import glob
 from collections import OrderedDict
+from scipy import stats as ss
 # internal/local imports
 from hgs_output import binary 
 from geodata.misc import ArgumentError, isNumber
@@ -192,12 +193,9 @@ def writeEnKFbdy(enkf_folder=None, bdy_files=None, filename='flux_bc.dat', mode=
         bdy_occurence = actual_occurence * bdy_nooccurence / ( 1. - actual_occurence )
         if lfeedback:
             print('New Occurence: {}'.format(bdy_occurence.mean(axis=0)))
-        # generate random values        
+        # parameters for random values        
         mean = bdy_data.mean(axis=0)
         std  = bdy_data.std(axis=0)
-        from scipy.stats import expon
-        fake_date = np.stack([expon.rvs(loc=mean[i], scale=std[i], size=ntime) for i in range(nbdy)], axis=1)
-        assert fake_date.shape == (ntime,nbdy), fake_date.shape
         # loop over timesteps
         filetrunk = filepath; filelist = []
         for i in range(ntime):
@@ -205,7 +203,10 @@ def writeEnKFbdy(enkf_folder=None, bdy_files=None, filename='flux_bc.dat', mode=
             # prepare data
             scalefactor = np.random.ranf((nreal,nbdy))*bf_2 + bf_1 # uniform random distribution
             rnd_data = bdy_data[i,:].reshape((1,nbdy)).repeat(nreal, axis=0) * scalefactor
-            random_occurence = fake_date[i,:].reshape((1,nbdy)).repeat(nreal, axis=0) * scalefactor
+            #random_occurence = fake_data[i,:].reshape((1,nbdy)).repeat(nreal, axis=0) * scalefactor
+            fake_data = [ss.expon.rvs(loc=mean[i], scale=std[i], size=nreal) for i in range(nbdy)]
+            random_occurence = np.stack(fake_data, axis=1)
+            assert random_occurence.shape == (nreal,nbdy), random_occurence.shape
             # make random occurences
             lsetZero = np.logical_and( rnd_data > 0, np.random.ranf((nreal,nbdy)) < bdy_nooccurence )
             lcreateNew = np.logical_and( rnd_data == 0, np.random.ranf((nreal,nbdy)) < bdy_occurence )
@@ -332,8 +333,8 @@ if __name__ == '__main__':
         # definitions
         bdy_files = {'precip.inc': os.path.join(folder,'precip_values.inc'),
                      'pet.inc'   : os.path.join(folder,'pet_values.inc'),}
-        scalefactors = {'precip.inc':0.5, 'pet.inc':0.2,}
-        intemittency = {'precip.inc':0.2, 'pet.inc':0.,}
+        scalefactors = {'precip.inc':0.5, 'pet.inc':0.5,}
+        intemittency = {'precip.inc':0.3, 'pet.inc':0.,}
         #enkf_folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/input_deterministic/'        
         
         # create boundary files
@@ -356,16 +357,16 @@ if __name__ == '__main__':
         datelist = pd.date_range(pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1]), 
                                  freq=date_range[2]) 
         ntime = len(datelist) 
-        stderr = 0.02 # observation error
+        stderr = 0.01 # observation error
         missing = 99999 # larger than 10,000 indicates missing value
         # actual observation wells
         obs_wells = [
                      # W268-1, 48.52-61.32m, sheet 2-3, possibly 1 (1-2 according to Omar)
-                     dict(name='W268-1', z=-35.0, sheet=1, node= 2617, bias=55.2, 
+                     dict(name='W268-1', z=-35.0, sheet=1, node= 2617, bias=0.24, 
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-                     dict(name='W268-1', z=57.08, sheet=2, node= 5501, bias=55.2, 
+                     dict(name='W268-1', z=57.08, sheet=2, node= 5501, bias=0.24, 
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-                     dict(name='W268-1', z=58.08, sheet=3, node= 8385, bias=55.2,
+                     dict(name='W268-1', z=58.08, sheet=3, node= 8385, bias=0.24,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
                      # W350-2, 104.13-107.13m, sheet 3, possibly 4 (3-4 according to Omar)
                      dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-1.65,
@@ -373,7 +374,7 @@ if __name__ == '__main__':
                      dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-1.65, 
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
                      # W350-3, 87.33-96.73m, sheet 2 (2-3 according to Omar)
-                     dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=0.1, # very unreliable well 
+                     dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=0.05, # very unreliable well 
                            csv='D:/Data/HGS/SNW/EnKF/Kister/W350-3.csv', bias=-1.65,)
                      ]
                
@@ -390,6 +391,7 @@ if __name__ == '__main__':
                 #print(obs_well) # feedback without data  
                 if lreal:
                     # load actual observation data
+                    print("Reading well observations:\n '{}'".format(obs_well['csv']))
                     obs_well['data'] = readKister(filepath=obs_well['csv'], bias=obs_well['bias'],
                                                   period=date_range[:2], resample=date_range[2], 
                                                   missing=missing, lpad=True, lvalues=True,

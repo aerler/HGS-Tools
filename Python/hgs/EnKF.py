@@ -128,27 +128,29 @@ def loadEnKF_StnTS(folder=None, varlist='all', varatts=None, name='enkf', title=
         varlist = Obs.varlist
     elif isinstance(varlist,basestring) and varlist == 'all':
         varlist = Hydro.varlist + Obs.varlist
-    elif not instance(varlist,(tuple,list)): 
+    elif not isinstance(varlist,(tuple,list)): 
         raise TypeError(varlist)
     if varatts is None: varatts = variable_attributes.copy()
     varmap = {varatt['name']:enkf_name for enkf_name,varatt in varatts.items()} 
     varlist = [varmap[var] for var in varlist]
-    # figure out time axis
-    time = timeAxis(start_date=start_date, end_date=end_date, sampling=sampling, date_range=date_range, 
-                    time_axis=time_axis, llastIncl=llastIncl, ntime=ntime, varatts=varatts)
-    ntime = len(time)
     # load WSC station meta data
     pass 
     # initialize Dataset
     dataset = Dataset(name=name, title=title if title else name.title(), atts=metadata)
-    ensemble = None; observation = None
+    ensemble = None; time = None; observation = None
     # load observation/innovation data
     if any([var in Obs.atts for var in varlist]):
         # load data
         vardata = loadObs(varlist=[var for var in varlist if var in Obs.atts], 
                           folder=out_folder, lpandas=False)
-        # create Axes
         ntime,nobs,nreal = vardata.values()[0].shape
+        # create Axes
+        if time is None:
+            # figure out time axis
+            time = timeAxis(start_date=start_date, end_date=end_date, sampling=sampling, date_range=date_range, 
+                time_axis=time_axis, llastIncl=llastIncl, ntime=ntime, varatts=varatts)
+        elif len(time) != ntime:
+            raise AxisError(time)
         if ensemble is None:
             # construct ensemble axis
             ensemble = Axis(atts=varatts['ensemble'], coord=np.arange(1, nreal+1))
@@ -182,10 +184,22 @@ def loadEnKF_StnTS(folder=None, varlist='all', varatts=None, name='enkf', title=
                     if cvar in varatts: atts = varatts[cvar]
                     else: atts = dict(name=cvar, units='')
                     dataset += Variable(atts=atts, data=data, axes=(observation,))
+    elif ntime is None:
+        # try to infer time dimension from backup.info file
+        backup_info = os.path.join(folder,'backup.info')
+        if os.path.exists(backup_info):
+            with open(backup_info, 'r') as bf:
+                ntime = int(bf.readline())        
     # load discharge/hydrograph data
     if 'discharge' in varlist:
         data = loadHydro(folder=out_folder, nreal=nreal, ntime=ntime)
         ntime,nreal = data.shape
+        if time is None:
+            # figure out time axis
+            time = timeAxis(start_date=start_date, end_date=end_date, sampling=sampling, date_range=date_range, 
+                time_axis=time_axis, llastIncl=llastIncl, ntime=ntime, varatts=varatts)
+        elif len(time) != ntime:
+            raise AxisError(time)        
         if ensemble is None:
             # construct ensemble axis
             ensemble = Axis(atts=varatts['ensemble'], coord=np.arange(1, nreal+1))
@@ -247,7 +261,7 @@ if __name__ == '__main__':
     ## settings
 #     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test_open_dec/' # experiment folder
     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test_closed_dec/' # experiment folder
-    date_range = ('2017-12-01', '2017-12-31', 'D'); ntime = 28
+    date_range = ('2017-12-01', '2017-12-31', 'D'); ntime = None
 
 #     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test_closed_may/' # experiment folder
 #     date_range = ('2017-05-01', '2017-12-31', 'D'); ntime = 166
@@ -262,7 +276,7 @@ if __name__ == '__main__':
     if test_mode == 'test_dataset':
       
       # load single dataset
-      ds = loadEnKF_StnTS(folder=folder, date_range=date_range, ntime=ntime)
+      ds = loadEnKF_StnTS(varlist=['discharge'], folder=folder, date_range=date_range, ntime=ntime)
       print(ds)
   
     elif test_mode == 'test_kister':

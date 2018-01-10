@@ -66,6 +66,10 @@ def loadObs(filename='obs_h.dat', folder=None, varlist=None, lpandas=False):
         nobs  = int(data[:,varnames.index('NoObs')].max())
         nreal = int(data[:,varnames.index('NoReal')].max())
         nvars = len(varnames)
+        # remove incomplete timestep
+        if (ntime*nobs*nreal,nvars) != data.shape:
+            ntime -= 1
+            data = data[:(ntime*nobs*nreal),:]
         assert (ntime*nobs*nreal,nvars) == data.shape, (ntime,nobs,nreal,nvars)
         # reshape array
         data = data.reshape((ntime,nobs,nreal,nvars))

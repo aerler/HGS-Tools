@@ -325,7 +325,7 @@ if __name__ == '__main__':
   elif mode == 'test_load_XLS': 
 
       # print Metadata for South Nation Watershed
-      meta = loadMetadata(well='W350-3', llistWells=True, 
+      meta = loadMetadata(well='W268-1', llistWells=True, 
                           folder='C:/Users/aerler/Data/GRCA/SNCA Data/')
       # inspect dictionary
       print('')
