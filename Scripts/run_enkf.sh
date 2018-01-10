@@ -10,8 +10,18 @@ echo
 N=$( sed -n '/total_number_of_time_steps/ s/^[[:space:]]*total_number_of_time_steps[[:space:]]*=[[:space:]]*\(.*\)$/\1/p' EnKFparameters.ini )
 echo "Total Number of Time-steps: $N"
 # clean a bit
-echo "Cleaning Run Directory"
-rm -rf proc_*/ out/ backup.info enkf_*.log enkf_*.log.gz tmp.log
+if [ -e out/ ]; then
+  echo "Cleaning Run Directory (moving existing output to backup)"
+  rm -rf out_backup
+  mv out out_backup
+  [ -f backup.info ] && mv backup.info out_backup/
+  [ -f enkf_*.log ] && mv enkf_*.log out_backup/
+  [ -f enkf_*.log.gz ] && mv enkf_*.log.gz out_backup/
+else
+  echo "Cleaning Run Directory"
+  rm -f backup.info enkf_*.log enkf_*.log.gz
+fi # -e out/
+rm -rf proc_*/ tmp.log
 mkdir out/
 echo
 # switch restart off
@@ -21,7 +31,7 @@ echo
 echo "Starting EnKF (first attempt)"
 echo $BIN
 echo
-$BIN > tmp.log 
+$BIN &> tmp.log 
 echo
 
 # check completion
@@ -35,7 +45,6 @@ else
   echo
   exit 1
 fi # backup.info
-
 
 
 # read current time step
@@ -54,7 +63,7 @@ while [ $CN -lt $N ]; do
   # run again
   echo $BIN
   echo
-  $BIN > tmp.log
+  $BIN &> tmp.log
   echo
   # read time step again
   CN=$( cat backup.info )
