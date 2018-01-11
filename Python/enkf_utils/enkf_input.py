@@ -124,15 +124,14 @@ def writeEnKFini(enkf_folder=None, prefix=None, input_folders=None, glob_pattern
   
   
 def writeEnKFbdy(enkf_folder=None, bdy_files=None, filename='flux_bc.dat', mode='deterministic', 
-                 nreal=None, scalefactors=None, intermittency=None, default_factor=0.1, lfeedback=True):
+                 scalefactors=None, noisefactors=None, intermittency=None, nreal=None, lfeedback=True):
     ''' read flux boundary conditions from HGS/Grok .inc files and write an EnKF broundary condition file '''
     if isinstance(bdy_files, dict): bdy_files = OrderedDict(bdy_files) 
     else: raise TypeError(bdy_files)
     if scalefactors is None: scalefactors = dict()
-    elif isinstance(scalefactors,(np.integer,int,np.inexact,float)): 
-        default_factor = scalefactors
-        scalefactors = dict()
     elif not isinstance(scalefactors,dict): raise TypeError(scalefactors)
+    if noisefactors is None: noisefactors = dict()
+    elif not isinstance(noisefactors,dict): raise TypeError(noisefactors)
     if intermittency is None: intermittency = dict()
     elif not isinstance(intermittency,dict): raise TypeError(intermittency)
     if not os.path.exists(enkf_folder): raise IOError(enkf_folder)
@@ -170,16 +169,27 @@ def writeEnKFbdy(enkf_folder=None, bdy_files=None, filename='flux_bc.dat', mode=
         # every ensemble member gets a different input
         if lfeedback: print("\nWriting 'stochastic' boundary conditions, one file per timestep:")
         if nreal is None: raise ValueError(nreal)
-        # variable-dependent scale factors
-        bdy_factors = []; bdy_nooccurence = []
+        # variable-dependent randomization
+        bdy_scale = []; bdy_noise = []; bdy_nooccurence = []
         for bdy_file in bdy_files.keys():
-            if bdy_file in scalefactors: bdy_factors.append(scalefactors[bdy_file])
-            elif default_factor: bdy_factors.append(default_factor)
+            if bdy_file in scalefactors: bdy_scale.append(scalefactors[bdy_file])
+            else: raise ValueError(bdy_file)
+            if bdy_file in noisefactors: bdy_noise.append(noisefactors[bdy_file])
             else: raise ValueError(bdy_file)
             if bdy_file in intermittency: bdy_nooccurence.append(intermittency[bdy_file])
             else: bdy_nooccurence.append(1.) # always occur
-        bdy_factors = np.asarray(bdy_factors).reshape((1,nbdy)).repeat(nreal, axis=0)
-        bf_1 = 1-bdy_factors; bf_2 = 2*bdy_factors # shortcuts used below
+        # prepare constant, realization-dependent scale factors
+        bdy_scales = []
+        for bs in bdy_scale:
+            if bs is None: bdy_scales.append(np.linspace(start=1., stop=1., num=nreal))
+            elif len(bs) == 2: bdy_scales.append(np.linspace(start=bs[0], stop=bs[1], num=nreal))
+            else: bdy_scales.append(bs)
+        bdy_scale = np.stack(bdy_scales, axis=1)
+        assert bdy_scale.shape == (nreal,nbdy), bdy_scale.shape
+        # prepare random noise
+        bdy_noise = np.asarray(bdy_noise).reshape((1,nbdy)).repeat(nreal, axis=0)
+        bf_1 = 1-bdy_noise; bf_2 = 2*bdy_noise # shortcuts used below
+        # prepare random intermittency
         # compute actual occurence
         actual_occurence = ( bdy_data > 0 ).sum(axis=0, dtype=bdy_data.dtype) / ntime
         if lfeedback:
@@ -192,7 +202,7 @@ def writeEnKFbdy(enkf_folder=None, bdy_files=None, filename='flux_bc.dat', mode=
         # probability of occurence, given no actual occurence
         bdy_occurence = actual_occurence * bdy_nooccurence / ( 1. - actual_occurence )
         if lfeedback:
-            print('New Occurence: {}'.format(bdy_occurence.mean(axis=0)))
+            print('New Occurence: {}'.format(bdy_occurence.mean(axis=0)))          
         # parameters for random values        
         mean = bdy_data.mean(axis=0)
         std  = bdy_data.std(axis=0)
@@ -212,6 +222,8 @@ def writeEnKFbdy(enkf_folder=None, bdy_files=None, filename='flux_bc.dat', mode=
             lcreateNew = np.logical_and( rnd_data == 0, np.random.ranf((nreal,nbdy)) < bdy_occurence )
             rnd_data[lsetZero] = 0
             rnd_data = np.where(lcreateNew, random_occurence, rnd_data)
+            # apply constant scale factors
+            rnd_data *= bdy_scale
             # open file and write header
             with open(filepath, 'w') as f: 
                 f.writelines(header)
@@ -272,12 +284,17 @@ if __name__ == '__main__':
     # available range
     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_may/' # folder where files a written
     date_range = ('2017-05-01', '2017-12-31', '1D') # date range for files
-    glob_pattern = '00[0123]?'; nreal = 80 # first 40 x 2
+    glob_pattern = '00[01]?'; nreal = 40 # first 20 x 2
+#     glob_pattern = '00[012]?'; nreal = 80 # first 40 x 2
     # just december
 #     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_december/' # folder where files a written
 #     date_range = ('2017-12-01', '2017-12-31', '1D') # date range for files
 # #     glob_pattern = '021?' # output timesteps to use for initial conditions; 0215 is Dec. 1st
 #     glob_pattern = '02??' # output timesteps to use for initial conditions; 0215 is Dec. 1st
+    # just november and december
+#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_november/' # folder where files a written
+#     date_range = ('2017-11-01', '2017-12-31', '1D') # date range for files
+#     glob_pattern = '01[789]?' # output timesteps to use for initial conditions; 0215 is Dec. 1st
     
     # work folder setup
     if not os.path.exists(folder): os.mkdir(folder)
@@ -289,9 +306,9 @@ if __name__ == '__main__':
     # execution taskes
     tasks = []
 #     tasks += ['test_read_kister']
-    tasks += ['write_ic_file']
+#     tasks += ['write_ic_file']
     tasks += ['write_bdy_file']
-    tasks += ['write_obs_file']
+#     tasks += ['write_obs_file']
 
     if 'test_read_kister' in tasks:
       
@@ -313,8 +330,8 @@ if __name__ == '__main__':
       
         # definitions
         prefix = 'prw'
-        input_folders =['D:/Data/HGS/SNW/EnKF/TWC/open_value/', 
-                        'D:/Data/HGS/SNW/EnKF/TWC/open_raster/']
+        input_folders =['D:/Data/HGS/SNW/EnKF/TWC/open_raster/', 
+                        'D:/Data/HGS/SNW/EnKF/TWC/open_value_geog/']
         #enkf_folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/input_deterministic/'
         
         # create input files
@@ -333,14 +350,31 @@ if __name__ == '__main__':
         # definitions
         bdy_files = {'precip.inc': os.path.join(folder,'precip_values.inc'),
                      'pet.inc'   : os.path.join(folder,'pet_values.inc'),}
-        scalefactors = {'precip.inc':0.5, 'pet.inc':0.5,}
+        # construct pet scalefactor in a way to distribute most efficiently
+        NP = 20; npp = nreal/NP # number of processors for MPI 
+        pre_scale = np.linspace(start=1, stop=0.7, num=nreal)
+        pet_scale = np.zeros_like(pre_scale)
+        j = 0; npp_ = (len(pre_scale)-npp*NP) # need counter, because npp can be irregular
+        for i in range(NP):
+            npp1 = npp+1 if i < npp_ else npp
+            for n in range(npp1):
+                print(j,n*NP+i)
+                pet_scale[j] = pre_scale[n*NP+i]
+                j += 1 # count up
+        assert pet_scale.max() == pre_scale.max()
+        assert pet_scale.min() == pre_scale.min()
+        assert pet_scale.mean() == pre_scale.mean()
+        assert pet_scale.std() == pre_scale.std()
+        scalefactors = {'precip.inc':None, 'pet.inc':pet_scale,}
+        noisefactors = {'precip.inc':0.4, 'pet.inc':0.2,}
         intemittency = {'precip.inc':0.3, 'pet.inc':0.,}
         #enkf_folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/input_deterministic/'        
         
         # create boundary files
         for mode in ('deterministic','stochastic'):
-            filelist = writeEnKFbdy(enkf_folder=enkf_folder, bdy_files=bdy_files, mode=mode, 
-                                    nreal=nreal, scalefactors=scalefactors, intermittency=intemittency)
+            filelist = writeEnKFbdy(enkf_folder=enkf_folder, bdy_files=bdy_files, mode=mode, nreal=nreal, 
+                                    scalefactors=scalefactors, noisefactors=noisefactors, 
+                                    intermittency=intemittency)
             if isinstance(filelist,(list,tuple)):
                 for bdy_file in filelist:
                     if not os.path.exists(bdy_file): raise IOError(bdy_file)
@@ -362,20 +396,20 @@ if __name__ == '__main__':
         # actual observation wells
         obs_wells = [
                      # W268-1, 48.52-61.32m, sheet 2-3, possibly 1 (1-2 according to Omar)
-                     dict(name='W268-1', z=-35.0, sheet=1, node= 2617, bias=0.24, 
+                     dict(name='W268-1', z=-35.0, sheet=1, node= 2617, bias=0.24, error=0.02,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-                     dict(name='W268-1', z=57.08, sheet=2, node= 5501, bias=0.24, 
+                     dict(name='W268-1', z=57.08, sheet=2, node= 5501, bias=0.24, error=0.02,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-                     dict(name='W268-1', z=58.08, sheet=3, node= 8385, bias=0.24,
+                     dict(name='W268-1', z=58.08, sheet=3, node= 8385, bias=0.24, error=0.02,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
                      # W350-2, 104.13-107.13m, sheet 3, possibly 4 (3-4 according to Omar)
-                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-1.65,
+                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-1.65, error=0.01,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
-                     dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-1.65, 
+                     dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-1.65, error=0.01, 
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
-                     # W350-3, 87.33-96.73m, sheet 2 (2-3 according to Omar)
-                     dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=0.05, # very unreliable well 
-                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-3.csv', bias=-1.65,)
+#                      # W350-3, 87.33-96.73m, sheet 2 (2-3 according to Omar)
+#                      dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=0.05, # very unreliable well 
+#                            csv='D:/Data/HGS/SNW/EnKF/Kister/W350-3.csv', bias=-1.65,)
                      ]
                
         
