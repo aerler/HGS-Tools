@@ -2,8 +2,17 @@
 
 BIN=$@
 
+if [[ -n "$WEXP" ]]; then
+  echo
+  echo "Waiting for previous experiment to finish):"
+  echo "  ${WEXP}"
+  while [ ! -f "${WEXP}/COMPLETED" ]; do sleep 100; done
+  echo "Experiment finished - starting new experiment!"
+  echo
+fi # wait...
+
 echo
-echo "Initializing New EnKF Assimilation Exepriment"
+echo "Initializing New EnKF Assimilation Experiment"
 echo
 # get total number of time steps
 echo
@@ -75,6 +84,7 @@ while [ $CN -lt $N ]; do
 done # while CN < N
 
 # complete
+touch COMPLETED
 echo
 echo "EnKF Assimilation Experiment completed!!!"
 echo
