@@ -24,6 +24,28 @@ from geodata.misc import ArgumentError, isNumber
 
 ## helper functions
 
+def variableScale(start, stop, nreal, NP):
+    ''' generate scale factors for each realization and distribute evenly '''
+    npp = nreal/NP
+    pre_scale = np.linspace(start=start, stop=stop, num=nreal)
+    var_scale = np.zeros_like(pre_scale)
+    j = 0; npp_ = (len(pre_scale)-npp*NP) # need counter, because npp can be irregular
+    # reorder items so that each processor gets a similar range
+    for i in range(NP):
+        npp1 = npp+1 if i < npp_ else npp
+        for n in range(npp1):
+            print(j,n*NP+i)
+            var_scale[j] = pre_scale[n*NP+i]
+            j += 1 # count up
+    # check correctness
+    assert j==nreal, (j,nreal)
+    assert var_scale.max() == pre_scale.max(), (var_scale.max(),pre_scale.max())
+    assert var_scale.min() == pre_scale.min(), (var_scale.min(),pre_scale.min())
+    assert np.allclose(var_scale.mean(), pre_scale.mean()), (var_scale.mean(),pre_scale.mean())
+    assert np.allclose(var_scale.std(), pre_scale.std()), (var_scale.std(), pre_scale.std())
+    # return
+    return var_scale
+
 def readKister(filepath=None, period=None, resample='1D', missing=None, bias=None, 
                header=3, name='value', lpad=True, lvalues=True, outliers=None):
     ''' read a Kister csv file and slice and resample timeseries '''
@@ -62,35 +84,40 @@ def writeEnKFini(enkf_folder=None, prefix=None, input_folders=None, glob_pattern
     olf_file = os.path.join(enkf_folder,'iniheadolf.dat'); olf_data = []
     ## load data
     # loop over folders and timesteps
-    npm = None; nolf = None
+    npm = None; nolf = None; sub_filelists = []
     for folder in input_folders:
         glob_path = os.path.join(folder,prefix+'o.head_pm.'+glob_pattern)
-        filelist = glob(glob_path)
-        if not filelist: 
+        sub_filelist = glob(glob_path)
+        if not sub_filelist: 
             raise IOError(glob_path)
-        # loop over file list and load data
-        for ic_file in filelist:
-            idx = int(ic_file[-4:]) # get index number
-            reader = binary.IO(prefixo,os.path.dirname(ic_file),idx)
-            # extract data and validate PM data
-            coords_pm = reader.read_coordinates_pm()
-            tmp = coords_pm.shape[0]
-            if npm is None: npm = tmp
-            elif npm != tmp: 
-                raise ValueError("Total number of nodes does not match in input files: {} != {}".format(npm,tmp))
-            head_pm = reader.read_var("head_pm", npm)
-            pm_data.append(head_pm.values)
-            # extract data and validate PM data
-            tmp = reader.read_coordinates_olf(coords_pm).shape[0]
-            if nolf is None: nolf = tmp
-            elif nolf != tmp: 
-                raise ValueError("Total number of nodes does not match in input files: {} != {}".format(nolf,tmp))
-            head_olf = reader.read_var("head_olf", nolf)
-            olf_data.append(head_olf.values)
-            # read number of elements for printing later
-            if lfeedback:
-                nepm = len(reader.read_elements('pm'))
-                neolf = len(reader.read_elements('olf'))
+        sub_filelists.append(sub_filelist)
+    # interleave filelists to achieve an even distribution
+    filelist = []  
+    for files in zip(*sub_filelists): 
+        for single_file in files: filelist.append(single_file) 
+    # loop over file list and load data
+    for ic_file in filelist:
+        idx = int(ic_file[-4:]) # get index number
+        reader = binary.IO(prefixo,os.path.dirname(ic_file),idx)
+        # extract data and validate PM data
+        coords_pm = reader.read_coordinates_pm()
+        tmp = coords_pm.shape[0]
+        if npm is None: npm = tmp
+        elif npm != tmp: 
+            raise ValueError("Total number of nodes does not match in input files: {} != {}".format(npm,tmp))
+        head_pm = reader.read_var("head_pm", npm)
+        pm_data.append(head_pm.values)
+        # extract data and validate PM data
+        tmp = reader.read_coordinates_olf(coords_pm).shape[0]
+        if nolf is None: nolf = tmp
+        elif nolf != tmp: 
+            raise ValueError("Total number of nodes does not match in input files: {} != {}".format(nolf,tmp))
+        head_olf = reader.read_var("head_olf", nolf)
+        olf_data.append(head_olf.values)
+        # read number of elements for printing later
+        if lfeedback:
+            nepm = len(reader.read_elements('pm'))
+            neolf = len(reader.read_elements('olf'))
     # print number of elements
     if lfeedback:
         print("Number of PM elements: {}".format(nepm))
@@ -284,8 +311,8 @@ if __name__ == '__main__':
     # available range
     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_may/' # folder where files a written
     date_range = ('2017-05-01', '2017-12-31', '1D') # date range for files
-    glob_pattern = '00[01]?'; nreal = 40 # first 20 x 2
-#     glob_pattern = '00[012]?'; nreal = 80 # first 40 x 2
+#     glob_pattern = '00[01]?'; nreal = 40 # first 20 x 2
+    glob_pattern = '00[012][0-7]'; nreal = 96 # first 30 x 2
     # just december
 #     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_december/' # folder where files a written
 #     date_range = ('2017-12-01', '2017-12-31', '1D') # date range for files
@@ -306,9 +333,9 @@ if __name__ == '__main__':
     # execution taskes
     tasks = []
 #     tasks += ['test_read_kister']
-#     tasks += ['write_ic_file']
+    tasks += ['write_ic_file']
     tasks += ['write_bdy_file']
-#     tasks += ['write_obs_file']
+    tasks += ['write_obs_file']
 
     if 'test_read_kister' in tasks:
       
@@ -330,13 +357,17 @@ if __name__ == '__main__':
       
         # definitions
         prefix = 'prw'
-        input_folders =['D:/Data/HGS/SNW/EnKF/TWC/open_raster/', 
+        input_folders =['D:/Data/HGS/SNW/EnKF/TWC/open_value/',
+                        'D:/Data/HGS/SNW/EnKF/TWC/open_raster/',
+                        'D:/Data/HGS/SNW/EnKF/TWC/open_raster_geog/', 
                         'D:/Data/HGS/SNW/EnKF/TWC/open_value_geog/']
         #enkf_folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/input_deterministic/'
         
         # create input files
-        pm_file, olf_file, nreal = writeEnKFini(enkf_folder=enkf_folder, prefix=prefix, 
-                                                input_folders=input_folders, glob_pattern=glob_pattern)
+        pm_file, olf_file, nr = writeEnKFini(enkf_folder=enkf_folder, prefix=prefix, 
+                                             input_folders=input_folders, glob_pattern=glob_pattern)
+        if nreal != nr: 
+          raise ValueError("Selected number of realizations {} does not match number on input files {}!".format(nreal,nr))
         if not os.path.exists(pm_file): raise IOError(pm_file)
         if not os.path.exists(olf_file): raise IOError(olf_file)
         
@@ -351,22 +382,10 @@ if __name__ == '__main__':
         bdy_files = {'precip.inc': os.path.join(folder,'precip_values.inc'),
                      'pet.inc'   : os.path.join(folder,'pet_values.inc'),}
         # construct pet scalefactor in a way to distribute most efficiently
-        NP = 20; npp = nreal/NP # number of processors for MPI 
-        pre_scale = np.linspace(start=1, stop=0.7, num=nreal)
-        pet_scale = np.zeros_like(pre_scale)
-        j = 0; npp_ = (len(pre_scale)-npp*NP) # need counter, because npp can be irregular
-        for i in range(NP):
-            npp1 = npp+1 if i < npp_ else npp
-            for n in range(npp1):
-                print(j,n*NP+i)
-                pet_scale[j] = pre_scale[n*NP+i]
-                j += 1 # count up
-        assert pet_scale.max() == pre_scale.max()
-        assert pet_scale.min() == pre_scale.min()
-        assert pet_scale.mean() == pre_scale.mean()
-        assert pet_scale.std() == pre_scale.std()
-        scalefactors = {'precip.inc':None, 'pet.inc':pet_scale,}
-        noisefactors = {'precip.inc':0.4, 'pet.inc':0.2,}
+        NP = 20 # number of processors for MPI 
+        scalefactors = {'precip.inc':variableScale(start=0.9, stop=1.1, nreal=nreal, NP=NP), 
+                        'pet.inc':variableScale(start=1, stop=0.5, nreal=nreal, NP=NP),}
+        noisefactors = {'precip.inc':0.5, 'pet.inc':0.3,}
         intemittency = {'precip.inc':0.3, 'pet.inc':0.,}
         #enkf_folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/input_deterministic/'        
         
@@ -396,20 +415,26 @@ if __name__ == '__main__':
         # actual observation wells
         obs_wells = [
                      # W268-1, 48.52-61.32m, sheet 2-3, possibly 1 (1-2 according to Omar)
-                     dict(name='W268-1', z=-35.0, sheet=1, node= 2617, bias=0.24, error=0.02,
+                     dict(name='W268-1', z=-35.0, sheet=1, node= 2696, bias=+0.14, error=0.01,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-                     dict(name='W268-1', z=57.08, sheet=2, node= 5501, bias=0.24, error=0.02,
+                     dict(name='W268-1', z=57.08, sheet=2, node= 5580, bias=+0.14, error=0.01,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-                     dict(name='W268-1', z=58.08, sheet=3, node= 8385, bias=0.24, error=0.02,
+                     dict(name='W268-1', z=58.08, sheet=3, node= 8464, bias=+0.14, error=0.01,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
+#                      dict(name='W268-1', z=-35.0, sheet=1, node= 2617, bias=0.24, error=0.02,
+#                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
+#                      dict(name='W268-1', z=57.08, sheet=2, node= 5501, bias=0.24, error=0.02,
+#                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
+#                      dict(name='W268-1', z=58.08, sheet=3, node= 8385, bias=0.24, error=0.02,
+#                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
                      # W350-2, 104.13-107.13m, sheet 3, possibly 4 (3-4 according to Omar)
-                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-1.65, error=0.01,
+                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-0.62, error=0.01,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
-                     dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-1.65, error=0.01, 
+                     dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-0.62, error=0.01, 
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
 #                      # W350-3, 87.33-96.73m, sheet 2 (2-3 according to Omar)
 #                      dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=0.05, # very unreliable well 
-#                            csv='D:/Data/HGS/SNW/EnKF/Kister/W350-3.csv', bias=-1.65,)
+#                            csv='D:/Data/HGS/SNW/EnKF/Kister/W350-3.csv', bias=0,)
                      ]
                
         
