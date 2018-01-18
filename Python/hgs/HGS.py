@@ -95,7 +95,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
   elif station and well: raise ArgumentError
   elif well is not None:
     filename = well_files; zone = well # zone is used for file verification later on
-    name_tag = well; long_name = well
+    name_tag = well; long_name = well; lkgs = False # don't change units!
     file_title = 'flow data at observation well:'
   elif station is not None:
     filename = hydro_files; zone = station
@@ -218,9 +218,9 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
   elif well is not None: 
       offset = 0 # observation wells have different time stamps
   else: raise GageStationError(variable_order)
-  if varlist.lower() == 'all': 
+  if isinstance(varlist,basestring) and varlist.lower() == 'all': 
       varlist = variable_order[:] # load all in the file
-  elif varlist is None or varlist.lower() == 'default': 
+  elif varlist is None or ( isinstance(varlist,basestring) and varlist.lower() == 'default' ): 
       varlist = [varname for varname in variable_attributes_mms.keys() if varname in variable_order] # load all that are known
       varlist += [varname for varname in constant_attributes.keys() if varname in variable_order] # load all constants
   else:
@@ -262,13 +262,13 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
       assert len(constcols) == 0, constcols
       data = np.genfromtxt(filepath, dtype=np.float64, delimiter=None, skip_header=3, usecols = (0,)+varcols)
       assert data.shape[1] == len(varcols)+1, data.shape
-      time_series = data[:,0]; data = data[:,1:]
-      assert data.shape == (len(time_series),len(varcols)), data.shape
-      layer = None # no layer axis
       if lskipNaN:
           data = data[np.isnan(data).sum(axis=1)==0,:]
       elif np.any( np.isnan(data) ):
           raise DataError("Missing values (NaN) encountered in timeseries file; use 'lskipNaN' to ignore.\n('{:s}')".format(filepath))    
+      time_series = data[:,0]; data = data[:,1:]
+      assert data.shape == (len(time_series),len(varcols)), data.shape
+      layer = None # no layer axis
   
   # call function to interpolate irregular HGS timeseries to regular monthly timseries  
   data = interpolateIrregular(old_time=time_series, data=data, new_time=time_resampled, start_date=start_datetime, 
@@ -418,7 +418,7 @@ if __name__ == '__main__':
 #   hgs_station = 'Station_GR_Brantford'; WSC_station = 'Grand River_Brantford'
   # V3 GRW model
   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_v3_wrfpet'
-  hgs_station = '{WSC_ID0:s}'; WSC_station = 'Grand River_Brantford'
+#   hgs_station = '{WSC_ID0:s}'; WSC_station = 'Grand River_Brantford'
 #   hgs_station = 'water_balance'; WSC_station = None
 #   hgs_station = 'newton_info'; WSC_station = None
   hgs_well = 'W0000347_3'
@@ -426,8 +426,8 @@ if __name__ == '__main__':
 
 
 #   test_mode = 'gage_station'
-#   test_mode = 'dataset'
-  test_mode = 'time_axis'
+  test_mode = 'dataset'
+#   test_mode = 'time_axis'
 #   test_mode = 'ensemble'
 
 

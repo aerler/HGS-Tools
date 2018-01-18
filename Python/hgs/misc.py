@@ -14,6 +14,12 @@ from warnings import warn
 # internal imports
 from geodata.misc import DataError, ArgumentError
 from datasets.WSC import GageStationError
+from hgsrun.misc import HGSError
+
+
+class ParserError(HGSError):
+  ''' error related to parsing timeseries files '''
+  pass
 
 
 # a function to resolve a data
@@ -106,9 +112,9 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, lskipNa
     ln = len(lines)
     # validate header
     line = lines[0].lower()
-    if "title" not in line: raise GageStationError((line,filepath))
+    if "title" not in line: raise ParserError((line,filepath))
     line = lines[1].lower()
-    if "variables" not in line: raise GageStationError((line,filepath))
+    if "variables" not in line: raise ParserError((line,filepath))
     varlist = [v for v in line[line.find('=')+1:].strip().split(',') if len(v) > 0]
     lv = len(varlist)
     # validate constants (variables with no time-dependence))
@@ -133,15 +139,17 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, lskipNa
         ve = 1
     else: TypeError(variables)
     if lv < len(variables)+ce: raise ArgumentError((variables,varlist))
-    line = lines[2].lower()
-    if "zone" != line[:4]: raise GageStationError((line[:4],filepath))
-    if "solutiontime" != line[22:34] : raise GageStationError((line,filepath))
+    line = [l.strip().split('=') for l in lines[2].lower().split(',')]
+    if len(line[0]) != 2 or len(line[1]) != 2: ParserError((line,filepath))
+    if "zone" not in line[0][0]: raise ParserError((line,filepath))
+    if "solutiontime" not in line[1][0] : raise ParserError((line,filepath))
     # determine number of layers
     i = 3
-    while 'zone' not in lines[i]: i += 1
-    line = lines[i].lower()
-    if "zone" != line[:4]: raise GageStationError(line,filepath)
-    if "solutiontime" != line[22:34] : raise GageStationError((line,filepath))
+    while 'zone' not in lines[i].lower() and "solutiontime" not in lines[i].lower(): i += 1
+    line = [l.strip().split('=') for l in lines[i].lower().split(',')]
+    if len(line[0]) != 2 or len(line[1]) != 2: ParserError((line,filepath))
+    if "zone" not in line[0][0]: raise ParserError((line,filepath))
+    if "solutiontime" not in line[1][0] : raise ParserError((line,filepath))
     nlay = i - 3; te = (ln-2)/(nlay+1)
     assert (nlay+1)*te == ln-2, (ln,nlay,te)
     if layers is None: 
@@ -172,14 +180,16 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, lskipNa
     while n < te1 or k < nlay:
       line = line_iter.next() # should work flawlessly, if I got the indices right...
       if k == nlay:
-          assert line[:4] == 'zone', line[:4]
-          assert "SOLUTIONTIME" == line[22:34], line[22:34]
+          line = [l.strip().split('=') for l in line.lower().split(',')]
+          assert len(line[0]) == 2 and len(line[1]) == 2, line
+          assert 'zone' in line[0][0], line
+          assert "solutiontime" in line[1][0], line
           # prepare next time step
           k = 0 # initialize a new time-step
           if llayers: 
               l = 0; klay = layers[0]
           n += 1
-          time[n] = np.float64(line[36:])          
+          time[n] = np.float64(line[1][1])          
       else:
           if not llayers or k == klay:
               elements = line.split() # split fields, but only process those that we want
