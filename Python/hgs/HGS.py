@@ -75,17 +75,18 @@ flow_to_flux = dict(discharge='sfroff', seepage='ugroff', flow='runoff') # relat
 hgs_varmap = {value['name']:key for key,value in variable_attributes_mms.items()}
 
 ## function to load HGS station timeseries
-def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varatts=None, folder=None, name=None, 
-                  title=None, lcheckComplete=True, start_date=None, end_date=None, run_period=None, period=None, 
-                  lskipNaN=False, basin=None, lkgs=True, z_axis='z', time_axis='simple', resample='M', 
-                  llastIncl=False, WSC_station=None, PGMN_well=None, basin_list=None, filename=None, 
-                  prefix=None, scalefactors=None, metadata=None, conservation_authority=None, **kwargs):
+def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_layers=None, varatts=None, 
+                  folder=None, name=None, title=None, lcheckComplete=True, start_date=None, end_date=None, 
+                  run_period=None, period=None, lskipNaN=False, basin=None, lkgs=True, z_axis='z', 
+                  time_axis='simple', resample='M', llastIncl=False, WSC_station=None, PGMN_well=None, 
+                  basin_list=None, filename=None, prefix=None, scalefactors=None, metadata=None, 
+                  z_aggregation=None, conservation_authority=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None or ( filename is None and station is None and well is None ): raise ArgumentError
-  # distinguish between special timeseries files, hydrographs, and observation wells
   if metadata is None: metadata = dict()
   meta_pfx = None # prefix for station/well attibutes from observations
+  # distinguish between special timeseries files, hydrographs, and observation wells
   if station == 'water_balance' or well == 'water_balance': 
     filename = water_file; well = None; zone = None
     name_tag = 'water_balance'; long_name = 'Integrated Water Balance'
@@ -159,7 +160,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
   # now determine start vardata for date_parser
   if end_date is None: 
       if start_date and run_period: 
-          start_year,start_month,start_day = convertDate(start_date)
+          start_year,start_month,start_day = convertDate(start_date); del start_month,start_day
           end_date = start_year + run_period 
       elif period: end_date = period[1]
       else: raise ArgumentError("Need to specify either 'start_date' & 'run_period' or 'period' to infer 'end_date'.")
@@ -242,10 +243,21 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
   
   # load vardata as tab separated values
   if well:
+      # resolve layers
+      if isinstance(layers,basestring) and z_layers is None: z_layers = layers
+      if isinstance(z_layers,basestring):
+          if z_layers.lower() == 'screen':
+              if 'z_t' in metadata and 'z_b' in metadata:
+                  if 'Screen' not in metadata and 'screen' not in metadata and 'SCREEN' not in metadata: 
+                      raise ValueError("Values for 'z_b' and 'z_t' likely do not refer to a screen interval")
+                  z_layers = (metadata['z_b'],metadata['z_t'])
+              else:
+                  raise ValueError("Unable to infer screen interval from well metadata.") 
+          else: raise ArgumentError(z_layers)
       # well files need special treatment
       lsqueeze = isinstance(layers,(int,np.integer))
       time_series,data,const = parseObsWells(filepath, variables=varcols, constants=constcols, 
-                                             layers=layers, lskipNaN=lskipNaN)
+                                             layers=layers, z_layers=z_layers, lskipNaN=lskipNaN)
       assert data.shape[1] == len(varcols), data.shape
       nlay = data.shape[2] # number of layers
       if lsqueeze:
@@ -345,6 +357,12 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, varat
   # apply analysis period
   if period is not None:
       dataset = dataset(years=period)
+      
+  # aggregate vertical axis
+  if z_aggregation and layer: 
+      if not hasattr(np, z_aggregation):
+          raise ArgumentError("'z_aggregation' has to be a valid numpy function.")
+      dataset = getattr(dataset, z_aggregation)(axis=layer.name)      
       
   # adjust scalefactors, if necessary
   if scalefactors:
@@ -505,8 +523,8 @@ if __name__ == '__main__':
 
     # load dataset
     lkgs = True
-    dataset = loadHGS_StnTS(station=hgs_station, conservation_authority='GRCA',
-                            well=hgs_well, folder=hgs_folder, layers=None, #[16,17,18], 
+    dataset = loadHGS_StnTS(station=hgs_station, conservation_authority='GRCA', well=hgs_well, folder=hgs_folder, 
+                            layers=None, z_layers='screen', z_axis='z', z_aggregation='max',
                             start_date=1979, run_period=10, PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                             basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, lkgs=lkgs,
                             lskipNaN=True, lcheckComplete=True, varlist='default', scalefactors=1e-4,
@@ -524,8 +542,10 @@ if __name__ == '__main__':
     print(clim)
     if dataset.hasAxis('z'):
         print('')
-        print(dataset.x[:],dataset.y[:],)
+        #print(dataset.x[:],dataset.y[:],)
         print(dataset.z[:])
+        assert dataset.z.units == 'm', dataset.z
+        print("Screen Interval: {}m - {}m".format(dataset.atts.z_b,dataset.atts.z_t))
     
     if hgs_station == 'Station_GR_Brantford':
         test_results = np.asarray([24793.523584608138, 25172.635322536684, 39248.71087752686, 73361.80217956303, 64505.67974315114, 

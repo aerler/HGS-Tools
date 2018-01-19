@@ -103,7 +103,7 @@ def interpolateIrregular(old_time, data, new_time, start_date=None, lkgs=True, l
   
   
     # function to parse observation well output
-def parseObsWells(filepath, variables=None, constants=None, layers=None, lskipNaN=True):
+def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layers=None, lskipNaN=True):
     ''' a function to parse observation well output and return a three dimansional array, similar to
         genfromtxt, except with an additional depth/layer dimension at the end (time,variable,layer) '''
     # load file contents (all at once)
@@ -115,8 +115,13 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, lskipNa
     if "title" not in line: raise ParserError((line,filepath))
     line = lines[1].lower()
     if "variables" not in line: raise ParserError((line,filepath))
-    varlist = [v for v in line[line.find('=')+1:].strip().split(',') if len(v) > 0]
+    varlist = [v.strip('"').lower() for v in line[line.find('=')+1:].strip().split(',') if len(v) > 0]
     lv = len(varlist)
+    # find elevation variable for z_layers
+    if z_layers:
+        if layers: raise ArgumentError("Can only specify 'layers' or 'z_layers'.")
+        if len(z_layers) != 2: raise ArgumentError("z_layers = (z_min, z_max)") 
+        i_z = varlist.index('z')
     # validate constants (variables with no time-dependence))
     if constants is None: 
         ce = 0 # assume no constants
@@ -143,24 +148,36 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, lskipNa
     if len(line[0]) != 2 or len(line[1]) != 2: ParserError((line,filepath))
     if "zone" not in line[0][0]: raise ParserError((line,filepath))
     if "solutiontime" not in line[1][0] : raise ParserError((line,filepath))
-    # determine number of layers
-    i = 3
-    while 'zone' not in lines[i].lower() and "solutiontime" not in lines[i].lower(): i += 1
-    line = [l.strip().split('=') for l in lines[i].lower().split(',')]
+    # determine number of layers (and z-range)
+    i = 3; line = lines[i].lower()
+    if z_layers: z_list = []
+    while 'zone' not in line and "solutiontime" not in line:
+        if z_layers: z_list.append(float(line.split()[i_z]))
+        i += 1
+        line = lines[i].lower()
+    line = [l.strip().split('=') for l in line.split(',')]
     if len(line[0]) != 2 or len(line[1]) != 2: ParserError((line,filepath))
     if "zone" not in line[0][0]: raise ParserError((line,filepath))
     if "solutiontime" not in line[1][0] : raise ParserError((line,filepath))
     nlay = i - 3; te = (ln-2)/(nlay+1)
     assert (nlay+1)*te == ln-2, (ln,nlay,te)
+    # convert z_layers to layers based on layer elevation
+    if z_layers:
+        z_min,z_max = z_layers
+        assert nlay == len(z_list), z_list
+        z = np.asarray(z_list)
+        i_min = np.fabs(z-z_min).argmin()
+        i_max = np.fabs(z-z_max).argmin()
+        if i_min == i_max: layers = [i_min]
+        else: layers = range(i_min,i_max+1)
+    if isinstance(layers, (int,np.integer)): layers = (layers,)    
     if layers is None: 
         #layers = tuple(range(1,nlay+1))
         le = nlay # process all layers/rows
     elif isinstance(layers, (list,tuple)):
         if nlay < len(layers): raise ArgumentError((layers,nlay))
+        if min(layers) < 0 or max(layers) >= nlay: raise ValueError((nlay,layers))
         le = len(layers)
-    elif isinstance(layers, (int,np.integer)):
-        layers = (layers,)
-        le = 1
     else: raise TypeError(layers)
     assert le <= nlay, (le,nlay)
     # allocate array
