@@ -10,20 +10,18 @@ database files.
 # external imports
 import os
 import numpy as np
-import numpy.ma as ma
 # internal imports
 from datasets.common import days_per_month, name_of_month, getRootFolder, loadObservations
-from warnings import warn
 from geodata.misc import DateError, ArgumentError
 
 ## GRCA Meta-data
 
-dataset_name = 'GRCA'
-default_period = (2000,2015) # approximate data availability
+dataset_name = 'PGMN'
 root_folder = getRootFolder(dataset_name=dataset_name) # get dataset root folder based on environment variables
 tsfile = dataset_name.lower()+'{0:s}_monthly.nc' # formatted NetCDF file
 avgfile = dataset_name.lower()+'{0:s}_clim{1:s}.nc' # formatted NetCDF file
-avgfolder = root_folder + dataset_name.lower()+'avg/' # prefix
+avgfolder = os.path.join(root_folder,dataset_name.lower()+'avg/') # folder for pre-processed data in NetCDF format
+ca_folder = os.path.join(root_folder,'{0:s} Transient Waterlevels/') # folder for raw, unprocessed data
 
 
 # variable attributes and name (basically no alterations necessary...)
@@ -70,34 +68,36 @@ def sliceWellName(well, dataset):
   return dataset
 
 # pre-processed climatology files (varatts etc. should not be necessary)
-def loadGRCA(name=dataset_name, well=None, period=default_period, varlist=None, varatts=None, 
-             folder=avgfolder, filelist=None, lload=True):
+def loadPGMN(name=None, title=None, well=None, period=None, varlist=None, varatts=None, 
+             conservation_authority=None, folder=avgfolder, filelist=None, lload=True):
   ''' Get the pre-processed monthly climatology of GRCA well heads as a DatasetNetCDF. '''
   # load standardized climatology dataset with GRCA-specific parameters  
-  dataset = loadObservations(name=name, folder=folder, period=period, grid=None, station=None, 
-                             varlist=varlist, varatts=varatts, filepattern=avgfile, filelist=filelist, 
-                             lautoregrid=False, mode='climatology')
+  name = conservation_authority or dataset_name
+  dataset = loadObservations(name=name, title=title, folder=folder, station=conservation_authority.lower(), 
+                             period=period, grid=None, varlist=varlist, varatts=varatts, filepattern=avgfile, 
+                             filelist=filelist, lautoregrid=False, mode='climatology')
   # post-processing
   if well: dataset = sliceWellName(well, dataset)
   if lload: dataset.load()
   # return formatted dataset
   return dataset
-loadGRCA_Stn = loadGRCA
+loadPGMN_Stn = loadPGMN
 
 # pre-processed timeseries files (varatts etc. should not be necessary)
-def loadGRCA_TS(name=dataset_name, well=None, varlist=None, varatts=None, 
-                folder=avgfolder, filelist=None, lload=True):
+def loadPGMN_TS(name=None, title=None, well=None, varlist=None, varatts=None, 
+                conservation_authority=None, folder=avgfolder, filelist=None, lload=True):
   ''' Get the pre-processed monthly timeseries for GRCA well heads as a DatasetNetCDF. '''
   # load standardized time-series dataset with GRCA-specific parameters  
-  dataset = loadObservations(name=name, folder=folder, period=None, grid=None, station=None, 
-                             varlist=varlist, varatts=varatts, filepattern=tsfile, filelist=filelist, 
-                             lautoregrid=False, mode='climatology')
+  name = conservation_authority or dataset_name
+  dataset = loadObservations(name=name, title=title, folder=folder, station=conservation_authority.lower(), 
+                             period=None, grid=None, varlist=varlist, varatts=varatts, filepattern=tsfile, 
+                             filelist=filelist, lautoregrid=False, mode='climatology')
   # post-processing
   if well: dataset = sliceWellName(well, dataset)
   if lload: dataset.load()
   # return formatted dataset
   return dataset
-loadGRCA_StnTS = loadGRCA_TS
+loadPGMN_StnTS = loadPGMN_TS
 
 ## Dataset API
 
@@ -114,13 +114,11 @@ default_grid = None
 # functions to access specific datasets
 loadLongTermMean = None # climatology provided by publisher
 loadTimeSeries = None # time-series data
-loadClimatology = loadGRCA # pre-processed, standardized climatology
-loadStationClimatology = loadGRCA_Stn
+loadClimatology = loadPGMN # pre-processed, standardized climatology
+loadStationClimatology = loadPGMN_Stn
 loadShapeClimatology = None
 
 ## Functions that handle access to GRCA XLS/DBF files
-
-grca_folder = os.path.join(root_folder,'GRCA Transient Waterlevels')
 
 def getWellName(name):
   ''' helper function to break down well names into ID and number '''
@@ -135,6 +133,9 @@ def getWellName(name):
       if '-' in well: 
           well_id,well_no = well.split('-')
           well_no = int(well_no)
+      elif '_' in well: 
+          well_id,well_no = well.split('_')
+          well_no = int(well_no)
       else:
           well_id = well
       if 'W' == well_id[0]:
@@ -147,7 +148,7 @@ def getWellName(name):
   return well_id, well_no
 
 # loads data from original XLS files and returns Pandas data_frame
-def loadXLS(well=None, filename=None, filename_pattern='W{WELL_ID:03d}{TAG}.xlsx', folder=grca_folder, loutliers=True, sampling='M', period=(2000,2015), ltrim=False):
+def loadXLS(well=None, filename=None, filename_pattern='W{WELL_ID:03d}{TAG}.xlsx', folder=None, loutliers=True, sampling='M', period=(2000,2015), ltrim=False):
   # figure out filename
   if well and filename: raise ArgumentError
   elif well:
@@ -155,12 +156,13 @@ def loadXLS(well=None, filename=None, filename_pattern='W{WELL_ID:03d}{TAG}.xlsx
       tag = '-{WELL_NO:d}'.format(WELL_NO=well_no) if well_no > 1 else ''
       filename = filename_pattern.format(WELL_ID=well_id, WELL_NO=well_no, TAG=tag)
   elif filename:
-      well_id, well_no = getWellName(filename) 
+      well_id, well_no = getWellName(os.path.basename(filename)) 
   else: raise ArgumentError
   # local imports
   import pandas as pd
   # load data and resample to monthly
-  df = pd.read_excel(os.path.join(folder, filename), sheet_name='ChartData', header=0, #skiprows=[0], 
+  filepath = filename if folder is None else os.path.join(folder, filename) 
+  df = pd.read_excel(filepath, sheet_name='ChartData', header=0, #skiprows=[0], 
                      index_col=None, names=None, parse_dates=True)
   # validate header
   t_label, h_label = df.columns 
@@ -192,14 +194,17 @@ def loadXLS(well=None, filename=None, filename_pattern='W{WELL_ID:03d}{TAG}.xlsx
 
 # function to meta data from database file
 def loadMetadata(well, filename='metadata.dbf', wellname='W{WELL_ID:07d}-{WELL_NO:1d}', 
-                 llistWells=False, folder=grca_folder):
+                 llistWells=False, folder=None, conservation_authority=None):
+  if not folder and conservation_authority: 
+      folder = ca_folder.format(conservation_authority)
   # clean up well name
   well_id, well_no = getWellName(well)
   well = wellname.format(WELL_ID=well_id, WELL_NO=well_no)
   # open database and get relevant entry
   #from simpledbf import Dbf5
   from dbfread import DBF
-  table = DBF(os.path.join(folder,filename))
+  filepath = filename if folder is None else os.path.join(folder, filename) 
+  table = DBF(filepath)
   meta = None
   for record in table:
       if llistWells: print(record['PGMN_WELL'])
@@ -230,17 +235,21 @@ def loadMetadata(well, filename='metadata.dbf', wellname='W{WELL_ID:07d}-{WELL_N
 
 if __name__ == '__main__':
     
-#   mode = 'test_climatology'
+  mode = 'test_climatology'
 #   mode = 'test_timeseries'
 #   mode = 'convert_XLS'
-  mode = 'test_load_XLS'
+#   mode = 'test_load_XLS'
+
+  period = (2000,2015) # approximate data availability
+  conservation_authority = 'GRCA'
+  data_folder = ca_folder.format(conservation_authority)
   
   # do some tests
   if mode == 'test_climatology':
     
     # load climatology
     print('')
-    dataset = loadGRCA()
+    dataset = loadPGMN(conservation_authority=conservation_authority, period=period)
     print(dataset)
     print('')
     print(dataset.time)
@@ -253,7 +262,7 @@ if __name__ == '__main__':
     
     # load time-series
     print('')
-    dataset = loadGRCA_TS(well='W178')
+    dataset = loadPGMN_TS(well='W178', conservation_authority=conservation_authority)
     print(dataset)
     print('')
     print(dataset.time)
@@ -272,18 +281,17 @@ if __name__ == '__main__':
       
       
       # load list if well files and generate list of wells
-      well_files = glob(os.path.join(grca_folder,'W*.xlsx'))
+      well_files = glob(os.path.join(data_folder,'W*.xlsx'))
       well_files.sort()
       wells = [os.path.basename(name[:-5]) for name in well_files]
       print(wells)
       
       # dataset
-      period = default_period
       time_ax = Axis(coord=np.arange(12*(period[1]-period[0]))+252, **varatts['time']) # origin: 1979-01
       well_ax = Axis(coord=np.arange(len(wells))+1, name='well', units='') 
-      dataset = Dataset(name='grca', title='GRCA Observation Wells')
+      dataset = Dataset(name=conservation_authority, title=conservation_authority+' Observation Wells')
       # add meta data
-      meta_dicts = [loadMetadata(well) for well in wells]
+      meta_dicts = [loadMetadata(well, conservation_authority=conservation_authority) for well in wells]
       for key in meta_dicts[0].keys():
           if key in varatts: atts = varatts[key]
           elif key.lower() in varatts: atts = varatts[key.lower()]
@@ -304,21 +312,21 @@ if __name__ == '__main__':
       print('\nLoading Well Data:')
       for i,well_file in enumerate(well_files):
           print('  '+wells[i])
-          df = loadXLS(filename=os.path.basename(well_file), folder=os.path.dirname(well_file), 
-                       loutliers=True, sampling='M', period=period, ltrim=False)
+          df = loadXLS(filename=well_file, loutliers=True, sampling='M', period=period, ltrim=False)
           data[i,:] = df['head']
       # add head variable
       dataset += Variable(data=data, axes=(well_ax,time_ax), **varatts['h'])
       
       # write dataset to disk
+      ca_grid = '_'+conservation_authority.lower()
       # timeseries
       print(''); print(dataset); print('')
-      filepath = os.path.join(avgfolder,tsfile.format('',))
+      filepath = os.path.join(avgfolder,tsfile.format(ca_grid,))
       writeNetCDF(dataset, ncfile=filepath, feedback=True)
       # climatology
       clim_ds = dataset.climMean()
       print(''); print(clim_ds); print('')      
-      filepath = os.path.join(avgfolder,avgfile.format('','_{}-{}'.format(*period)))
+      filepath = os.path.join(avgfolder,avgfile.format(ca_grid,'_{}-{}'.format(*period)))
       writeNetCDF(clim_ds, ncfile=filepath, feedback=True)
 
   ## test load function for XLS files
@@ -326,7 +334,7 @@ if __name__ == '__main__':
 
       # print Metadata for South Nation Watershed
       meta = loadMetadata(well='W268-1', llistWells=True, 
-                          folder='C:/Users/aerler/Data/GRCA/SNCA Data/')
+                          folder='C:/Users/aerler/Data/PGMN/SNCA Data/')
       # inspect dictionary
       print('')
       for item in meta.items(): print(item)
