@@ -103,7 +103,8 @@ def interpolateIrregular(old_time, data, new_time, start_date=None, lkgs=True, l
   
   
     # function to parse observation well output
-def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layers=None, lskipNaN=True):
+def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layers=None, lskipNaN=True,
+                  lelev=None):
     ''' a function to parse observation well output and return a three dimansional array, similar to
         genfromtxt, except with an additional depth/layer dimension at the end (time,variable,layer) '''
     # load file contents (all at once)
@@ -118,7 +119,7 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
     varlist = [v.strip('"').lower() for v in line[line.find('=')+1:].strip().split(',') if len(v) > 0]
     lv = len(varlist)
     # find elevation variable for z_layers
-    if z_layers:
+    if z_layers or lelev:
         if layers: raise ArgumentError("Can only specify 'layers' or 'z_layers'.")
         if len(z_layers) != 2: raise ArgumentError("z_layers = (z_min, z_max)") 
         i_z = varlist.index('z')
@@ -152,7 +153,8 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
     i = 3; line = lines[i].lower()
     if z_layers: z_list = []
     while 'zone' not in line and "solutiontime" not in line:
-        if z_layers: z_list.append(float(line.split()[i_z]))
+        if z_layers or lelev: 
+            z_list.append(float(line.split()[i_z]))
         i += 1
         line = lines[i].lower()
     line = [l.strip().split('=') for l in line.split(',')]
@@ -170,6 +172,10 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
         i_max = np.fabs(z-z_max).argmin()
         if i_min == i_max: layers = [i_min]
         else: layers = range(i_min,i_max+1)
+    if lelev: 
+        z_s = z_list[-1]
+        # N.B.: need to do this independently, because the returned z-vector will be sliced,
+        #       just like the other data, but we always need the top (last) element!
     if isinstance(layers, (int,np.integer)): layers = (layers,)    
     if layers is None: 
         #layers = tuple(range(1,nlay+1))
@@ -231,7 +237,8 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
       raise ValueError("It appears the file was not read completely...")
     except StopIteration: pass # exception is right here
     # return array 
-    return time,data,const
+    if lelev: return time,data,const,z_s
+    else: return time,data,const
   
 
 if __name__ == '__main__':

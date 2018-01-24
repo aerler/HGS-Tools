@@ -80,7 +80,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
                   run_period=None, period=None, lskipNaN=False, basin=None, lkgs=True, z_axis='z', 
                   time_axis='simple', resample='M', llastIncl=False, WSC_station=None, PGMN_well=None, 
                   basin_list=None, filename=None, prefix=None, scalefactors=None, metadata=None, 
-                  z_aggregation=None, conservation_authority=None, **kwargs):
+                  z_aggregation=None, correct_z=20., conservation_authority=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None or ( filename is None and station is None and well is None ): raise ArgumentError
@@ -256,10 +256,19 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
           else: raise ArgumentError(z_layers)
       # well files need special treatment
       lsqueeze = isinstance(layers,(int,np.integer))
-      time_series,data,const = parseObsWells(filepath, variables=varcols, constants=constcols, 
-                                             layers=layers, z_layers=z_layers, lskipNaN=lskipNaN)
+      time_series,data,const,z_s = parseObsWells(filepath, variables=varcols, constants=constcols, 
+                                                  layers=layers, z_layers=z_layers, lskipNaN=lskipNaN,
+                                                  lelev=True)
       assert data.shape[1] == len(varcols), data.shape
       nlay = data.shape[2] # number of layers
+      if isinstance(correct_z, (int,float)):
+          if 'screen_depth' not in metadata: AttributeError('Need screen_depth attribute to correct based on elevation and depth!')
+          correct_z =  ( metadata['screen_depth'] < correct_z )
+      if correct_z:
+          i_h = variable_order.index('h')
+          bias = metadata['ELVA_GROUN'] - z_s
+          if data.ndim == 2: data[:,i_h] += bias
+          else: data[:,i_h,:] += bias
       if lsqueeze:
           assert nlay == 1, data.shape 
           data = data.squeeze()
@@ -524,7 +533,7 @@ if __name__ == '__main__':
     # load dataset
     lkgs = True
     dataset = loadHGS_StnTS(station=hgs_station, conservation_authority='GRCA', well=hgs_well, folder=hgs_folder, 
-                            layers=None, z_layers='screen', z_axis='z', z_aggregation='max',
+                            layers=None, z_layers='screen', z_axis='z', z_aggregation='max', lcorrect_z=True,
                             start_date=1979, run_period=10, PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                             basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, lkgs=lkgs,
                             lskipNaN=True, lcheckComplete=True, varlist='default', scalefactors=1e-4,

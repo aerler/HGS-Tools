@@ -415,11 +415,11 @@ if __name__ == '__main__':
         # actual observation wells
         obs_wells = [
                      # W268-1, 48.52-61.32m, sheet 2-3, possibly 1 (1-2 according to Omar)
-                     dict(name='W268-1', z=-35.0, sheet=1, node= 2696, bias=+0.14, error=0.01,
+                     dict(name='W268-1', z=-35.0, sheet=1, node= 2696, bias=+0.14-0.14, error=0.01,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-                     dict(name='W268-1', z=57.08, sheet=2, node= 5580, bias=+0.14, error=0.01,
+                     dict(name='W268-1', z=57.08, sheet=2, node= 5580, bias=+0.14-0.14, error=0.01,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-                     dict(name='W268-1', z=58.08, sheet=3, node= 8464, bias=+0.14, error=0.01,
+                     dict(name='W268-1', z=58.08, sheet=3, node= 8464, bias=+0.14-0.14, error=0.01,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
 #                      dict(name='W268-1', z=-35.0, sheet=1, node= 2617, bias=0.24, error=0.02,
 #                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
@@ -428,9 +428,9 @@ if __name__ == '__main__':
 #                      dict(name='W268-1', z=58.08, sheet=3, node= 8385, bias=0.24, error=0.02,
 #                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
                      # W350-2, 104.13-107.13m, sheet 3, possibly 4 (3-4 according to Omar)
-                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-0.62+2.6, error=0.01,
+                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-0.62+2.4, error=0.01,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
-                     dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-0.62+2.6, error=0.01, 
+                     dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-0.62+2.4, error=0.01, 
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
 #                      # W350-3, 87.33-96.73m, sheet 2 (2-3 according to Omar)
 #                      dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=0.05, # very unreliable well 
