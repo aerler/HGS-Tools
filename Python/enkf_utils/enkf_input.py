@@ -333,8 +333,8 @@ if __name__ == '__main__':
     # execution taskes
     tasks = []
 #     tasks += ['test_read_kister']
-#     tasks += ['write_ic_file']
-#     tasks += ['write_bdy_file']
+    tasks += ['write_ic_file']
+    tasks += ['write_bdy_file']
     tasks += ['write_obs_file']
 
     if 'test_read_kister' in tasks:
@@ -383,9 +383,9 @@ if __name__ == '__main__':
                      'pet.inc'   : os.path.join(folder,'pet_values.inc'),}
         # construct pet scalefactor in a way to distribute most efficiently
         NP = 24 # number of processors for MPI 
-        scalefactors = {'precip.inc':variableScale(start=0.9, stop=1.1, nreal=nreal, NP=NP), 
-                        'pet.inc':variableScale(start=1., stop=0.5, nreal=nreal, NP=NP),}
-        noisefactors = {'precip.inc':0.5, 'pet.inc':0.3,}
+        scalefactors = {'precip.inc':variableScale(start=0.7, stop=1.3, nreal=nreal, NP=NP), 
+                        'pet.inc':variableScale(start=1.1, stop=0.5, nreal=nreal, NP=NP),}
+        noisefactors = {'precip.inc':0.5, 'pet.inc':0.4,}
         intemittency = {'precip.inc':0.3, 'pet.inc':0.,}
         #enkf_folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/input_deterministic/'        
         
@@ -428,9 +428,9 @@ if __name__ == '__main__':
 #                      dict(name='W268-1', z=58.08, sheet=3, node= 8385, bias=0.24, error=0.02,
 #                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
                      # W350-2, 104.13-107.13m, sheet 3, possibly 4 (3-4 according to Omar)
-                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-0.62+2.4, error=0.01,
+                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-0.62+2.2, error=0.01,
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
-                     dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-0.62+2.4, error=0.01, 
+                     dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-0.62+2.2, error=0.01, 
                           csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
 #                      # W350-3, 87.33-96.73m, sheet 2 (2-3 according to Omar)
 #                      dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=0.05, # very unreliable well 

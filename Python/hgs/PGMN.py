@@ -30,9 +30,9 @@ varatts = dict(h = dict(name='head', units='m', atts=dict(long_name='Pressure He
                well_depth = dict(name='depth', units='m', atts=dict(long_name='Well Depth')), # well depth from surface
                wel_piezom = dict(name='d_piezo', units='m', atts=dict(long_name='Depth of Piezometer')), # where the head is measured
                screen        = dict(name='screen', units='', atts=dict(long_name='Screen Type')), 
-               screen_depth  = dict(name='d_scr', units='m', atts=dict(long_name='Screen Depth')), # screen level depth...                
-               screen_top    = dict(name='d_st', units='m', atts=dict(long_name='Screen Top Depth')), # ... from the surface
-               screen_bottom = dict(name='d_sb', units='m', atts=dict(long_name='Screen Bottom Depth')), 
+               screen_depth  = dict(name='screen_depth', units='m', atts=dict(long_name='Screen Depth')), # screen level depth...                
+               screen_top    = dict(name='screen_top', units='m', atts=dict(long_name='Screen Top Depth')), # ... from the surface
+               screen_bottom = dict(name='screen_bottom', units='m', atts=dict(long_name='Screen Bottom Depth')), 
                elva_groun = dict(name='zs', units='m', atts=dict(long_name='Surface Elevation (M.S.L.)')), # surface elevation
                z_t        = dict(name='z_t', units='m', atts=dict(long_name='Screen Top Elevation (M.S.L.)')), # screen level elevation
                z_b        = dict(name='z_b', units='m', atts=dict(long_name='Screen Bottom Elevation (M.S.L.)')), # screen level elevation
@@ -72,7 +72,7 @@ def loadPGMN(name=None, title=None, well=None, period=None, varlist=None, varatt
              conservation_authority=None, folder=avgfolder, filelist=None, lload=True):
   ''' Get the pre-processed monthly climatology of GRCA well heads as a DatasetNetCDF. '''
   # load standardized climatology dataset with GRCA-specific parameters  
-  name = conservation_authority or dataset_name
+  name = name or conservation_authority or dataset_name
   dataset = loadObservations(name=name, title=title, folder=folder, station=conservation_authority.lower(), 
                              period=period, grid=None, varlist=varlist, varatts=varatts, filepattern=avgfile, 
                              filelist=filelist, lautoregrid=False, mode='climatology')
@@ -88,7 +88,7 @@ def loadPGMN_TS(name=None, title=None, well=None, varlist=None, varatts=None,
                 conservation_authority=None, folder=avgfolder, filelist=None, lload=True):
   ''' Get the pre-processed monthly timeseries for GRCA well heads as a DatasetNetCDF. '''
   # load standardized time-series dataset with GRCA-specific parameters  
-  name = conservation_authority or dataset_name
+  name = name or conservation_authority or dataset_name
   dataset = loadObservations(name=name, title=title, folder=folder, station=conservation_authority.lower(), 
                              period=None, grid=None, varlist=varlist, varatts=varatts, filepattern=tsfile, 
                              filelist=filelist, lautoregrid=False, mode='climatology')
@@ -235,9 +235,9 @@ def loadMetadata(well, filename='metadata.dbf', wellname='W{WELL_ID:07d}-{WELL_N
 
 if __name__ == '__main__':
     
-  mode = 'test_climatology'
+#   mode = 'test_climatology'
 #   mode = 'test_timeseries'
-#   mode = 'convert_XLS'
+  mode = 'convert_XLS'
 #   mode = 'test_load_XLS'
 
   period = (2000,2015) # approximate data availability
