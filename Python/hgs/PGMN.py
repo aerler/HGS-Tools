@@ -227,9 +227,10 @@ def loadMetadata(well, filename='metadata.dbf', wellname='W{WELL_ID:07d}-{WELL_N
   meta['screen_top'] = screen_hilo[0]
   meta['screen_bottom'] = screen_hilo[1]
   meta['screen_depth'] = ( screen_hilo[0] + screen_hilo[1] ) / 2.
-  meta['z']   = meta['ELVA_GROUN'] - meta['screen_depth']
-  meta['z_t'] = meta['ELVA_GROUN'] - meta['screen_top']
-  meta['z_b'] = meta['ELVA_GROUN'] - meta['screen_bottom']
+  meta['zs'] = float(meta['ELVA_GROUN'])
+  meta['z']   = meta['zs'] - meta['screen_depth']
+  meta['z_t'] = meta['zs'] - meta['screen_top']
+  meta['z_b'] = meta['zs'] - meta['screen_bottom']
   # return coordinate arrays (in degree)
   return meta
 
