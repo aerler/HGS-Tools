@@ -13,6 +13,7 @@ import pandas as pd
 from glob import glob
 from collections import OrderedDict
 from scipy import stats as ss
+from collections import namedtuple
 # internal/local imports
 from hgs_output import binary 
 from geodata.misc import ArgumentError, isNumber
@@ -46,10 +47,33 @@ def variableScale(start, stop, nreal, NP):
     # return
     return var_scale
 
-def readKister(filepath=None, period=None, resample='1D', missing=None, bias=None, 
-               header=3, name='value', lpad=True, lvalues=True, outliers=None):
+
+def queryKister(url=None, output=None, ts_id=None, period=None, **kwargs):
+    ''' retrieve a Kister csv file for given period from web server '''
+    import requests
+    # parse period
+    if isinstance(period, (list,tuple)):
+        from_date = period[0]; to_date = period[1]
+    else: 
+        from_date = period; to_date = None
+    # set parameter values
+    params = {'service':'kisters', 'type':'queryServices', 'request':'getTimeseriesValues', 'datasource':0, 
+              'format':'csv', 'metadata':True, 'ts_id':ts_id, 'from':from_date, 'to':to_date}
+    params.update(kwargs)
+    # issue request
+    r = requests.get(url, params=params)
+    r.raise_for_status() # raise an exception is an error occurred
+    # write contents to file 
+    with open(output, 'w') as f: f.write(r.text)
+    # return request object
+    return r
+  
+  
+def readKister(filepath=None, period=None, resample='1D', missing=None, bias=None, comment='#', 
+               header=0, separator=';', name='value', lpad=True, lvalues=True, outliers=None):
     ''' read a Kister csv file and slice and resample timeseries '''
-    df = pd.read_csv(filepath, header=header, index_col=0, parse_dates=True, names=('time',name))
+    df = pd.read_csv(filepath, header=header, sep=separator, comment='#',
+                     index_col=0, parse_dates=True, names=('time',name))
     # slice
     if period: 
         begin,end = pd.to_datetime(period[0]),pd.to_datetime(period[1])
@@ -310,7 +334,7 @@ if __name__ == '__main__':
     ## settings
     # available range
     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_may/' # folder where files a written
-    date_range = ('2017-05-01', '2017-12-31', '1D') # date range for files
+    date_range = ('2017-05-01', '2018-01-31', '1D') # date range for files
 #     glob_pattern = '00[01]?'; nreal = 40 # first 20 x 2
     glob_pattern = '00[012][0-7]'; nreal = 96 # first 30 x 2
     # just december
@@ -332,10 +356,32 @@ if __name__ == '__main__':
     
     # execution taskes
     tasks = []
+#     tasks += ['test_query_kister']
 #     tasks += ['test_read_kister']
     tasks += ['write_ic_file']
     tasks += ['write_bdy_file']
+    tasks += ['retrieve_kister']
     tasks += ['write_obs_file']
+
+    if 'test_query_kister' in tasks:
+      
+        # test file
+        ts_id = 34829042 # hydrograph at Berwick
+        url = 'http://waterdata.quinteconservation.ca/KiWIS/KiWIS'
+        csv_file = 'D:/Data/HGS/SNW/EnKF/Kister/test.csv'
+        time_sampling = ('2017-05-01', '2018-01-31', '1D')
+        
+        # query data
+        content = queryKister(url=url, output=csv_file, ts_id=ts_id, period=time_sampling[:2])
+        # load data
+        data = readKister(filepath=csv_file, period=time_sampling[:2], resample=time_sampling[2])
+        # test
+        datelist = pd.date_range(pd.to_datetime(time_sampling[0]), pd.to_datetime(time_sampling[1]), 
+                                 freq=time_sampling[2])
+        assert len(datelist) == len(data), (data.shape,len(datelist))
+        print((data.shape,len(datelist)))
+        
+        print('\n===\n')
 
     if 'test_read_kister' in tasks:
       
@@ -383,8 +429,8 @@ if __name__ == '__main__':
                      'pet.inc'   : os.path.join(folder,'pet_values.inc'),}
         # construct pet scalefactor in a way to distribute most efficiently
         NP = 24 # number of processors for MPI 
-        scalefactors = {'precip.inc':variableScale(start=0.7, stop=1.3, nreal=nreal, NP=NP), 
-                        'pet.inc':variableScale(start=1.1, stop=0.5, nreal=nreal, NP=NP),}
+        scalefactors = {'precip.inc':variableScale(start=1., stop=1.6, nreal=nreal, NP=NP), 
+                        'pet.inc':variableScale(start=.9, stop=0.5, nreal=nreal, NP=NP),}
         noisefactors = {'precip.inc':0.5, 'pet.inc':0.4,}
         intemittency = {'precip.inc':0.3, 'pet.inc':0.,}
         #enkf_folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/input_deterministic/'        
@@ -402,6 +448,33 @@ if __name__ == '__main__':
             
         print('\n===\n')
     
+    
+    ## some common parameters for SNCA observations
+        
+    # SNCA Kister service
+    url = 'http://waterdata.quinteconservation.ca/KiWIS/KiWIS'
+    # variable-specific paramters
+    DataFeed = namedtuple('DataFeed', ('name','csv','ts_id'))
+    datafeeds = [# main gauge at Berwick
+                 DataFeed(name='02LB022',csv='D:/Data/HGS/SNW/EnKF/Kister/02LB022.csv',ts_id=34829042),
+                 # soil moisture
+                 DataFeed(name='W268_sat',csv='D:/Data/HGS/SNW/EnKF/Kister/W268_sat.csv',ts_id=38178042),
+                 # observation wells 
+                 DataFeed(name='W268-1',csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv',ts_id=38915042),
+                 DataFeed(name='W350-2',csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv',ts_id=38908042),
+                 DataFeed(name='W350-3',csv='D:/Data/HGS/SNW/EnKF/Kister/W350-3.csv',ts_id=38179042),]
+    datafeeds = {feed.name:feed for feed in datafeeds} # more useful as dict
+
+    if 'retrieve_kister' in tasks:
+      
+        # query data
+        for feed in datafeeds.values():
+            print('\nRetrieving datafeed {}...'.format(feed.name))
+            r = queryKister(url=url, period=date_range[:2], output=feed.csv, ts_id=feed.ts_id)
+            print(" ('{}')".format(feed.csv))
+        
+        print('\n===\n')
+
     if 'write_obs_file' in tasks:
       
         # definitions
@@ -415,28 +488,18 @@ if __name__ == '__main__':
         # actual observation wells
         obs_wells = [
                      # W268-1, 48.52-61.32m, sheet 2-3, possibly 1 (1-2 according to Omar)
-                     dict(name='W268-1', z=-35.0, sheet=1, node= 2696, bias=+0.14-0.14, error=0.01,
-                          csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-                     dict(name='W268-1', z=57.08, sheet=2, node= 5580, bias=+0.14-0.14, error=0.01,
-                          csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-                     dict(name='W268-1', z=58.08, sheet=3, node= 8464, bias=+0.14-0.14, error=0.01,
-                          csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-#                      dict(name='W268-1', z=-35.0, sheet=1, node= 2617, bias=0.24, error=0.02,
-#                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-#                      dict(name='W268-1', z=57.08, sheet=2, node= 5501, bias=0.24, error=0.02,
-#                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
-#                      dict(name='W268-1', z=58.08, sheet=3, node= 8385, bias=0.24, error=0.02,
-#                           csv='D:/Data/HGS/SNW/EnKF/Kister/W268-1.csv'),
+                     dict(name='W268-1', z=-35.0, sheet=1, node= 2696, bias=+0.14-0.14, error=0.01,),
+                     dict(name='W268-1', z=57.08, sheet=2, node= 5580, bias=+0.14-0.14, error=0.01,),
+                     dict(name='W268-1', z=58.08, sheet=3, node= 8464, bias=+0.14-0.14, error=0.01,),
+#                      dict(name='W268-1', z=-35.0, sheet=1, node= 2617, bias=0.24, error=0.02,),
+#                      dict(name='W268-1', z=57.08, sheet=2, node= 5501, bias=0.24, error=0.02,),
+#                      dict(name='W268-1', z=58.08, sheet=3, node= 8385, bias=0.24, error=0.02,),
                      # W350-2, 104.13-107.13m, sheet 3, possibly 4 (3-4 according to Omar)
-                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-0.62+2.2, error=0.01,
-                          csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
-                     dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-0.62+2.2, error=0.01, 
-                          csv='D:/Data/HGS/SNW/EnKF/Kister/W350-2.csv'),
+                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-0.62+2.2, error=0.01,),
+                     dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-0.62+2.2, error=0.01,),
 #                      # W350-3, 87.33-96.73m, sheet 2 (2-3 according to Omar)
-#                      dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=0.05, # very unreliable well 
-#                            csv='D:/Data/HGS/SNW/EnKF/Kister/W350-3.csv', bias=0,)
-                     ]
-               
+#                      dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=0.05, bias=0,) # very unreliable well
+                     ]               
         
         # produce open and closed loop observation files
         mode = {'fake_head.dat':False, 'obs_head.dat':True,}
@@ -450,8 +513,9 @@ if __name__ == '__main__':
                 #print(obs_well) # feedback without data  
                 if lreal:
                     # load actual observation data
-                    print("Reading well observations:\n '{}'".format(obs_well['csv']))
-                    obs_well['data'] = readKister(filepath=obs_well['csv'], bias=obs_well['bias'],
+                    filepath = datafeeds[obs_well['name']].csv
+                    print("Reading well observations:\n '{}'".format(filepath))
+                    obs_well['data'] = readKister(filepath=filepath, bias=obs_well['bias'],
                                                   period=date_range[:2], resample=date_range[2], 
                                                   missing=missing, lpad=True, lvalues=True,
                                                   outliers=3)
