@@ -4,10 +4,10 @@ BIN=$@
 
 if [[ -n "$WEXP" ]]; then
   echo
-  echo "Waiting for previous experiment to finish):"
+  echo 'Waiting for previous experiment to finish:'
   echo "  ${WEXP}"
   while [ ! -f "${WEXP}/COMPLETED" ]; do sleep 100; done
-  echo "Experiment finished - starting new experiment!"
+  echo 'Experiment finished - starting new experiment!'
   echo
 fi # wait...
 
@@ -20,12 +20,10 @@ N=$( sed -n '/total_number_of_time_steps/ s/^[[:space:]]*total_number_of_time_st
 echo "Total Number of Time-steps: $N"
 # clean a bit
 if [ -e out/ ]; then
-  echo "Cleaning Run Directory (moving existing output to backup)"
-  rm -rf out_backup
+  echo 'Cleaning Run Directory (moving existing output to backup)'
+  rm -rf out_backup COMPLETED
   mv out out_backup
-  [ -f backup.info ] && mv backup.info out_backup/
-  [ -f enkf_*.log ] && mv enkf_*.log out_backup/
-  [ -f enkf_*.log.gz ] && mv enkf_*.log.gz out_backup/
+  mv -f backup.info enkf_*.log enkf_*.log.gz out_backup/
 else
   echo "Cleaning Run Directory"
   rm -f backup.info enkf_*.log enkf_*.log.gz
@@ -41,6 +39,7 @@ echo "Starting EnKF (first attempt)"
 echo $BIN
 echo
 $BIN &> tmp.log 
+grep 'Total simulation time' timing.info
 echo
 
 # check completion
@@ -73,6 +72,7 @@ while [ $CN -lt $N ]; do
   echo $BIN
   echo
   $BIN &> tmp.log
+  grep 'Total simulation time' timing.info
   echo
   # read time step again
   CN=$( cat backup.info )
