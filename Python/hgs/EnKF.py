@@ -39,7 +39,8 @@ variable_attributes.update(Hydro.atts)
 # observation wells
 class Obs(object):
     name = 'obs'
-    atts = {'h-meas': dict(name='h_obs', units='m', atts=dict(long_name='Observed Total Head')),
+    atts = {'head': dict(name='head', units='m', atts=dict(long_name='Observed Total Head')),
+            'h-meas': dict(name='h_obs', units='m', atts=dict(long_name='Observed Total Head')),
             'h-pert': dict(name='h_per', units='m', atts=dict(long_name='Perturbed Observed Head')),
             'pert'  : dict(name='h_dif', units='m', atts=dict(long_name='Total Head Difference')),
             'h-sim' : dict(name='h_sim', units='m', atts=dict(long_name='Simulated Total Head')),
@@ -238,14 +239,21 @@ def loadKister_StnTS(station=None, well=None, folder=None, varlist='default', va
     # initialize Dataset
     dataset = Dataset(name=name, title=title if title else name.title(), atts=metadata)
     # load well data
-    pass
+    if 'head' in varlist:
+        if not well: raise ArgumentError
+        if folder: filepath = os.path.join(folder,well) # default output folder
+        else: filepath = station
+        data = readKister(filepath=filepath, period=(start_date,end_date), resample=sampling, lvalues=True)
+        assert ntime == len(data), data.shape
+        atts = varatts['head']
+        dataset += Variable(atts=atts, data=data, axes=(time,))            
     # load discharge/hydrograph data
     if 'discharge' in varlist:
         if not station: raise ArgumentError
         if folder: filepath = os.path.join(folder,station) # default output folder
         else: filepath = station
         data = readKister(filepath=filepath, period=(start_date,end_date), resample=sampling, lvalues=True)
-        ntime = len(data)
+        assert ntime == len(data), data.shape
         atts = varatts['discharge']
         if lkgs: 
             data *= 1000.

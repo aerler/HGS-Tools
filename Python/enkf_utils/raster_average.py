@@ -136,14 +136,14 @@ if __name__ == '__main__':
 
     ## settings
     # available range
-#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_may/' # folder where files a written
-#     date_range = ('2017-05-01', '2017-12-31', 'D') # date range for files
-#     # just december
+    folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_may/' # folder where files a written
+    date_range = ('2017-05-01', '2018-01-31', 'D') # date range for files
+    # just december
 #     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_december/' # folder where files a written
 #     date_range = ('2017-12-01', '2017-12-31', 'D') # date range for files
     # just november and december
-    folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_november/' # folder where files a written
-    date_range = ('2017-11-01', '2017-12-31', 'D') # date range for files
+#     folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_november/' # folder where files a written
+#     date_range = ('2017-11-01', '2018-12-31', 'D') # date range for files
     
     # work folder setup
     if not os.path.exists(folder): os.mkdir(folder)
@@ -179,8 +179,8 @@ if __name__ == '__main__':
         # definitions
         #folder = 'D:/Data/HGS/SNW/EnKF/TWC/forcing/'
         
-        inc_files = {'precip.inc':local_forcing_folder+'/RainPLUSsnowmelt_{:s}.asc', 
-                     'pet.inc':local_forcing_folder+'/PET_{:s}.asc'}
+        inc_files = {'precip.inc':local_forcing_folder+'/pcp_{:s}.asc', 
+                     'pet.inc':local_forcing_folder+'/pet_{:s}.asc'}
         #date_range = ('2017-05-01', '2017-12-31', '1D')
         
         os.chdir(folder)

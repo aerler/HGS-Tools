@@ -14,6 +14,12 @@ from warnings import warn
 # internal imports
 from geodata.misc import DataError, ArgumentError
 from datasets.WSC import GageStationError
+from hgsrun.misc import HGSError
+
+
+class ParserError(HGSError):
+  ''' error related to parsing timeseries files '''
+  pass
 
 
 # a function to resolve a data
@@ -97,7 +103,8 @@ def interpolateIrregular(old_time, data, new_time, start_date=None, lkgs=True, l
   
   
     # function to parse observation well output
-def parseObsWells(filepath, variables=None, constants=None, layers=None, lskipNaN=True):
+def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layers=None, lskipNaN=True,
+                  lelev=None):
     ''' a function to parse observation well output and return a three dimansional array, similar to
         genfromtxt, except with an additional depth/layer dimension at the end (time,variable,layer) '''
     # load file contents (all at once)
@@ -106,11 +113,16 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, lskipNa
     ln = len(lines)
     # validate header
     line = lines[0].lower()
-    if "title" not in line: raise GageStationError((line,filepath))
+    if "title" not in line: raise ParserError((line,filepath))
     line = lines[1].lower()
-    if "variables" not in line: raise GageStationError((line,filepath))
-    varlist = [v for v in line[line.find('=')+1:].strip().split(',') if len(v) > 0]
+    if "variables" not in line: raise ParserError((line,filepath))
+    varlist = [v.strip('"').lower() for v in line[line.find('=')+1:].strip().split(',') if len(v) > 0]
     lv = len(varlist)
+    # find elevation variable for z_layers
+    if z_layers or lelev:
+        if layers: raise ArgumentError("Can only specify 'layers' or 'z_layers'.")
+        if len(z_layers) != 2: raise ArgumentError("z_layers = (z_min, z_max)") 
+        i_z = varlist.index('z')
     # validate constants (variables with no time-dependence))
     if constants is None: 
         ce = 0 # assume no constants
@@ -133,26 +145,45 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, lskipNa
         ve = 1
     else: TypeError(variables)
     if lv < len(variables)+ce: raise ArgumentError((variables,varlist))
-    line = lines[2].lower()
-    if "zone" != line[:4]: raise GageStationError((line[:4],filepath))
-    if "solutiontime" != line[22:34] : raise GageStationError((line,filepath))
-    # determine number of layers
-    i = 3
-    while 'zone' not in lines[i]: i += 1
-    line = lines[i].lower()
-    if "zone" != line[:4]: raise GageStationError(line,filepath)
-    if "solutiontime" != line[22:34] : raise GageStationError((line,filepath))
+    line = [l.strip().split('=') for l in lines[2].lower().split(',')]
+    if len(line[0]) != 2 or len(line[1]) != 2: ParserError((line,filepath))
+    if "zone" not in line[0][0]: raise ParserError((line,filepath))
+    if "solutiontime" not in line[1][0] : raise ParserError((line,filepath))
+    # determine number of layers (and z-range)
+    i = 3; line = lines[i].lower()
+    if z_layers: z_list = []
+    while 'zone' not in line and "solutiontime" not in line:
+        if z_layers or lelev: 
+            z_list.append(float(line.split()[i_z]))
+        i += 1
+        line = lines[i].lower()
+    line = [l.strip().split('=') for l in line.split(',')]
+    if len(line[0]) != 2 or len(line[1]) != 2: ParserError((line,filepath))
+    if "zone" not in line[0][0]: raise ParserError((line,filepath))
+    if "solutiontime" not in line[1][0] : raise ParserError((line,filepath))
     nlay = i - 3; te = (ln-2)/(nlay+1)
     assert (nlay+1)*te == ln-2, (ln,nlay,te)
+    # convert z_layers to layers based on layer elevation
+    if z_layers:
+        z_min,z_max = z_layers
+        assert nlay == len(z_list), z_list
+        z = np.asarray(z_list)
+        i_min = np.fabs(z-z_min).argmin()
+        i_max = np.fabs(z-z_max).argmin()
+        if i_min == i_max: layers = [i_min]
+        else: layers = range(i_min,i_max+1)
+    if lelev: 
+        z_s = z_list[-1]
+        # N.B.: need to do this independently, because the returned z-vector will be sliced,
+        #       just like the other data, but we always need the top (last) element!
+    if isinstance(layers, (int,np.integer)): layers = (layers,)    
     if layers is None: 
         #layers = tuple(range(1,nlay+1))
         le = nlay # process all layers/rows
     elif isinstance(layers, (list,tuple)):
         if nlay < len(layers): raise ArgumentError((layers,nlay))
+        if min(layers) < 0 or max(layers) >= nlay: raise ValueError((nlay,layers))
         le = len(layers)
-    elif isinstance(layers, (int,np.integer)):
-        layers = (layers,)
-        le = 1
     else: raise TypeError(layers)
     assert le <= nlay, (le,nlay)
     # allocate array
@@ -172,14 +203,16 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, lskipNa
     while n < te1 or k < nlay:
       line = line_iter.next() # should work flawlessly, if I got the indices right...
       if k == nlay:
-          assert line[:4] == 'zone', line[:4]
-          assert "SOLUTIONTIME" == line[22:34], line[22:34]
+          line = [l.strip().split('=') for l in line.lower().split(',')]
+          assert len(line[0]) == 2 and len(line[1]) == 2, line
+          assert 'zone' in line[0][0], line
+          assert "solutiontime" in line[1][0], line
           # prepare next time step
           k = 0 # initialize a new time-step
           if llayers: 
               l = 0; klay = layers[0]
           n += 1
-          time[n] = np.float64(line[36:])          
+          time[n] = np.float64(line[1][1])          
       else:
           if not llayers or k == klay:
               elements = line.split() # split fields, but only process those that we want
@@ -204,7 +237,8 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, lskipNa
       raise ValueError("It appears the file was not read completely...")
     except StopIteration: pass # exception is right here
     # return array 
-    return time,data,const
+    if lelev: return time,data,const,z_s
+    else: return time,data,const
   
 
 if __name__ == '__main__':
