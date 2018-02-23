@@ -261,7 +261,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
                                                   lelev=True)
       assert data.shape[1] == len(varcols), data.shape
       nlay = data.shape[2] # number of layers
-      if isinstance(correct_z, (int,float)):
+      if isinstance(correct_z, (int,np.integer,float,np.inexact)) and not isinstance(correct_z, (bool,np.bool_)):
           if 'screen_depth' not in metadata: AttributeError('Need screen_depth attribute to correct based on elevation and depth!')
           correct_z =  ( metadata['screen_depth'] < correct_z )
       if correct_z:
@@ -533,7 +533,7 @@ if __name__ == '__main__':
     # load dataset
     lkgs = True
     dataset = loadHGS_StnTS(station=hgs_station, conservation_authority='GRCA', well=hgs_well, folder=hgs_folder, 
-                            layers=None, z_layers='screen', z_axis='z', z_aggregation='max', lcorrect_z=True,
+                            layers=None, z_layers='screen', z_axis='z', z_aggregation='max', correct_z=True,
                             start_date=1979, run_period=10, PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                             basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, lkgs=lkgs,
                             lskipNaN=True, lcheckComplete=True, varlist='default', scalefactors=1e-4,

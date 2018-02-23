@@ -358,10 +358,10 @@ if __name__ == '__main__':
     tasks = []
 #     tasks += ['test_query_kister']
 #     tasks += ['test_read_kister']
-    tasks += ['write_ic_file']
+#     tasks += ['write_ic_file']
     tasks += ['write_bdy_file']
-    tasks += ['retrieve_kister']
-    tasks += ['write_obs_file']
+#     tasks += ['retrieve_kister']
+#     tasks += ['write_obs_file']
 
     if 'test_query_kister' in tasks:
       
@@ -429,10 +429,14 @@ if __name__ == '__main__':
                      'pet.inc'   : os.path.join(folder,'pet_values.inc'),}
         # construct pet scalefactor in a way to distribute most efficiently
         NP = 24 # number of processors for MPI 
-        scalefactors = {'precip.inc':variableScale(start=1., stop=1.6, nreal=nreal, NP=NP), 
+        scalefactors = {'precip.inc':variableScale(start=1., stop=1.4, nreal=nreal, NP=NP), 
                         'pet.inc':variableScale(start=.9, stop=0.5, nreal=nreal, NP=NP),}
-        noisefactors = {'precip.inc':0.5, 'pet.inc':0.4,}
-        intemittency = {'precip.inc':0.3, 'pet.inc':0.,}
+#         scalefactors = {'precip.inc':variableScale(start=1.2, stop=1.2, nreal=nreal, NP=NP), 
+#                         'pet.inc':variableScale(start=.7, stop=0.7, nreal=nreal, NP=NP),}
+#         noisefactors = {'precip.inc':0.5, 'pet.inc':0.4,}
+#         intemittency = {'precip.inc':0.3, 'pet.inc':0.,}
+        noisefactors = {'precip.inc':0., 'pet.inc':0.,}
+        intemittency = {'precip.inc':0., 'pet.inc':0.,}
         #enkf_folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/input_deterministic/'        
         
         # create boundary files
@@ -488,15 +492,15 @@ if __name__ == '__main__':
         # actual observation wells
         obs_wells = [
                      # W268-1, 48.52-61.32m, sheet 2-3, possibly 1 (1-2 according to Omar)
-                     dict(name='W268-1', z=-35.0, sheet=1, node= 2696, bias=+0.14-0.14, error=0.01,),
-                     dict(name='W268-1', z=57.08, sheet=2, node= 5580, bias=+0.14-0.14, error=0.01,),
-                     dict(name='W268-1', z=58.08, sheet=3, node= 8464, bias=+0.14-0.14, error=0.01,),
+                     dict(name='W268-1', z=-35.0, sheet=1, node= 2696, bias=+0.14-0.1, error=0.01,),
+                     dict(name='W268-1', z=57.08, sheet=2, node= 5580, bias=+0.14-0.1, error=0.01,),
+                     dict(name='W268-1', z=58.08, sheet=3, node= 8464, bias=+0.14-0.1, error=0.01,),
 #                      dict(name='W268-1', z=-35.0, sheet=1, node= 2617, bias=0.24, error=0.02,),
 #                      dict(name='W268-1', z=57.08, sheet=2, node= 5501, bias=0.24, error=0.02,),
 #                      dict(name='W268-1', z=58.08, sheet=3, node= 8385, bias=0.24, error=0.02,),
                      # W350-2, 104.13-107.13m, sheet 3, possibly 4 (3-4 according to Omar)
-                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-0.62+2.2, error=0.01,),
-                     dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-0.62+2.2, error=0.01,),
+                     dict(name='W350-2', z=106.81, sheet=3, node= 7685, bias=-0.62+3.35, error=0.01,),
+                     dict(name='W350-2', z=109.93, sheet=4, node=10569, bias=-0.62+3.35, error=0.01,),
 #                      # W350-3, 87.33-96.73m, sheet 2 (2-3 according to Omar)
 #                      dict(name='W350-3', z=91.67, sheet=2, node= 4801, error=0.05, bias=0,) # very unreliable well
                      ]               
