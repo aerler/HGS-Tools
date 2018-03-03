@@ -428,15 +428,22 @@ if __name__ == '__main__':
         bdy_files = {'precip.inc': os.path.join(folder,'precip_values.inc'),
                      'pet.inc'   : os.path.join(folder,'pet_values.inc'),}
         # construct pet scalefactor in a way to distribute most efficiently
-        NP = 24 # number of processors for MPI 
-        scalefactors = {'precip.inc':variableScale(start=1., stop=1.4, nreal=nreal, NP=NP), 
-                        'pet.inc':variableScale(start=.9, stop=0.5, nreal=nreal, NP=NP),}
+        NP = 24 # number of processors for MPI
+        # no randomization 
 #         scalefactors = {'precip.inc':variableScale(start=1.2, stop=1.2, nreal=nreal, NP=NP), 
 #                         'pet.inc':variableScale(start=.7, stop=0.7, nreal=nreal, NP=NP),}
-#         noisefactors = {'precip.inc':0.5, 'pet.inc':0.4,}
-#         intemittency = {'precip.inc':0.3, 'pet.inc':0.,}
         noisefactors = {'precip.inc':0., 'pet.inc':0.,}
         intemittency = {'precip.inc':0., 'pet.inc':0.,}
+        # full randomization
+        scalefactors = {'precip.inc':variableScale(start=1., stop=1.4, nreal=nreal, NP=NP), 
+                        'pet.inc':variableScale(start=.9, stop=0.5, nreal=nreal, NP=NP),}
+#         noisefactors = {'precip.inc':0.5, 'pet.inc':0.4,}
+#         intemittency = {'precip.inc':0.3, 'pet.inc':0.,}
+        # precip intermittency and noise, PET long-term bias
+#         scalefactors = {'precip.inc':variableScale(start=1.2, stop=1.2, nreal=nreal, NP=NP), 
+#                         'pet.inc':variableScale(start=.9, stop=0.5, nreal=nreal, NP=NP),}
+#         noisefactors = {'precip.inc':0.5, 'pet.inc':0.,}
+#         intemittency = {'precip.inc':0.3, 'pet.inc':0.,}
         #enkf_folder = 'D:/Data/HGS/SNW/EnKF/TWC/enkf_test/input_deterministic/'        
         
         # create boundary files

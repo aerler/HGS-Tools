@@ -43,13 +43,19 @@ variable_attributes_mms = dict(# hydrograph variables
                                number_of_solver_iterations = dict(name='nsiter', units='#', atts=dict(long_name='Number of Solver Iterations')),
                                time_step = dict(name='delta_t', units='s', atts=dict(long_name='Time Step')),
                                # water balance variables
-                               outerboundary = dict(name='outflow', units='m^3/s', atts=dict(long_name='Outer Boundary Flow')),
+                               outerboundary = dict(name='outflow', units='m^3/s', atts=dict(long_name='Outer Boundary Flow', flip_sign=True)),
+                               outer_edge = dict(name='outflow', units='m^3/s', atts=dict(long_name='Outer Boundary Flow', flip_sign=True)),
                                rainfall = dict(name='tot_precip', units='m^3/s', atts=dict(long_name='Basin-integrated Precipitation')),
+                               pet_pet = dict(name='tot_pet', units='m^3/s', atts=dict(long_name='Basin-integrated Potential ET')),
                                pet = dict(name='tot_pet', units='m^3/s', atts=dict(long_name='Basin-integrated Potential ET')),
-                               tot_et = dict(name='tot_et', units='m^3/s', atts=dict(long_name='Basin-integrated Actual ET')),
+                               tot_et = dict(name='tot_et', units='m^3/s', atts=dict(long_name='Basin-integrated Actual ET', flip_sign=True)),
+                               canopy_evap = dict(name='can_et', units='m^3/s', atts=dict(long_name='Basin-integrated Canopy Evap.', flip_sign=True)),
+                               surf_evap = dict(name='sfc_et', units='m^3/s', atts=dict(long_name='Basin-integrated Surface', flip_sign=True)),
                                infilt = dict(name='infil', units='m^3/s', atts=dict(long_name='Basin-integrated Infiltration')),
-                               exfilt = dict(name='exfil', units='m^3/s', atts=dict(long_name='Basin-integrated Exfiltration')),
-                               delta_stor_int = dict(name='delta_storage', units='m^3/s', atts=dict(long_name='Basin-integrated Storage Change')),
+                               exfilt = dict(name='exfil', units='m^3/s', atts=dict(long_name='Basin-integrated Exfiltration', flip_sign=True)),
+                               overland = dict(name='d_olf', units='m^3/s', atts=dict(long_name='Total Change in Surface Flow',)),
+                               pm = dict(name='d_pm', units='m^3/s', atts=dict(long_name='Total Subsurface Storage Change',)),
+                               #delta_stor_int = dict(name='delta_storage', units='m^3/s', atts=dict(long_name='Basin-integrated Storage Change')),
                                #TODO: add remaining 11 water balance variables...
                                # observation wells
                                h    = dict(name='head', units='m', atts=dict(long_name='Pressure Head at Well')),
@@ -77,7 +83,7 @@ hgs_varmap = {value['name']:key for key,value in variable_attributes_mms.items()
 ## function to load HGS station timeseries
 def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_layers=None, varatts=None, 
                   folder=None, name=None, title=None, lcheckComplete=True, start_date=None, end_date=None, 
-                  run_period=None, period=None, lskipNaN=False, basin=None, lkgs=True, z_axis='z', 
+                  run_period=None, period=None, lskipNaN=False, basin=None, lkgs=False, z_axis='z', 
                   time_axis='simple', resample='M', llastIncl=False, WSC_station=None, PGMN_well=None, 
                   basin_list=None, filename=None, prefix=None, scalefactors=None, metadata=None, 
                   z_aggregation=None, correct_z=20., conservation_authority=None, **kwargs):
@@ -333,7 +339,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
       axes = () if vardata.size == 1 else (layer,)
       if varname in constant_attributes: varatts = constant_attributes[varname]
       else: varatts = dict(name=varname, units=flow_units)
-      dataset += Variable(data=vardata, axes=axes, **varatts) # add variable
+      dataset += Variable(data=vardata, axes=axes, plotatts_dict={}, **varatts) # add variable
   
   # create variables
   for i,varname in enumerate(variable_order):
@@ -351,7 +357,9 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
         # convert variables and put into dataset (monthly time series)
         if flow_units and varatts['units'] != flow_units: 
           raise VariableError("Hydrograph vardata is read as kg/s; flow variable does not match.\n{}".format(varatts))
-        dataset += Variable(data=vardata, axes=axes, **varatts)
+        # flip sign for some variables
+        if varatts['atts'].get('flip_sign',False): vardata *= -1
+        dataset += Variable(data=vardata, axes=axes, plotatts_dict={}, **varatts)
       # process possible flux variable
       fluxvar = flow_to_flux.get(varname,None)      
       if ( fluxvar and fluxvar in varlist ) and ( den and den > 0 ):
@@ -360,8 +368,10 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
         else: fluxatts = dict(name=fluxvar, units=flux_units)
         if flux_units and fluxatts['units'] != flux_units: 
           raise VariableError("Hydrograph vardata is read as kg/s; flux variable does not match.\n{}".format(fluxatts))
+        if varatts['atts'].get('flip_sign',False) and not fluxatts['atts'].get('flip_sign',False):
+            raise VariableError("If the variable sign has been flipped, the sign of the flux variable has to be flipped, too.")
         vardata = vardata / den # need to make a copy
-        dataset += Variable(vardata=vardata, axes=axes, **fluxatts)
+        dataset += Variable(vardata=vardata, axes=axes, plotatts_dict={}, **fluxatts)
         
   # apply analysis period
   if period is not None:
