@@ -10,12 +10,15 @@ Survey of Canada; the vardata is stored in human-readable text files and tables.
 # external imports
 import datetime as dt
 import numpy as np
-import os
+import os.path as osp
+import os, glob
 # internal imports
 from geodata.misc import ArgumentError, VariableError, DataError, isNumber, DatasetError
 from datasets.common import BatchLoad, getRootFolder
 from geodata.base import Dataset, Variable, Axis, concatDatasets
 from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS, updateScalefactor
+# Graham's package
+from hgs_output import binary
 # local imports
 from hgs.misc import interpolateIrregular, convertDate, parseObsWells
 from hgs.PGMN import loadMetadata, loadPGMN_TS
@@ -58,27 +61,60 @@ variable_attributes_mms = dict(# hydrograph variables
                                #delta_stor_int = dict(name='delta_storage', units='m^3/s', atts=dict(long_name='Basin-integrated Storage Change')),
                                #TODO: add remaining 11 water balance variables...
                                # observation wells
-                               h    = dict(name='head', units='m', atts=dict(long_name='Pressure Head at Well')),
+                               h    = dict(name='head', units='m', atts=dict(long_name='Total Head at Well')),
                                s    = dict(name='sat', units='', atts=dict(long_name='Relative Saturation')),
                                )
+binary_attributes_mms = dict(# 3D porous medium variables (scalar)
+                             head_pm  = dict(name='head_pm', units='m', atts=dict(long_name='Total Head (PM)', pm=True),),
+                             sat_pm   = dict(name='sat', units='', atts=dict(long_name='Relative Saturation (PM)', pm=True),),
+                             # 3D porous medium variables (vector)
+                             v_pm  = dict(name='flow_pm', units='m/s', atts=dict(long_name='Flow Velocity (PM)', pm=True, vector=True)),
+                             q_pm  = dict(name='dflx', units='m/s', atts=dict(long_name='Darcy Flux (PM)', pm=True, vector=True)),
+                             # Overland Flow (2D) variables (scalar)
+                             head_olf     = dict(name='head', units='m', atts=dict(long_name='Total Head (OLF)'),),
+                             ExchFlux_olf = dict(name='exflx', units='m/s', atts=dict(long_name='Exchange Flux (OLF)'),),
+                             ETEvap_olf   = dict(name='evap', units='m/s', atts=dict(long_name='Surface Evaporation (OLF)'),),
+                             ETPmEvap_olf = dict(name='evap_pm', units='m/s', atts=dict(long_name='Porous Media Evaporation (OLF)'),),
+                             ETTotal_olf  = dict(name='ET', units='m/s', atts=dict(long_name='Total Evapo-Transpiration (OLF)'),),
+                             ETPmTranspire_olf = dict(name='trans', units='m/s', atts=dict(long_name='Porous Media Transpiration (OLF)'),),
+                             # Overland Flow (2D) variables (vector)
+                             v_olf  = dict(name='flow', units='m/s', atts=dict(long_name='Flow Velocity (OLF)', vector=True)),
+                             )
 constant_attributes = dict(# variables that are not time-dependent
                            x    = dict(name='x', units='m', atts=dict(long_name='X Coord.')),
                            y    = dict(name='y', units='m', atts=dict(long_name='Y Coord.')),
-                           z    = dict(name='z', units='m', atts=dict(long_name='Elevation (M.S.L.)')),
+                           z    = dict(name='zs', units='m', atts=dict(long_name='Surface Elevation')),
                            node = dict(name='node', units='', dtype=np.int64, atts=dict(long_name='Node Number')),
-                           )
+                           vector = dict(name='vector', units='', dtype=np.int64, atts=dict(long_name='Vector Component',
+                                                                                            order='0:x, 1:y, 2:z')),
+                           x_pm = dict(name='x_pm', units='m', atts=dict(long_name='X Coord. (PM)')),
+                           y_pm = dict(name='y_pm', units='m', atts=dict(long_name='Y Coord. (PM)')),
+                           z_pm = dict(name='z', units='m', atts=dict(long_name='Z Coord.')),
+                           sheet    = dict(name='sheet', units='', dtype=np.int64, atts=dict(long_name='Sheet Number')),
+                           nodes_pm = dict(name='node_pm', units='', dtype=np.int64, atts=dict(long_name='3D (PM) Node Number')),
+                           time_ts   = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time since 1979-01')),
+                           time_clim = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time of the Year')),
+                            )
 # optional unit conversion
-mms_to_kgs = {'mm/s':'kg/m^2/s', 'm^3/s':'kg/s'}
-variable_attributes_kgs = dict()
+mms_to_kgs = {'mm/s':'kg/m^2/s', 'm^3/s':'kg/s', 'm/s':'kg/m^2/s'}
+variable_attributes_kgs = dict() 
 for varname,varatts in variable_attributes_mms.items():
     varatts = varatts.copy()
     varatts['units'] = mms_to_kgs.get(varatts['units'],varatts['units'])
     variable_attributes_kgs[varname] = varatts
+binary_attributes_kgs = dict() 
+for varname,varatts in binary_attributes_mms.items():
+    varatts = varatts.copy()
+    if 'flow' not in varatts['name']: # flow stays m/s regardless
+        varatts['units'] = mms_to_kgs.get(varatts['units'],varatts['units'])
+    binary_attributes_kgs[varname] = varatts
 # list of variables to load
-variable_list = variable_attributes_mms.keys() # also includes coordinate fields    
+variable_list = variable_attributes_mms.keys()
+binary_list = binary_attributes_mms.keys()    
 flow_to_flux = dict(discharge='sfroff', seepage='ugroff', flow='runoff') # relationship between flux and flow variables
 # N.B.: computing surface flux rates from gage flows also requires the drainage area
 hgs_varmap = {value['name']:key for key,value in variable_attributes_mms.items()}
+bin_varmap = {value['name']:key for key,value in binary_attributes_mms.items()}
 
 ## function to load HGS station timeseries
 def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_layers=None, varatts=None, 
@@ -455,6 +491,148 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
   return dataset
 
 
+## load functions for binary data
+
+## function to load HGS station timeseries
+def loadHGS(varlist=None, folder=None, name=None, title=None, prefix=None, basin=None,
+            mode='climatology', file_mode='last_12', file_pattern='{PREFIX}o.head_olf.????', t_list=None, 
+            lkgs=False, varatts=None, constatts=constant_attributes,
+            basin_list=None, metadata=None, conservation_authority=None, **kwargs):
+  ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
+      the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
+  if folder is None: raise ArgumentError
+  if metadata is None: metadata = dict()
+  # unit options: cubic meters or kg  
+  varatts = varatts or ( binay_attributes_kgs if lkgs else binary_attributes_mms )
+  varlist = varlist or binary_list
+
+  # prepare name expansion arguments (all capitalized)
+  expargs = dict(ROOT_FOLDER=root_folder, NAME=name, TITLE=title,
+                 PREFIX=prefix, BASIN=basin, WSC_STATION=WSC_station)
+  for key,value in metadata.items():
+      if isinstance(value,basestring): expargs[key.upper()] = value 
+  # exparg preset keys will get overwritten if capitalized versions are defined
+  for key,value in kwargs.items():
+    KEY = key.upper() # we only use capitalized keywords, and non-capitalized keywords are only used/converted
+    if KEY == key or KEY not in kwargs: expargs[KEY] = value # if no capitalized version is defined
+  # read folder and infer prefix, if necessary
+  folder = folder.format(**expargs)
+  if not os.path.exists(folder): raise IOError(folder)
+  if expargs['PREFIX'] is None:
+    with open(os.path.join(folder,prefix_file), 'r') as pfx:
+      expargs['PREFIX'] = prefix = ''.join(pfx.readlines()).strip()  
+  # set meta vardata (and allow keyword expansion of name and title)
+  metadata['problem'] = prefix
+  metadata['basin'] = basin if basin else 'n/a'
+  if name is not None: name = name.format(**expargs) # name expansion with capitalized keyword arguments
+  else: name = 'HGS Binary Fields'
+  metadata['name'] = name
+  if title is None: 
+    title = ' (HGS, {problem:s})'.format(**metadata)
+    if name == name.lower(): title = name.title() + title  # capitalize
+    else: title = name + title # assume already correctly capitalized
+  else: title = title.format(**expargs) # name expansion with capitalized keyword arguments
+  metadata['long_name'] = metadata['title'] = title
+
+  # find files/time-steps to load
+  if not t_list:
+      file_list = glob.glob(osp.join(folder,file_pattern.format(**expargs)))
+      t_list = [int(f[-4:]) for f in file_list]
+      t_list.sort()      
+  if mode.lower()[:4] == 'clim':
+      if file_mode.lower() == 'last_12':
+          if len(t_list) < 12: 
+            raise ValueError("Need at least 12 time-steps to assemble Monthly climatology; {} given".format(len(t_list)))
+          t_list = t_list[-12:]
+      if len(t_list) != 12: 
+            raise ValueError("Need at exactly 12 time-steps to assemble Monthly climatology; {} given".format(len(t_list)))
+      # construct time axis
+      time = Axis(coord=np.arange(1, 13), **constatts['time_clim']) 
+  elif mode.lower()[:4] == 'time':
+      if file_mode.lower() == 'last_12':
+          if len(t_list) < 12: 
+            raise ValueError("Need at least 12 time-steps to select last year; {} given".format(len(t_list)))
+          t_list = t_list[-12:]
+      # construct time axis
+      time = Axis(coord=np.arange(1, len(t_list)+1), **constatts['time_ts']) 
+  else: raise NotImplementedError(mode)
+  te = len(time)
+  assert len(t_list) == te, (len(t_list),te)
+  
+
+  ## construct dataset
+  dataset = Dataset(atts=metadata)
+  dataset += time
+        
+  ## load vardata using Graham's hgs_output package
+  # load first time step to create coordinate arrays etc.
+  prefixo = prefix+'o'
+  reader = binary.IO(prefixo,folder,t_list[0])
+  coords_pm = reader.read_coordinates_pm()
+  coords_olf = reader.read_coordinates_olf(coords_pm)
+  # create mesh axes
+  node = Axis(coord=np.arange(1,len(coords_olf)+1), **constatts['node'])
+  ne = len(node)
+  dataset += node
+  sheet = Axis(coord=np.arange(coords_pm['sheet'].min(),coords_pm['sheet'].max()+1), 
+               **constatts['sheet'])
+  se = len(sheet)
+  dataset += sheet
+  nne = len(coords_pm)
+  assert ne*se == nne
+  # add coordinate fields (surface)
+  for var in ('x','y','z'):
+      dataset += Variable(data=coords_olf[var].values, axes=(node,), **constatts[var])
+  # extract coordinate fields (porous medium)
+  dataset += Variable(data=coords_pm['z'].values.reshape((se,ne)), axes=(sheet,node), 
+                      **constatts['z_pm'])
+  dataset += Variable(data=coords_pm.index.values.reshape((se,ne)), axes=(sheet,node), 
+                      **constatts['nodes_pm'])
+  # initialize variables
+  vector = Axis(coord=np.arange(3), **constatts['vector'])
+  load_varlist = []
+  for var in varlist:
+      hgsvar = bin_varmap.get(var,var)
+      if hgsvar not in varatts:
+          raise VariableError("Variable '{}' not found in variable attributes.".format(var))
+      atts = varatts[hgsvar]
+      aa = atts['atts']
+      
+      if not aa.get('vector',False):
+          aa['HGS_name'] = hgsvar # needed later
+          axes = (node,)
+          if aa.get('pm',False): axes = (sheet,)+axes
+          if aa.get('vector',False): axes = (vector,)+axes
+          axes = (time,)+axes
+          shape = tuple([len(ax) for ax in axes]) 
+          # save name and variable
+          dataset += Variable(data=np.zeros(shape),axes=axes, **atts)
+          load_varlist.append(atts['name'])
+  
+  # now fill in the remaining data
+  for i,t in enumerate(t_list):
+      if i > 0: # reuse old reader for first step 
+          reader = binary.IO(prefixo,folder,t)
+      # loop over variables
+      for var in load_varlist:
+          variable = dataset[var]; aa = variable.atts
+          # load data
+          if aa.get('vector',False):
+              raise NotImplementedError
+              data = reader.read_vec(aa['HGS_name'])
+              variable.data_array[i,:] = reader.read_vec(aa['HGS_name']).values
+          else:
+              if variable.atts.get('pm',False):
+                  variable.data_array[i,:] = reader.read_var(aa['HGS_name'], nne).values.reshape((se,ne))
+              else:
+                  variable.data_array[i,:] = reader.read_var(aa['HGS_name'], ne).values.squeeze()
+              
+    
+      
+  # return completed dataset
+  return dataset
+
+
 ## abuse for testing
 if __name__ == '__main__':
 
@@ -481,8 +659,9 @@ if __name__ == '__main__':
 
 #   test_mode = 'gage_station'
 #   test_mode = 'time_axis'
-  test_mode = 'dataset'
-#   test_mode = 'ensemble'
+#   test_mode = 'station_dataset'
+  test_mode = 'binary_dataset'
+#   test_mode = 'station_ensemble'
 
 
   if test_mode == 'gage_station':
@@ -494,6 +673,7 @@ if __name__ == '__main__':
     elif hgs_well:
         ds = loadPGMN_TS(well=hgs_well, conservation_authority='GRCA',)
     print(ds)
+  
   
   elif test_mode == 'time_axis':
 
@@ -532,8 +712,34 @@ if __name__ == '__main__':
 #     print('')
 #     clim = dataset.climMean()
 #     print(clim)
+
+
+  elif test_mode == 'binary_dataset':
+
+    hgs_name = 'HGS-{BASIN:s}' # will be expanded
+#       hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
+#       hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/NRCan/annual_15/hgs_run'
+    
+
+    # load dataset
+    dataset = loadHGS(folder=hgs_folder, varlist=[],
+                      conservation_authority='GRCA', 
+                      PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
+                      basin=basin_name, basin_list=basin_list, lkgs=False, 
+                      EXP='erai-g', name='{EXP:s} ({BASIN:s})')
+    # N.B.: there is not record of actual calendar time in HGS, so periods are anchored through start_date/run_period
+    # and print
+    print(dataset)
+    print('')
+    print(dataset.name)
+    print(dataset.prettyPrint(short=True))
+    
+    # some common operations
+    print('')
+    print(clim)
+
   
-  elif test_mode == 'dataset':
+  elif test_mode == 'station_dataset':
 
     hgs_name = 'HGS-{BASIN:s}' # will be expanded
 #       hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
@@ -578,7 +784,7 @@ if __name__ == '__main__':
     #     print(clim.sfroff[:]*86400)
 
     
-  elif test_mode == 'ensemble':
+  elif test_mode == 'station_ensemble':
     
     ens_name = '{ENSEMBLE:s}{PRDSTR:s}'
     ens_folder = '{ROOT_FOLDER:s}/GRW/grw2/{ENSEMBLE:s}{PRDSTR:s}_d{DOM:02d}/{CLIM:s}/hgs_run_v3_wrfpet'
