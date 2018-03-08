@@ -121,7 +121,7 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
     # find elevation variable for z_layers
     if z_layers or lelev:
         if layers: raise ArgumentError("Can only specify 'layers' or 'z_layers'.")
-        if len(z_layers) != 2: raise ArgumentError("z_layers = (z_min, z_max)") 
+        if z_layers is not None and len(z_layers) != 2: raise ArgumentError("z_layers = (z_min, z_max)") 
         i_z = varlist.index('z')
     # validate constants (variables with no time-dependence))
     if constants is None: 
@@ -151,7 +151,7 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
     if "solutiontime" not in line[1][0] : raise ParserError((line,filepath))
     # determine number of layers (and z-range)
     i = 3; line = lines[i].lower()
-    if z_layers: z_list = []
+    if z_layers or lelev: z_list = []
     while 'zone' not in line and "solutiontime" not in line:
         if z_layers or lelev: 
             z_list.append(float(line.split()[i_z]))

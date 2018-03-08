@@ -68,17 +68,22 @@ binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                              head_pm  = dict(name='head_pm', units='m', atts=dict(long_name='Total Head (PM)', pm=True),),
                              sat_pm   = dict(name='sat', units='', atts=dict(long_name='Relative Saturation (PM)', pm=True),),
                              # 3D porous medium variables (vector)
-                             v_pm  = dict(name='flow_pm', units='m/s', atts=dict(long_name='Flow Velocity (PM)', pm=True, vector=True)),
-                             q_pm  = dict(name='dflx', units='m/s', atts=dict(long_name='Darcy Flux (PM)', pm=True, vector=True)),
+                             v_pm  = dict(name='flow_pm', units='m/s', atts=dict(long_name='Flow Velocity (PM)', pm=True, elemental=True, vector=True)),
+                             q_pm  = dict(name='dflx', units='m/s', atts=dict(long_name='Darcy Flux (PM)', pm=True, elemental=True, vector=True)),
                              # Overland Flow (2D) variables (scalar)
-                             head_olf     = dict(name='head', units='m', atts=dict(long_name='Total Head (OLF)'),),
+                             head_olf     = dict(name='head_olf', units='m', atts=dict(long_name='Total Head (OLF)'),),
                              ExchFlux_olf = dict(name='exflx', units='m/s', atts=dict(long_name='Exchange Flux (OLF)'),),
                              ETEvap_olf   = dict(name='evap', units='m/s', atts=dict(long_name='Surface Evaporation (OLF)'),),
                              ETPmEvap_olf = dict(name='evap_pm', units='m/s', atts=dict(long_name='Porous Media Evaporation (OLF)'),),
                              ETTotal_olf  = dict(name='ET', units='m/s', atts=dict(long_name='Total Evapo-Transpiration (OLF)'),),
                              ETPmTranspire_olf = dict(name='trans', units='m/s', atts=dict(long_name='Porous Media Transpiration (OLF)'),),
                              # Overland Flow (2D) variables (vector)
-                             v_olf  = dict(name='flow', units='m/s', atts=dict(long_name='Flow Velocity (OLF)', vector=True)),
+                             v_olf  = dict(name='flow_olf', units='m/s', atts=dict(long_name='Flow Velocity (OLF)', elemental=True, vector=True)),
+                             # derived variables
+                             depth2gw  = dict(name='d_gw', units='m', atts=dict(long_name='Depth to Groudwater Table', function='calculate_depth2gw', 
+                                                                                dependencies=['coordinates_pm','coordinates_olf','head_pm']),),
+                             olf_depth = dict(name='d_olf', units='m', atts=dict(long_name='Overland Flow Depth', function='calculate_olf_depth', 
+                                                                                 dependencies=['coordinates_olf','head_olf']),),
                              )
 constant_attributes = dict(# variables that are not time-dependent
                            x    = dict(name='x', units='m', atts=dict(long_name='X Coord.')),
@@ -92,8 +97,9 @@ constant_attributes = dict(# variables that are not time-dependent
                            z_pm = dict(name='z', units='m', atts=dict(long_name='Z Coord.')),
                            sheet    = dict(name='sheet', units='', dtype=np.int64, atts=dict(long_name='Sheet Number')),
                            nodes_pm = dict(name='node_pm', units='', dtype=np.int64, atts=dict(long_name='3D (PM) Node Number')),
-                           time_ts   = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time since 1979-01')),
-                           time_clim = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time of the Year')),
+                           time_ts    = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time since 1979-01')),
+                           time_clim  = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time of the Year')),
+                           model_time = dict(name='model_time', units='s', atts=dict(long_name='Time since Simulation Start')),
                             )
 # optional unit conversion
 mms_to_kgs = {'mm/s':'kg/m^2/s', 'm^3/s':'kg/s', 'm/s':'kg/m^2/s'}
@@ -314,18 +320,18 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
       if lsqueeze:
           assert nlay == 1, data.shape 
           data = data.squeeze()
-          layer = None
+          sheet = None
           assert data.shape == (len(time_series),len(varcols),), data.shape
       else:
           # create vertical axis
           if z_axis.lower() == 'z':
               iz = constant_order.index('z',)
-              layer = Axis(coord=const[iz,:], **constant_attributes['z'])
+              sheet = Axis(coord=const[iz,:], **constant_attributes['z_pm'])
           elif z_axis.lower() == 'i': 
-              layer = Axis(name='i_lay', units='', coord=np.arange(1,nlay+1))
+              sheet = Axis(name='i_lay', units='', coord=np.arange(1,nlay+1))
           else:
               raise ArgumentError(z_axis)
-          assert data.shape == (len(time_series),len(varcols),len(layer)), data.shape
+          assert data.shape == (len(time_series),len(varcols),len(sheet)), data.shape
   else:
       # all other files follow the same format
       assert len(constcols) == 0, constcols
@@ -337,7 +343,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
           raise DataError("Missing values (NaN) encountered in timeseries file; use 'lskipNaN' to ignore.\n('{:s}')".format(filepath))    
       time_series = data[:,0]; data = data[:,1:]
       assert data.shape == (len(time_series),len(varcols)), data.shape
-      layer = None # no layer axis
+      sheet = None # no sheet axis
   
   # call function to interpolate irregular HGS timeseries to regular monthly timseries  
   data = interpolateIrregular(old_time=time_series, data=data, new_time=time_resampled, start_date=start_datetime, 
@@ -364,24 +370,24 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
         
   # add constants to dataset (only for wells at the moment)
   for i,varname in enumerate(constant_order):
-    if varname != layer.name: # skip z-axis
-      if layer: 
+    if varname != sheet.name: # skip z-axis
+      if sheet: 
           vardata = const[i,:]
-          # check if there is a layer-dependence
+          # check if there is a sheet-dependence
           if np.all(vardata == vardata[0]): vardata = vardata[0]
       else: 
           vardata = const[i] # an actual constant...
       #dataset.atts[varname] = np.asscalar(vardata) # just a constant... 
-      axes = () if vardata.size == 1 else (layer,)
+      axes = () if vardata.size == 1 else (sheet,)
       if varname in constant_attributes: varatts = constant_attributes[varname]
       else: varatts = dict(name=varname, units=flow_units)
       dataset += Variable(data=vardata, axes=axes, plotatts_dict={}, **varatts) # add variable
   
   # create variables
   for i,varname in enumerate(variable_order):
-      if layer: 
+      if sheet: 
         vardata = data[:,i,:]
-        axes = (time,layer)
+        axes = (time,sheet)
       else: 
         vardata = data[:,i]
         axes = (time,)
@@ -414,10 +420,10 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
       dataset = dataset(years=period)
       
   # aggregate vertical axis
-  if z_aggregation and layer: 
+  if z_aggregation and sheet: 
       if not hasattr(np, z_aggregation):
           raise ArgumentError("'z_aggregation' has to be a valid numpy function.")
-      dataset = getattr(dataset, z_aggregation)(axis=layer.name)      
+      dataset = getattr(dataset, z_aggregation)(axis=sheet.name)      
       
   # adjust scalefactors, if necessary
   if scalefactors:
@@ -503,7 +509,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, prefix=None, basin
   if folder is None: raise ArgumentError
   if metadata is None: metadata = dict()
   # unit options: cubic meters or kg  
-  varatts = varatts or ( binay_attributes_kgs if lkgs else binary_attributes_mms )
+  varatts = varatts or ( binary_attributes_kgs if lkgs else binary_attributes_mms )
   varlist = varlist or binary_list
 
   # prepare name expansion arguments (all capitalized)
@@ -588,17 +594,30 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, prefix=None, basin
                       **constatts['z_pm'])
   dataset += Variable(data=coords_pm.index.values.reshape((se,ne)), axes=(sheet,node), 
                       **constatts['nodes_pm'])
-  # initialize variables
   vector = Axis(coord=np.arange(3), **constatts['vector'])
-  load_varlist = []
-  for var in varlist:
-      hgsvar = bin_varmap.get(var,var)
-      if hgsvar not in varatts:
+      
+  # make sure variable dependencies work (derived variables last)
+  varlist = [bin_varmap.get(var,var) for var in varlist]
+  all_deps = dict()
+  for var in varlist[:]: # use copy to avoid interference
+      if var not in varatts:
           raise VariableError("Variable '{}' not found in variable attributes.".format(var))
+      deplist = varatts[var]['atts'].get('dependencies',None)
+      if deplist:
+          varlist.remove(var)
+          for depvar in deplist:
+              if depvar not in varlist and depvar not in ('coordinates_pm','coordinates_olf'): 
+                  varlist.append(depvar)
+              all_deps[depvar] = None
+          varlist.append(var)
+          
+  # initialize variables
+  load_varlist = []
+  for hgsvar in varlist:
       atts = varatts[hgsvar]
       aa = atts['atts']
-      
-      if not aa.get('vector',False):
+      # elemental variables are currently not supported
+      if not aa.get('elemental',False):
           aa['HGS_name'] = hgsvar # needed later
           axes = (node,)
           if aa.get('pm',False): axes = (sheet,)+axes
@@ -608,25 +627,54 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, prefix=None, basin
           # save name and variable
           dataset += Variable(data=np.zeros(shape),axes=axes, **atts)
           load_varlist.append(atts['name'])
+  # add simulation time variable
+  dataset += Variable(data=np.zeros((te,)), axes=(time,), **constatts['model_time'])
   
   # now fill in the remaining data
   for i,t in enumerate(t_list):
       if i > 0: # reuse old reader for first step 
           reader = binary.IO(prefixo,folder,t)
+      # reset dependencies
+      for depvar in all_deps.keys(): all_deps[depvar] = None
+      all_deps['coordinates_pm'] = coords_pm
+      all_deps['coordinates_olf'] = coords_olf
+      sim_time = reader.read_timestamp()
       # loop over variables
       for var in load_varlist:
-          variable = dataset[var]; aa = variable.atts
+          variable = dataset[var]; aa = variable.atts; hgsvar = aa['HGS_name']
           # load data
-          if aa.get('vector',False):
-              raise NotImplementedError
-              data = reader.read_vec(aa['HGS_name'])
-              variable.data_array[i,:] = reader.read_vec(aa['HGS_name']).values
+          if aa.get('function',False):
+              deplist = {depvar:all_deps[depvar] for depvar in aa.get('dependencies',[])}
+              df = getattr(reader,aa['function'])(**deplist)
+              if variable.hasAxis(sheet): data = df.values.reshape((se,ne))
+              else: 
+                data = df.values.squeeze()
+                if data.size == variable.shape[1]+1: 
+                    print("Warning: Trimming first element of {} array.".format(var))
+                    data = data[1:] 
+              variable.data_array[i,:] = data       
+          elif aa.get('vector',False):
+              data = reader.read_vec(hgsvar).values
+              if variable.atts.get('pm',False): 
+                  data = data.reshape((se,ne,3))            
+              for j in range(3):
+                  variable.data_array[i,j,:] = data[:,j]
           else:
+              # check simulation time
+              st = reader.read_timestamp(var=hgsvar)
+              if sim_time != st:
+                  raise ValueError("Timestamps in output files are not consistent between variables: {} != {} ({})".format(sim_time,st,hgsvar))
+              # read actual binary 2D or 3D data
               if variable.atts.get('pm',False):
-                  variable.data_array[i,:] = reader.read_var(aa['HGS_name'], nne).values.reshape((se,ne))
+                  df = reader.read_var(hgsvar, nne)
+                  variable.data_array[i,:] = df.values.reshape((se,ne))
               else:
-                  variable.data_array[i,:] = reader.read_var(aa['HGS_name'], ne).values.squeeze()
-              
+                  df = reader.read_var(hgsvar, ne)
+                  variable.data_array[i,:] = df.values.squeeze()
+          # save dependencies
+          if var in all_deps: all_deps[var] = df
+      # save timestamp
+      dataset['model_time'].data_array[i] = sim_time              
     
       
   # return completed dataset
@@ -722,22 +770,19 @@ if __name__ == '__main__':
     
 
     # load dataset
-    dataset = loadHGS(folder=hgs_folder, varlist=[],
+    dataset = loadHGS(folder=hgs_folder, varlist=['d_gw'],
                       conservation_authority='GRCA', 
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                       basin=basin_name, basin_list=basin_list, lkgs=False, 
                       EXP='erai-g', name='{EXP:s} ({BASIN:s})')
     # N.B.: there is not record of actual calendar time in HGS, so periods are anchored through start_date/run_period
     # and print
+    print('')
     print(dataset)
     print('')
-    print(dataset.name)
-    print(dataset.prettyPrint(short=True))
+    print(dataset.model_time)
+    print(dataset.model_time[:])
     
-    # some common operations
-    print('')
-    print(clim)
-
   
   elif test_mode == 'station_dataset':
 
