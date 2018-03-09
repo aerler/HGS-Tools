@@ -127,7 +127,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
                   folder=None, name=None, title=None, lcheckComplete=True, start_date=None, end_date=None, 
                   run_period=None, period=None, lskipNaN=False, basin=None, lkgs=False, z_axis='z', 
                   time_axis='simple', resample='M', llastIncl=False, WSC_station=None, Obs_well=None, 
-                  basin_list=None, filename=None, prefix=None, scalefactors=None, metadata=None, 
+                  basin_list=None, filename=None, scalefactors=None, metadata=None, 
                   z_aggregation=None, correct_z=20., conservation_authority=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
@@ -168,7 +168,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
     long_name = None; name_tag = None; file_title = None; zone = None
   # prepare name expansion arguments (all capitalized)
   expargs = dict(ROOT_FOLDER=root_folder, STATION=name_tag, WELL=name_tag, NAME=name, TITLE=title,
-                 PREFIX=prefix, BASIN=basin, WSC_STATION=WSC_station)
+                 BASIN=basin, WSC_STATION=WSC_station)
   for key,value in metadata.items():
       if isinstance(value,basestring):
           expargs[meta_pfx+key.upper()] = value # in particular, this includes WSC_ID
@@ -183,7 +183,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
   # read folder and infer prefix, if necessary
   folder = folder.format(**expargs)
   if not os.path.exists(folder): raise IOError(folder)
-  if expargs['PREFIX'] is None:
+  if expargs.get('PREFIX',None) is None:
     with open(os.path.join(folder,prefix_file), 'r') as pfx:
       expargs['PREFIX'] = prefix = ''.join(pfx.readlines()).strip()  
   # some more argument expansions
@@ -446,7 +446,7 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
                    name=None, title=None, period=None, run_period=15, folder=None, obs_period=None,  
                    ensemble_list=None, ensemble_args=None, observation_list=None, conservation_authority=None,# ensemble and obs lists for project
                    loadHGS_StnTS=loadHGS_StnTS, loadWSC_StnTS=loadWSC_StnTS, # these can also be overloaded
-                   prefix=None, WSC_station=None, Obs_well=None, basin=None, basin_list=None, **kwargs):
+                   WSC_station=None, Obs_well=None, basin=None, basin_list=None, **kwargs):
   ''' a wrapper for the regular HGS loader that can also load gage stations and assemble ensembles '''
   if observation_list is None: observation_list = ('obs','observations')
   if ensemble_list is None: ensemble_list = dict() # empty, i.e. no ensembles
@@ -478,7 +478,7 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
           # load individual HGS simulation
           ds = loadHGS_StnTS(station=station, well=well, varlist=varlist, layers=layers, varatts=varatts, 
                              name=name, title=title, conservation_authority=conservation_authority,
-                             period=period, ENSEMBLE=exp, run_period=run_period, folder=folder, prefix=prefix, 
+                             period=period, ENSEMBLE=exp, run_period=run_period, folder=folder, 
                              WSC_station=WSC_station, Obs_well=Obs_well, basin=basin, basin_list=basin_list, 
                              **kwargs)
           ens.append(ds)
@@ -492,7 +492,7 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
       # load HGS simulation
       dataset = loadHGS_StnTS(station=station, well=well, varlist=varlist, layers=layers, varatts=varatts, 
                               name=name, title=title, period=period, conservation_authority=conservation_authority, 
-                              ENSEMBLE=ensemble, run_period=run_period, folder=folder, prefix=prefix, 
+                              ENSEMBLE=ensemble, run_period=run_period, folder=folder,
                               WSC_station=WSC_station, Obs_well=Obs_well, basin=basin, basin_list=basin_list,
                                **kwargs)
   return dataset
@@ -500,10 +500,10 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
 
 ## load functions for binary data
 
-## function to load HGS station timeseries
-def loadHGS(varlist=None, folder=None, name=None, title=None, prefix=None, basin=None,
+## function to load HGS binary data
+def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None,
             mode='climatology', file_mode='last_12', file_pattern='{PREFIX}o.head_olf.????', t_list=None, 
-            lkgs=False, varatts=None, constatts=constant_attributes,
+            lkgs=False, varatts=None, constatts=None,
             basin_list=None, metadata=None, conservation_authority=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
@@ -511,11 +511,11 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, prefix=None, basin
   if metadata is None: metadata = dict()
   # unit options: cubic meters or kg  
   varatts = varatts or ( binary_attributes_kgs if lkgs else binary_attributes_mms )
-  varlist = varlist or binary_list
+  constatts = constatts or constant_attributes
+  if varlist is None: varlist = binary_list
 
   # prepare name expansion arguments (all capitalized)
-  expargs = dict(ROOT_FOLDER=root_folder, NAME=name, TITLE=title,
-                 PREFIX=prefix, BASIN=basin, WSC_STATION=WSC_station)
+  expargs = dict(ROOT_FOLDER=root_folder, NAME=name, TITLE=title, BASIN=basin,)
   for key,value in metadata.items():
       if isinstance(value,basestring): expargs[key.upper()] = value 
   # exparg preset keys will get overwritten if capitalized versions are defined
@@ -525,7 +525,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, prefix=None, basin
   # read folder and infer prefix, if necessary
   folder = folder.format(**expargs)
   if not os.path.exists(folder): raise IOError(folder)
-  if expargs['PREFIX'] is None:
+  if expargs.get('PREFIX',None) is None:
     with open(os.path.join(folder,prefix_file), 'r') as pfx:
       expargs['PREFIX'] = prefix = ''.join(pfx.readlines()).strip()  
   # set meta vardata (and allow keyword expansion of name and title)
@@ -543,7 +543,10 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, prefix=None, basin
 
   # find files/time-steps to load
   if not t_list:
-      file_list = glob.glob(osp.join(folder,file_pattern.format(**expargs)))
+      glob_folder = osp.join(folder.format(**expargs),file_pattern.format(**expargs))
+      file_list = glob.glob(glob_folder)
+      if len(file_list) == 0: 
+          raise DataError("No binary output files found:\n '{}'".format(glob_folder))
       t_list = [int(f[-4:]) for f in file_list]
       t_list.sort()      
   if mode.lower()[:4] == 'clim':
