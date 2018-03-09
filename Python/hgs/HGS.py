@@ -126,7 +126,7 @@ bin_varmap = {value['name']:key for key,value in binary_attributes_mms.items()}
 def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_layers=None, varatts=None, 
                   folder=None, name=None, title=None, lcheckComplete=True, start_date=None, end_date=None, 
                   run_period=None, period=None, lskipNaN=False, basin=None, lkgs=False, z_axis='z', 
-                  time_axis='simple', resample='M', llastIncl=False, WSC_station=None, PGMN_well=None, 
+                  time_axis='simple', resample='M', llastIncl=False, WSC_station=None, Obs_well=None, 
                   basin_list=None, filename=None, prefix=None, scalefactors=None, metadata=None, 
                   z_aggregation=None, correct_z=20., conservation_authority=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
@@ -150,7 +150,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
     file_title = 'flow data at observation well:'
     if conservation_authority:
         meta_pfx = 'PGMN_'
-        metadata = loadMetadata(PGMN_well if PGMN_well else well, conservation_authority=conservation_authority)
+        metadata = loadMetadata(Obs_well if Obs_well else well, conservation_authority=conservation_authority)
   elif station:
     filename = hydro_files; zone = station
     name_tag = station; long_name = station
@@ -346,8 +346,9 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
       sheet = None # no sheet axis
   
   # call function to interpolate irregular HGS timeseries to regular monthly timseries  
-  data = interpolateIrregular(old_time=time_series, data=data, new_time=time_resampled, start_date=start_datetime, 
-                                   lkgs=lkgs, lcheckComplete=lcheckComplete, usecols=varcols, interp_kind='linear', fill_value=np.NaN)
+  data = interpolateIrregular(old_time=time_series, lkgs=lkgs, data=data, new_time=time_resampled, 
+                              start_date=start_datetime, interp_kind='linear', 
+                              lcheckComplete=lcheckComplete, usecols=varcols, fill_value=np.NaN)
   assert data.shape[0] == len(time), (data.shape,len(time),len(variable_order))
   
   
@@ -445,7 +446,7 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
                    name=None, title=None, period=None, run_period=15, folder=None, obs_period=None,  
                    ensemble_list=None, ensemble_args=None, observation_list=None, conservation_authority=None,# ensemble and obs lists for project
                    loadHGS_StnTS=loadHGS_StnTS, loadWSC_StnTS=loadWSC_StnTS, # these can also be overloaded
-                   prefix=None, WSC_station=None, PGMN_well=None, basin=None, basin_list=None, **kwargs):
+                   prefix=None, WSC_station=None, Obs_well=None, basin=None, basin_list=None, **kwargs):
   ''' a wrapper for the regular HGS loader that can also load gage stations and assemble ensembles '''
   if observation_list is None: observation_list = ('obs','observations')
   if ensemble_list is None: ensemble_list = dict() # empty, i.e. no ensembles
@@ -455,7 +456,7 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
   if ensemble.lower() in observation_list:
       # translate parameters
       station = station if WSC_station is None else WSC_station
-      well = well if PGMN_well is None else PGMN_well
+      well = well if Obs_well is None else Obs_well
       period = period if obs_period is None else obs_period
       filetype = 'monthly'
       # load gage station with slightly altered parameters
@@ -478,7 +479,7 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
           ds = loadHGS_StnTS(station=station, well=well, varlist=varlist, layers=layers, varatts=varatts, 
                              name=name, title=title, conservation_authority=conservation_authority,
                              period=period, ENSEMBLE=exp, run_period=run_period, folder=folder, prefix=prefix, 
-                             WSC_station=WSC_station, PGMN_well=PGMN_well, basin=basin, basin_list=basin_list, 
+                             WSC_station=WSC_station, Obs_well=Obs_well, basin=basin, basin_list=basin_list, 
                              **kwargs)
           ens.append(ds)
       # construct ensemble by concatenating time-series
@@ -492,7 +493,7 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
       dataset = loadHGS_StnTS(station=station, well=well, varlist=varlist, layers=layers, varatts=varatts, 
                               name=name, title=title, period=period, conservation_authority=conservation_authority, 
                               ENSEMBLE=ensemble, run_period=run_period, folder=folder, prefix=prefix, 
-                              WSC_station=WSC_station, PGMN_well=PGMN_well, basin=basin, basin_list=basin_list,
+                              WSC_station=WSC_station, Obs_well=Obs_well, basin=basin, basin_list=basin_list,
                                **kwargs)
   return dataset
 
