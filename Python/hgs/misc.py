@@ -120,9 +120,12 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
     lv = len(varlist)
     # find elevation variable for z_layers
     if z_layers or lelev:
-        if layers: raise ArgumentError("Can only specify 'layers' or 'z_layers'.")
+        if layers and z_layers: raise ArgumentError("Can only specify 'layers' or 'z_layers'.")
         if z_layers is not None and len(z_layers) != 2: raise ArgumentError("z_layers = (z_min, z_max)") 
         i_z = varlist.index('z')
+    # make copies of lists to prevent interference
+    if layers is not None: layers = list(layers)
+    if z_layers is not None: z_layers = list(z_layers)
     # validate constants (variables with no time-dependence))
     if constants is None: 
         ce = 0 # assume no constants
@@ -170,8 +173,9 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
         z = np.asarray(z_list)
         i_min = np.fabs(z-z_min).argmin()
         i_max = np.fabs(z-z_max).argmin()
-        if i_min == i_max: layers = [i_min]
-        else: layers = range(i_min,i_max+1)
+        if layers is None:
+            if i_min == i_max: layers = [i_min]
+            else: layers = range(i_min,i_max+1)
     if lelev: 
         z_s = z_list[-1]
         # N.B.: need to do this independently, because the returned z-vector will be sliced,

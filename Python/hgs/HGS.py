@@ -310,7 +310,8 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
       assert data.shape[1] == len(varcols), data.shape
       nlay = data.shape[2] # number of layers
       if isinstance(correct_z, (int,np.integer,float,np.inexact)) and not isinstance(correct_z, (bool,np.bool_)):
-          if 'screen_depth' not in metadata: AttributeError('Need screen_depth attribute to correct based on elevation and depth!')
+          if 'screen_depth' not in metadata: 
+              raise AttributeError('Need screen_depth attribute to correct based on elevation and depth!')
           correct_z =  ( metadata['screen_depth'] < correct_z )
       if correct_z:
           i_h = variable_order.index('h')
@@ -478,7 +479,7 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
           # load individual HGS simulation
           ds = loadHGS_StnTS(station=station, well=well, varlist=varlist, layers=layers, varatts=varatts, 
                              name=name, title=title, conservation_authority=conservation_authority,
-                             period=period, ENSEMBLE=exp, run_period=run_period, folder=folder, 
+                             period=period, experiment=exp, run_period=run_period, folder=folder, 
                              WSC_station=WSC_station, Obs_well=Obs_well, basin=basin, basin_list=basin_list, 
                              **kwargs)
           ens.append(ds)
@@ -712,8 +713,8 @@ if __name__ == '__main__':
 #   test_mode = 'gage_station'
 #   test_mode = 'time_axis'
 #   test_mode = 'station_dataset'
-  test_mode = 'binary_dataset'
-#   test_mode = 'station_ensemble'
+#   test_mode = 'binary_dataset'
+  test_mode = 'station_ensemble'
 
 
   if test_mode == 'gage_station':
@@ -740,6 +741,7 @@ if __name__ == '__main__':
 #                             end_date='1988-12-31', llastIncl=True,
                             end_date='1989-01-01', llastIncl=False,
                             basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, lkgs=False,
+                            conservation_authority='GRCA',
                             lskipNaN=True, lcheckComplete=True, varlist='default', scalefactors=1e-4,
                             PRD='', DOM=2, CLIM='clim_15', BC='AABC_', EXP='erai-g', name='{EXP:s} ({BASIN:s})')
     # N.B.: there is not record of actual calendar time in HGS, so periods are anchored through start_date/run_period
@@ -835,8 +837,8 @@ if __name__ == '__main__':
     
   elif test_mode == 'station_ensemble':
     
-    ens_name = '{ENSEMBLE:s}{PRDSTR:s}'
-    ens_folder = '{ROOT_FOLDER:s}/GRW/grw2/{ENSEMBLE:s}{PRDSTR:s}_d{DOM:02d}/{CLIM:s}/hgs_run_v3_wrfpet'
+    ens_name = '{EXPERIMENT:s}{PRDSTR:s}'
+    ens_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXPERIMENT:s}{PRDSTR:s}_d{DOM:02d}/{CLIM:s}/hgs_run_v3_wrfpet'
     # actual ensemble definition
     ensemble_list = {'g-mean':('g-ctrl','g-ens-A','g-ens-B','g-ens-C'),
                      't-mean':('t-ctrl','t-ens-A','t-ens-B','t-ens-C')}
@@ -845,7 +847,7 @@ if __name__ == '__main__':
     ens = loadHGS_StnEns(ensemble=['g-mean','t-mean'], DOM=2, CLIM='AABC_clim_15', run_period=15,
                          period=[(1984,1994),(2050,2060),(2090,2100)], PRDSTR=['','-2050','-2100'],
                          station=hgs_station, well=hgs_well, conservation_authority='GRCA', 
-                         name=ens_name, title=ens_name, basin=basin_name, layers='screen',
+                         name=ens_name, title=ens_name, basin=basin_name, layers=[1,2], # z_layers='screen',
                          WSC_station=WSC_station, basin_list=basin_list, folder=ens_folder,
                          lskipNaN=True, lcheckComplete=True, ensemble_list=ensemble_list, 
                          ens_name='HGS Ensemble', ens_title='HGS Ensemble based on WRF Ensemble',
