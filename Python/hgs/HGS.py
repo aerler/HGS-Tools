@@ -17,6 +17,7 @@ from geodata.misc import ArgumentError, VariableError, DataError, isNumber, Data
 from datasets.common import BatchLoad, getRootFolder
 from geodata.base import Dataset, Variable, Axis, concatDatasets
 from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS, updateScalefactor
+from geodata.gdal import loadPickledGridDef, grid_folder, addGDALtoDataset, GridDefinition
 # Graham's package
 from hgs_output import binary
 # local imports
@@ -685,6 +686,30 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None,
   # return completed dataset
   return dataset
 
+  
+## function to interpolate nodal/elemental datasets to a regular grid
+def gridDataset(dataset, griddef=None, basin=None, shape_file=None, basin_list=None, grid_folder=grid_folder):
+  ''' interpolate nodal/elemental datasets to a regular grid, add GDAL, and mask to basin outlines '''
+  if isinstance(griddef,basestring): 
+      griddef = loadPickledGridDef(grid=griddef, folder=grid_folder)
+  elif not isinstance(griddef,GridDefinition):
+      raise ArgumentError(griddef)
+  # identify shape file
+  if basin and basin_list and shape_file is None:
+    basininfo = basin_list[basin]
+    shape_file = basininfo.shapefiles[basininfo.outline]
+    if not os.path.exists(shape_file): 
+        raise IOError(shape_file)
+  # interpolate
+  grid_ds = dataset.gridDataset(grid_axes=(griddef.ylat,griddef.xlon), method='cubic')
+  # add GDAL
+  gdal_ds = addGDALtoDataset(dataset=grid_ds, griddef=griddef, )
+  # mask basin shape
+  if shape_file:
+      gdal_ds.maskShape(name=basin, filename=shape_file, invert=True)
+  # return gridded and masked dataset
+  return gdal_ds
+
 
 ## abuse for testing
 if __name__ == '__main__':
@@ -711,10 +736,11 @@ if __name__ == '__main__':
 
 
 #   test_mode = 'gage_station'
+  test_mode = 'dataset_regrid'
 #   test_mode = 'time_axis'
 #   test_mode = 'station_dataset'
 #   test_mode = 'binary_dataset'
-  test_mode = 'station_ensemble'
+#   test_mode = 'station_ensemble'
 
 
   if test_mode == 'gage_station':
@@ -728,12 +754,27 @@ if __name__ == '__main__':
     print(ds)
   
   
-  elif test_mode == 'time_axis':
+  elif test_mode == 'dataset_regrid':
 
-    hgs_name = 'HGS-{BASIN:s}' # will be expanded
-#       hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
-#       hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/NRCan/annual_15/hgs_run'
+    # load dataset
+    ds = loadHGS(folder=hgs_folder, varlist=[], conservation_authority='GRCA', 
+                 PRD='', DOM=2, CLIM='clim_15', BC='AABC_', basin=basin_name, basin_list=basin_list, 
+                 lkgs=False, EXP='erai-g', name='{EXP:s} ({BASIN:s})')(sheet=18)
+    # load griddefition
+    # interpolate to regular x,y-grid
+#     x = Axis(name='x', units='m', coord=np.linspace(ds.x.min(),ds.x.max(),200))
+#     y = Axis(name='y', units='m', coord=np.linspace(ds.y.min(),ds.y.max(),200))
+    dataset = gridDataset(ds, griddef='grw2', basin=basin_name, basin_list=basin_list, 
+                          grid_folder=grid_folder)
+    # and print
+    print('')
+    print(dataset)
+    print('')
+    print(dataset.zs)
+    print(dataset.zs[15,:])
     
+  
+  elif test_mode == 'time_axis':
 
     # load dataset
     dataset = loadHGS_StnTS(station=hgs_station, well=hgs_well, folder=hgs_folder, layers=None, #[16,17,18], 
@@ -744,7 +785,7 @@ if __name__ == '__main__':
                             conservation_authority='GRCA',
                             lskipNaN=True, lcheckComplete=True, varlist='default', scalefactors=1e-4,
                             PRD='', DOM=2, CLIM='clim_15', BC='AABC_', EXP='erai-g', name='{EXP:s} ({BASIN:s})')
-    # N.B.: there is not record of actual calendar time in HGS, so periods are anchored through start_date/run_period
+    # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
     # and print
     print(dataset)
     print('')
@@ -770,18 +811,13 @@ if __name__ == '__main__':
 
   elif test_mode == 'binary_dataset':
 
-    hgs_name = 'HGS-{BASIN:s}' # will be expanded
-#       hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
-#       hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/NRCan/annual_15/hgs_run'
-    
-
     # load dataset
     dataset = loadHGS(folder=hgs_folder, varlist=['d_gw'],
                       conservation_authority='GRCA', 
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                       basin=basin_name, basin_list=basin_list, lkgs=False, 
                       EXP='erai-g', name='{EXP:s} ({BASIN:s})')
-    # N.B.: there is not record of actual calendar time in HGS, so periods are anchored through start_date/run_period
+    # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
     # and print
     print('')
     print(dataset)
@@ -792,11 +828,6 @@ if __name__ == '__main__':
   
   elif test_mode == 'station_dataset':
 
-    hgs_name = 'HGS-{BASIN:s}' # will be expanded
-#       hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/erai-g3_d01/clim_15/hgs_run'
-#       hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/NRCan/annual_15/hgs_run'
-    
-
     # load dataset
     lkgs = True
     dataset = loadHGS_StnTS(station=hgs_station, conservation_authority='GRCA', well=hgs_well, folder=hgs_folder, 
@@ -805,7 +836,7 @@ if __name__ == '__main__':
                             basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, lkgs=lkgs,
                             lskipNaN=True, lcheckComplete=True, varlist='default', scalefactors=1e-4,
                             EXP='erai-g', name='{EXP:s} ({BASIN:s})')
-    # N.B.: there is not record of actual calendar time in HGS, so periods are anchored through start_date/run_period
+    # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
     # and print
     print(dataset)
     print('')
