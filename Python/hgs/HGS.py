@@ -17,7 +17,8 @@ from geodata.misc import ArgumentError, VariableError, DataError, isNumber, Data
 from datasets.common import BatchLoad, getRootFolder
 from geodata.base import Dataset, Variable, Axis, concatDatasets
 from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS, updateScalefactor
-from geodata.gdal import loadPickledGridDef, grid_folder, addGDALtoDataset, GridDefinition
+from geodata.gdal import loadPickledGridDef, addGDALtoDataset, GridDefinition
+from geodata.gdal import grid_folder as common_grid_folder
 # Graham's package
 from hgs_output import binary
 # local imports
@@ -122,6 +123,7 @@ flow_to_flux = dict(discharge='sfroff', seepage='ugroff', flow='runoff') # relat
 # N.B.: computing surface flux rates from gage flows also requires the drainage area
 hgs_varmap = {value['name']:key for key,value in variable_attributes_mms.items()}
 bin_varmap = {value['name']:key for key,value in binary_attributes_mms.items()}
+const_varmap = {value['name']:key for key,value in constant_attributes.items()}
 
 ## function to load HGS station timeseries
 def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_layers=None, varatts=None, 
@@ -502,10 +504,38 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
 
 ## load functions for binary data
 
+
+## function to interpolate nodal/elemental datasets to a regular grid
+def gridDataset(dataset, griddef=None, basin=None, subbasin=None, shape_file=None,  
+                basin_list=None, grid_folder=None):
+  ''' interpolate nodal/elemental datasets to a regular grid, add GDAL, and mask to basin outlines '''
+  if isinstance(griddef,basestring): 
+      if grid_folder is None: grid_folder = common_grid_folder  
+      griddef = loadPickledGridDef(grid=griddef, folder=grid_folder)
+  elif not isinstance(griddef,GridDefinition):
+      raise ArgumentError(griddef)
+  # identify shape file
+  if basin and basin_list and shape_file is None:
+    basininfo = basin_list[basin]
+    shape_file = basininfo.shapefiles[subbasin if subbasin else basininfo.outline]
+    if not os.path.exists(shape_file): 
+        raise IOError(shape_file)
+  # interpolate
+  grid_ds = dataset.gridDataset(grid_axes=(griddef.ylat,griddef.xlon), method='cubic')
+  # add GDAL
+  gdal_ds = addGDALtoDataset(dataset=grid_ds, griddef=griddef, )
+  # mask basin shape
+  if shape_file and gdal_ds.gdal:
+      gdal_ds.maskShape(name=basin, filename=shape_file, invert=True)
+  # return gridded and masked dataset
+  return gdal_ds
+
+
 ## function to load HGS binary data
-def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None,
+def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=None,
+            lgrid=False, griddef=None, subbasin=None, shape_file=None, 
             mode='climatology', file_mode='last_12', file_pattern='{PREFIX}o.head_olf.????', t_list=None, 
-            lkgs=False, varatts=None, constatts=None,
+            lkgs=False, varatts=None, constatts=None, lstrip=True, lxyt=True, grid_folder=None, 
             basin_list=None, metadata=None, conservation_authority=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
@@ -583,39 +613,52 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None,
   coords_pm = reader.read_coordinates_pm()
   coords_olf = reader.read_coordinates_olf(coords_pm)
   # create mesh axes
-  node = Axis(coord=np.arange(1,len(coords_olf)+1), **constatts['node'])
-  ne = len(node)
-  dataset += node
-  sheet = Axis(coord=np.arange(coords_pm['sheet'].min(),coords_pm['sheet'].max()+1), 
+  node_ax = Axis(coord=np.arange(1,len(coords_olf)+1), **constatts['node'])
+  ne = len(node_ax)
+  dataset += node_ax
+  sheet_ax = Axis(coord=np.arange(coords_pm['sheet'].min(),coords_pm['sheet'].max()+1), 
                **constatts['sheet'])
-  se = len(sheet)
-  dataset += sheet
+  se = len(sheet_ax)
+  dataset += sheet_ax
   nne = len(coords_pm)
   assert ne*se == nne
   # add coordinate fields (surface)
   for var in ('x','y','z'):
-      dataset += Variable(data=coords_olf[var].values, axes=(node,), **constatts[var])
+      dataset += Variable(data=coords_olf[var].values, axes=(node_ax,), **constatts[var])
   # extract coordinate fields (porous medium)
-  dataset += Variable(data=coords_pm['z'].values.reshape((se,ne)), axes=(sheet,node), 
+  dataset += Variable(data=coords_pm['z'].values.reshape((se,ne)), axes=(sheet_ax,node_ax), 
                       **constatts['z_pm'])
-  dataset += Variable(data=coords_pm.index.values.reshape((se,ne)), axes=(sheet,node), 
+  dataset += Variable(data=coords_pm.index.values.reshape((se,ne)), axes=(sheet_ax,node_ax), 
                       **constatts['nodes_pm'])
   vector = Axis(coord=np.arange(3), **constatts['vector'])
-      
+  
+  # different varlist for different purposes
+  if lstrip:
+      final_varlist = set(['x','y','model_time']) if lxyt else set() # the variables we want at the end (to clean up)
+      for var in varlist:
+          if var not in bin_varmap and var not in const_varmap:
+              raise ArgumentError("When using variable stripping, only GeoPy names can be used," +
+                                  " HGS names, such as '{}', do not work!".format(var)) 
+          final_varlist.add(var)
+  varlist = [bin_varmap.get(var,var) for var in varlist] # translate to HGS var names
+  varlist = [const_varmap.get(var,var) for var in varlist] # translate to HGS var names
   # make sure variable dependencies work (derived variables last)
-  varlist = [bin_varmap.get(var,var) for var in varlist]
   all_deps = dict()
   for var in varlist[:]: # use copy to avoid interference
-      if var not in varatts:
-          raise VariableError("Variable '{}' not found in variable attributes.".format(var))
-      deplist = varatts[var]['atts'].get('dependencies',None)
-      if deplist:
-          varlist.remove(var)
-          for depvar in deplist:
-              if depvar not in varlist and depvar not in ('coordinates_pm','coordinates_olf'): 
-                  varlist.append(depvar)
-              all_deps[depvar] = None
-          varlist.append(var)
+      if var in varatts:
+          deplist = varatts[var]['atts'].get('dependencies',None)
+          if deplist:
+              varlist.remove(var)
+              for depvar in deplist:
+                  if depvar not in varlist and depvar not in ('coordinates_pm','coordinates_olf'): 
+                      varlist.append(depvar)
+                  all_deps[depvar] = None
+              varlist.append(var)
+      else:
+          if var in constatts: 
+              varlist.remove(var) # handled differently
+          else:
+              raise VariableError("Variable '{}' not found in variable attributes.".format(var))
           
   # initialize variables
   load_varlist = []
@@ -625,14 +668,16 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None,
       # elemental variables are currently not supported
       if not aa.get('elemental',False):
           aa['HGS_name'] = hgsvar # needed later
-          axes = (node,)
-          if aa.get('pm',False): axes = (sheet,)+axes
+          axes = (node_ax,)
+          if aa.get('pm',False): axes = (sheet_ax,)+axes
           if aa.get('vector',False): axes = (vector,)+axes
           axes = (time,)+axes
           shape = tuple([len(ax) for ax in axes]) 
           # save name and variable
           dataset += Variable(data=np.zeros(shape),axes=axes, **atts)
           load_varlist.append(atts['name'])
+      else:
+          raise NotImplementedError('elemental variables are currently not supported')
   # add simulation time variable
   dataset += Variable(data=np.zeros((te,)), axes=(time,), **constatts['model_time'])
   
@@ -652,7 +697,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None,
           if aa.get('function',False):
               deplist = {depvar:all_deps[depvar] for depvar in aa.get('dependencies',[])}
               df = getattr(reader,aa['function'])(**deplist)
-              if variable.hasAxis(sheet): data = df.values.reshape((se,ne))
+              if variable.hasAxis(sheet_ax): data = df.values.reshape((se,ne))
               else: 
                 data = df.values.squeeze()
                 if data.size == variable.shape[1]+1: 
@@ -682,35 +727,31 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None,
       # save timestamp
       dataset['model_time'].data_array[i] = sim_time              
     
-      
+  # now remove all unwanted variables...
+  if lstrip:
+      # clean up variables
+      for var in dataset.variables.keys():
+          if var not in final_varlist: dataset.removeVariable(var)
+      # clean up axes
+      for ax in dataset.axes.keys():
+          if ax not in final_varlist: dataset.removeAxis(ax, force=False) 
+          # N.B.: force=False means only remove unused axes
+  
+  # slice the sheets
+  if sheet and dataset.hasAxis('sheet'):
+      if sheet < 0: # allow reverse indexing (i.e. -1 is the last sheet) 
+          sheet = dataset.sheet.max() + sheet +1
+      dataset = dataset(sheet=sheet)
+
+  # interpolate to regular grid      
+  if lgrid:
+      dataset = gridDataset(dataset, griddef=griddef, basin=basin, subbasin=subbasin, 
+                            shape_file=shape_file, basin_list=basin_list, grid_folder=grid_folder) 
+  
   # return completed dataset
   return dataset
 
   
-## function to interpolate nodal/elemental datasets to a regular grid
-def gridDataset(dataset, griddef=None, basin=None, shape_file=None, basin_list=None, grid_folder=grid_folder):
-  ''' interpolate nodal/elemental datasets to a regular grid, add GDAL, and mask to basin outlines '''
-  if isinstance(griddef,basestring): 
-      griddef = loadPickledGridDef(grid=griddef, folder=grid_folder)
-  elif not isinstance(griddef,GridDefinition):
-      raise ArgumentError(griddef)
-  # identify shape file
-  if basin and basin_list and shape_file is None:
-    basininfo = basin_list[basin]
-    shape_file = basininfo.shapefiles[basininfo.outline]
-    if not os.path.exists(shape_file): 
-        raise IOError(shape_file)
-  # interpolate
-  grid_ds = dataset.gridDataset(grid_axes=(griddef.ylat,griddef.xlon), method='cubic')
-  # add GDAL
-  gdal_ds = addGDALtoDataset(dataset=grid_ds, griddef=griddef, )
-  # mask basin shape
-  if shape_file:
-      gdal_ds.maskShape(name=basin, filename=shape_file, invert=True)
-  # return gridded and masked dataset
-  return gdal_ds
-
-
 ## abuse for testing
 if __name__ == '__main__':
 
@@ -737,9 +778,9 @@ if __name__ == '__main__':
 
 #   test_mode = 'gage_station'
   test_mode = 'dataset_regrid'
+#   test_mode = 'binary_dataset'
 #   test_mode = 'time_axis'
 #   test_mode = 'station_dataset'
-#   test_mode = 'binary_dataset'
 #   test_mode = 'station_ensemble'
 
 
@@ -757,21 +798,38 @@ if __name__ == '__main__':
   elif test_mode == 'dataset_regrid':
 
     # load dataset
-    ds = loadHGS(folder=hgs_folder, varlist=[], conservation_authority='GRCA', 
-                 PRD='', DOM=2, CLIM='clim_15', BC='AABC_', basin=basin_name, basin_list=basin_list, 
-                 lkgs=False, EXP='erai-g', name='{EXP:s} ({BASIN:s})')(sheet=18)
+    dataset = loadHGS(folder=hgs_folder, varlist=['zs'], conservation_authority='GRCA', sheet=-1,
+                      PRD='', DOM=2, CLIM='clim_15', BC='AABC_', basin=basin_name, basin_list=basin_list, 
+                      lkgs=False, EXP='erai-g', name='{EXP:s} ({BASIN:s})',
+                      lgrid=True, griddef='grw1',)
     # load griddefition
     # interpolate to regular x,y-grid
-#     x = Axis(name='x', units='m', coord=np.linspace(ds.x.min(),ds.x.max(),200))
-#     y = Axis(name='y', units='m', coord=np.linspace(ds.y.min(),ds.y.max(),200))
-    dataset = gridDataset(ds, griddef='grw2', basin=basin_name, basin_list=basin_list, 
-                          grid_folder=grid_folder)
+#     x = Axis(name='x', units='m', coord=np.linspace(dataset.x.min(),dataset.x.max(),200))
+#     y = Axis(name='y', units='m', coord=np.linspace(dataset.y.min(),dataset.y.max(),200))
+#     dataset = gridDataset(dataset, griddef='grw2', basin=basin_name, basin_list=basin_list, 
+#                           grid_folder=grid_folder)
     # and print
     print('')
     print(dataset)
     print('')
     print(dataset.zs)
     print(dataset.zs[15,:])
+    
+  
+  elif test_mode == 'binary_dataset':
+
+    # load dataset
+    dataset = loadHGS(varlist=['zs','sat','z'], EXP='erai-g', name='{EXP:s} ({BASIN:s})', sheet=-1,
+                      folder=hgs_folder, conservation_authority='GRCA', 
+                      PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
+                      basin=basin_name, basin_list=basin_list, lkgs=False, )
+    # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
+    # and print
+    print('')
+    print(dataset)
+    print('')
+    print(dataset.model_time)
+    print(dataset.model_time[:])
     
   
   elif test_mode == 'time_axis':
@@ -809,23 +867,6 @@ if __name__ == '__main__':
 #     print(clim)
 
 
-  elif test_mode == 'binary_dataset':
-
-    # load dataset
-    dataset = loadHGS(folder=hgs_folder, varlist=['d_gw'],
-                      conservation_authority='GRCA', 
-                      PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
-                      basin=basin_name, basin_list=basin_list, lkgs=False, 
-                      EXP='erai-g', name='{EXP:s} ({BASIN:s})')
-    # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
-    # and print
-    print('')
-    print(dataset)
-    print('')
-    print(dataset.model_time)
-    print(dataset.model_time[:])
-    
-  
   elif test_mode == 'station_dataset':
 
     # load dataset
