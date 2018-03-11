@@ -13,7 +13,7 @@ import numpy as np
 import os.path as osp
 import os, glob
 # internal imports
-from geodata.misc import ArgumentError, VariableError, DataError, isNumber, DatasetError
+from geodata.misc import ArgumentError, VariableError, DataError, isNumber, DatasetError, translateSeasons
 from datasets.common import BatchLoad, getRootFolder
 from geodata.base import Dataset, Variable, Axis, concatDatasets
 from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS, updateScalefactor
@@ -532,9 +532,9 @@ def gridDataset(dataset, griddef=None, basin=None, subbasin=None, shape_file=Non
 
 
 ## function to load HGS binary data
-def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=None,
-            lgrid=False, griddef=None, subbasin=None, shape_file=None, 
-            mode='climatology', file_mode='last_12', file_pattern='{PREFIX}o.head_olf.????', t_list=None, 
+def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=None, season=None, 
+            lgrid=False, griddef=None, subbasin=None, shape_file=None, t_list=None,
+            mode='climatology', file_mode='last_12', file_pattern='{PREFIX}o.head_olf.????',  
             lkgs=False, varatts=None, constatts=None, lstrip=True, lxyt=True, grid_folder=None, 
             basin_list=None, metadata=None, conservation_authority=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
@@ -585,11 +585,17 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
       if file_mode.lower() == 'last_12':
           if len(t_list) < 12: 
             raise ValueError("Need at least 12 time-steps to assemble Monthly climatology; {} given".format(len(t_list)))
-          t_list = t_list[-12:]
+          t_list = t_list[-12:]            
       if len(t_list) != 12: 
             raise ValueError("Need at exactly 12 time-steps to assemble Monthly climatology; {} given".format(len(t_list)))
-      # construct time axis
-      time = Axis(coord=np.arange(1, 13), **constatts['time_clim']) 
+      # construct time Axis
+      time = Axis(coord=np.arange(1, 13), **constatts['time_clim'])
+      # extract a season
+      if season: 
+          season = translateSeasons(season)    
+          # slice time axis
+          t_list = [t_list[i] for i in season]
+          time = time(time=season, lidx=True)          
   elif mode.lower()[:4] == 'time':
       if file_mode.lower() == 'last_12':
           if len(t_list) < 12: 
@@ -777,8 +783,8 @@ if __name__ == '__main__':
 
 
 #   test_mode = 'gage_station'
-  test_mode = 'dataset_regrid'
-#   test_mode = 'binary_dataset'
+#   test_mode = 'dataset_regrid'
+  test_mode = 'binary_dataset'
 #   test_mode = 'time_axis'
 #   test_mode = 'station_dataset'
 #   test_mode = 'station_ensemble'
@@ -819,8 +825,8 @@ if __name__ == '__main__':
   elif test_mode == 'binary_dataset':
 
     # load dataset
-    dataset = loadHGS(varlist=['zs','sat','z'], EXP='erai-g', name='{EXP:s} ({BASIN:s})', sheet=-1,
-                      folder=hgs_folder, conservation_authority='GRCA', 
+    dataset = loadHGS(varlist=['zs','d_gw',], EXP='erai-g', name='{EXP:s} ({BASIN:s})', sheet=-1,
+                      folder=hgs_folder, conservation_authority='GRCA', season='MAM',
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                       basin=basin_name, basin_list=basin_list, lkgs=False, )
     # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
@@ -830,6 +836,9 @@ if __name__ == '__main__':
     print('')
     print(dataset.model_time)
     print(dataset.model_time[:])
+    print('')
+    print(dataset.time)
+    print(dataset.time[:])
     
   
   elif test_mode == 'time_axis':
