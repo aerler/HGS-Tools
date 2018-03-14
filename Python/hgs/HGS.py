@@ -68,10 +68,10 @@ variable_attributes_mms = dict(# hydrograph variables
                                )
 binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                              head_pm  = dict(name='head_pm', units='m', atts=dict(long_name='Total Head (PM)', pm=True),),
-                             sat_pm   = dict(name='sat', units='', atts=dict(long_name='Relative Saturation (PM)', pm=True),),
+                             sat_pm   = dict(name='sat', units='', atts=dict(long_name='Relative Saturation', pm=True),),
                              # 3D porous medium variables (vector)
                              v_pm  = dict(name='flow_pm', units='m/s', atts=dict(long_name='Flow Velocity (PM)', pm=True, elemental=True, vector=True)),
-                             q_pm  = dict(name='dflx', units='m/s', atts=dict(long_name='Darcy Flux (PM)', pm=True, elemental=True, vector=True)),
+                             q_pm  = dict(name='dflx', units='m/s', atts=dict(long_name='Darcy Flux', pm=True, elemental=True, vector=True)),
                              # Overland Flow (2D) variables (scalar)
                              head_olf     = dict(name='head_olf', units='m', atts=dict(long_name='Total Head (OLF)'),),
                              ExchFlux_olf = dict(name='exflx', units='m/s', atts=dict(long_name='Exchange Flux (OLF)'),),
@@ -82,7 +82,7 @@ binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                              # Overland Flow (2D) variables (vector)
                              v_olf  = dict(name='flow_olf', units='m/s', atts=dict(long_name='Flow Velocity (OLF)', elemental=True, vector=True)),
                              # derived variables
-                             depth2gw  = dict(name='d_gw', units='m', atts=dict(long_name='Depth to Groudwater Table', function='calculate_depth2gw', 
+                             depth2gw  = dict(name='d_gw', units='m', atts=dict(long_name='Depth to Groundwater Table', function='calculate_depth2gw', 
                                                                                 dependencies=['coordinates_pm','coordinates_olf','head_pm']),),
                              olf_depth = dict(name='d_olf', units='m', atts=dict(long_name='Overland Flow Depth', function='calculate_olf_depth', 
                                                                                  dependencies=['coordinates_olf','head_olf']),),
@@ -461,13 +461,13 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
       # translate parameters
       station = station if WSC_station is None else WSC_station
       well = well if Obs_well is None else Obs_well
-      period = period if obs_period is None else obs_period
+      obs_period = obs_period or period
       filetype = 'monthly'
       # load gage station with slightly altered parameters
       if station and well: raise ArgumentError()
       elif station:
           dataset = loadWSC_StnTS(station=station, name=name, title=title, basin=basin, basin_list=basin_list, 
-                                  varlist=varlist, varatts=varatts, period=period, filetype=filetype)
+                                  varlist=varlist, varatts=varatts, period=obs_period, filetype=filetype)
       elif well:
           dataset = loadPGMN_TS(well=well, name=name, title=title, varlist=varlist, varatts=varatts,
                                 conservation_authority=conservation_authority,)
@@ -496,7 +496,7 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
       # load HGS simulation
       dataset = loadHGS_StnTS(station=station, well=well, varlist=varlist, layers=layers, varatts=varatts, 
                               name=name, title=title, period=period, conservation_authority=conservation_authority, 
-                              ENSEMBLE=ensemble, run_period=run_period, folder=folder,
+                              experiment=ensemble, run_period=run_period, folder=folder,
                               WSC_station=WSC_station, Obs_well=Obs_well, basin=basin, basin_list=basin_list,
                                **kwargs)
   return dataset
