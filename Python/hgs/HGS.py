@@ -532,8 +532,9 @@ def gridDataset(dataset, griddef=None, basin=None, subbasin=None, shape_file=Non
 
 
 ## function to load HGS binary data
+@BatchLoad
 def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=None, season=None, 
-            lgrid=False, griddef=None, subbasin=None, shape_file=None, t_list=None,
+            lgrid=False, griddef=None, subbasin=None, shape_file=None, t_list=None, lflipdgw=False,
             mode='climatology', file_mode='last_12', file_pattern='{PREFIX}o.head_olf.????',  
             lkgs=False, varatts=None, constatts=None, lstrip=True, lxyt=True, grid_folder=None, 
             basin_list=None, metadata=None, conservation_authority=None, **kwargs):
@@ -748,6 +749,12 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
       if sheet < 0: # allow reverse indexing (i.e. -1 is the last sheet) 
           sheet = dataset.sheet.max() + sheet +1
       dataset = dataset(sheet=sheet)
+      
+  # flip sign of depth to groundwater variable
+  if lflipdgw:
+      d_gw = binary_attributes_mms['depth2gw']['name']
+      if d_gw in dataset:
+          dataset[d_gw] *= -1
 
   # interpolate to regular grid      
   if lgrid:
