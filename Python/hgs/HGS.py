@@ -50,12 +50,14 @@ variable_attributes_mms = dict(# hydrograph variables
                                # water balance variables
                                outerboundary = dict(name='outflow', units='m^3/s', atts=dict(long_name='Outer Boundary Flow', flip_sign=True)),
                                outer_edge = dict(name='outflow', units='m^3/s', atts=dict(long_name='Outer Boundary Flow', flip_sign=True)),
-                               rainfall = dict(name='tot_precip', units='m^3/s', atts=dict(long_name='Basin-integrated Precipitation')),
-                               pet_pet = dict(name='tot_pet', units='m^3/s', atts=dict(long_name='Basin-integrated Potential ET')),
-                               pet = dict(name='tot_pet', units='m^3/s', atts=dict(long_name='Basin-integrated Potential ET')),
-                               tot_et = dict(name='tot_et', units='m^3/s', atts=dict(long_name='Basin-integrated Actual ET', flip_sign=True)),
-                               canopy_evap = dict(name='can_et', units='m^3/s', atts=dict(long_name='Basin-integrated Canopy Evap.', flip_sign=True)),
-                               surf_evap = dict(name='sfc_et', units='m^3/s', atts=dict(long_name='Basin-integrated Surface', flip_sign=True)),
+                               rainfall = dict(name='precip_tot', units='m^3/s', atts=dict(long_name='Basin-integrated Precipitation')),
+                               pet_pet = dict(name='pet_pet', units='m^3/s', atts=dict(long_name='Basin-integrated Potential ET')),
+                               pet = dict(name='pet_tot', units='m^3/s', atts=dict(long_name='Basin-integrated Potential ET')),
+                               tot_et = dict(name='et_tot', units='m^3/s', atts=dict(long_name='Basin-integrated Actual ET', flip_sign=True)),
+                               canopy_evap = dict(name='et_can', units='m^3/s', atts=dict(long_name='Basin-integrated Canopy Evaporation', flip_sign=True)),
+                               surf_evap = dict(name='et_sfc', units='m^3/s', atts=dict(long_name='Basin-integrated Surface Evaporation', flip_sign=True)),
+                               pm_evap = dict(name='evap_pm', units='m^3/s', atts=dict(long_name='Basin-integrated PM Evaporation', flip_sign=True)),
+                               pm_trans = dict(name='trans_pm', units='m^3/s', atts=dict(long_name='Basin-integrated PM Transpiration', flip_sign=True)),
                                infilt = dict(name='infil', units='m^3/s', atts=dict(long_name='Basin-integrated Infiltration')),
                                exfilt = dict(name='exfil', units='m^3/s', atts=dict(long_name='Basin-integrated Exfiltration', flip_sign=True)),
                                overland = dict(name='d_olf', units='m^3/s', atts=dict(long_name='Total Change in Surface Flow',)),
@@ -67,12 +69,16 @@ variable_attributes_mms = dict(# hydrograph variables
                                s    = dict(name='sat', units='', atts=dict(long_name='Relative Saturation')),
                                )
 binary_attributes_mms = dict(# 3D porous medium variables (scalar)
+                             p_pm  = dict(name='p_pm', units='m', atts=dict(long_name='Pressure Head (PM)', function='calculate_pressure_head',
+                                                                            dependencies=['z_pm','head_pm'], pm=True),),
                              head_pm  = dict(name='head_pm', units='m', atts=dict(long_name='Total Head (PM)', pm=True),),
                              sat_pm   = dict(name='sat', units='', atts=dict(long_name='Relative Saturation', pm=True),),
                              # 3D porous medium variables (vector)
                              v_pm  = dict(name='flow_pm', units='m/s', atts=dict(long_name='Flow Velocity (PM)', pm=True, elemental=True, vector=True)),
                              q_pm  = dict(name='dflx', units='m/s', atts=dict(long_name='Darcy Flux', pm=True, elemental=True, vector=True)),
                              # Overland Flow (2D) variables (scalar)
+                             p_olf        = dict(name='p_olf', units='m', atts=dict(long_name='Pressure Head (OLF)', function='calculate_pressure_head',
+                                                                                    dependencies=['z','head_olf'])),
                              head_olf     = dict(name='head_olf', units='m', atts=dict(long_name='Total Head (OLF)'),),
                              ExchFlux_olf = dict(name='exflx', units='m/s', atts=dict(long_name='Exchange Flux (OLF)'),),
                              ETEvap_olf   = dict(name='evap', units='m/s', atts=dict(long_name='Surface Evaporation (OLF)'),),
@@ -531,6 +537,21 @@ def gridDataset(dataset, griddef=None, basin=None, subbasin=None, shape_file=Non
   return gdal_ds
 
 
+## function to compute pressure head in loadHGS
+def calculate_pressure_head(head_pm=None, head_olf=None, z_pm=None, z=None):
+    ''' a function to calculate pressure head from total head and elevation '''
+    if head_pm is not None and z_pm is not None:
+        assert isinstance(z_pm,np.ndarray)
+        if hasattr(head_pm, 'values'): head_pm = head_pm.values.reshape(z_pm.shape)
+        p = head_pm - z_pm
+    elif head_olf is not None and z is not None:
+        assert isinstance(z,np.ndarray)
+        if hasattr(head_olf, 'values'): head_olf = head_olf.values.reshape(z.shape)
+        p = head_olf - z
+    else:
+        raise ArgumentError()
+    return p
+  
 ## function to load HGS binary data
 @BatchLoad
 def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=None, season=None, 
@@ -657,7 +678,8 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
           if deplist:
               varlist.remove(var)
               for depvar in deplist:
-                  if depvar not in varlist and depvar not in ('coordinates_pm','coordinates_olf'): 
+                  if ( depvar not in varlist and depvar not in constant_attributes and
+                       depvar not in ('coordinates_pm','coordinates_olf') ): 
                       varlist.append(depvar)
                   all_deps[depvar] = None
               varlist.append(var)
@@ -696,6 +718,8 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
       for depvar in all_deps.keys(): all_deps[depvar] = None
       all_deps['coordinates_pm'] = coords_pm
       all_deps['coordinates_olf'] = coords_olf
+      for depvar in ['z_pm','z']:
+          all_deps[depvar] = dataset[constatts[depvar]['name']][:] # these are just arrays
       sim_time = reader.read_timestamp()
       # loop over variables
       for var in load_varlist:
@@ -703,13 +727,19 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
           # load data
           if aa.get('function',False):
               deplist = {depvar:all_deps[depvar] for depvar in aa.get('dependencies',[])}
-              df = getattr(reader,aa['function'])(**deplist)
-              if variable.hasAxis(sheet_ax): data = df.values.reshape((se,ne))
-              else: 
-                data = df.values.squeeze()
-                if data.size == variable.shape[1]+1: 
-                    print("Warning: Trimming first element of {} array.".format(var))
-                    data = data[1:] 
+              fct_name = aa['function']; _locals = globals()
+              if fct_name in _locals:
+                  data = _locals[fct_name](**deplist)
+              elif hasattr(reader, fct_name):
+                  df = getattr(reader,)(**deplist)
+                  if variable.hasAxis(sheet_ax): data = df.values.reshape((se,ne))
+                  else: 
+                    data = df.values.squeeze()
+                    if data.size == variable.shape[1]+1: 
+                        print("Warning: Trimming first element of {} array.".format(var))
+                        data = data[1:] 
+              else:
+                  raise NotImplementedError(fct_name)
               variable.data_array[i,:] = data       
           elif aa.get('vector',False):
               data = reader.read_vec(hgsvar).values
@@ -832,7 +862,7 @@ if __name__ == '__main__':
   elif test_mode == 'binary_dataset':
 
     # load dataset
-    dataset = loadHGS(varlist=['zs','d_gw',], EXP='erai-g', name='{EXP:s} ({BASIN:s})', sheet=-1,
+    dataset = loadHGS(varlist=['p_olf',], EXP='erai-g', name='{EXP:s} ({BASIN:s})', sheet=-1,
                       folder=hgs_folder, conservation_authority='GRCA', season='MAM',
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                       basin=basin_name, basin_list=basin_list, lkgs=False, )
