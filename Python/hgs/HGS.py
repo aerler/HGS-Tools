@@ -731,7 +731,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
               if fct_name in _locals:
                   data = _locals[fct_name](**deplist)
               elif hasattr(reader, fct_name):
-                  df = getattr(reader,)(**deplist)
+                  df = getattr(reader,fct_name)(**deplist)
                   if variable.hasAxis(sheet_ax): data = df.values.reshape((se,ne))
                   else: 
                     data = df.values.squeeze()
