@@ -94,27 +94,30 @@ binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                                                                                  dependencies=['coordinates_olf','head_olf']),),
                              )
 constant_attributes = dict(# variables that are not time-dependent (mostly coordinate variables)
-                           vector = dict(name='vector', units='', dtype=np.int64, atts=dict(long_name='Vector Component',
-                                                                                            order='0:x, 1:y, 2:z')),
+                           vector = dict(name='vector', units='', dtype=np.int64, atts=dict(
+                                         long_name='Vector Component', order='0:x, 1:y, 2:z', vector=True)),
+                           tensor = dict(name='tensor', units='', dtype=np.int64, atts=dict(long_name='Vector Component', 
+                                         order='0:xx, 1:yy, 2:zz, 0:xy, 1:yz, 2:zx', tensor=True)),
                            # Nodal OLF
                            x    = dict(name='x', units='m', atts=dict(long_name='X Coord.')),
                            y    = dict(name='y', units='m', atts=dict(long_name='Y Coord.')),
                            z    = dict(name='zs', units='m', atts=dict(long_name='Surface Elevation')),
                            node = dict(name='node', units='', dtype=np.int64, atts=dict(long_name='Node Number')),
                            # Nodal PM
-                           x_pm = dict(name='x_pm', units='m', atts=dict(long_name='X Coord. (PM)')),
-                           y_pm = dict(name='y_pm', units='m', atts=dict(long_name='Y Coord. (PM)')),
-                           z_pm = dict(name='z', units='m', atts=dict(long_name='Z Coord.')),
-                           sheet    = dict(name='sheet', units='', dtype=np.int64, atts=dict(long_name='Sheet Number')),
-                           nodes_pm = dict(name='node_pm', units='', dtype=np.int64, atts=dict(long_name='3D (PM) Node Number')),
+                           x_pm = dict(name='x_pm', units='m', atts=dict(long_name='X Coord. (PM)', pm=True)),
+                           y_pm = dict(name='y_pm', units='m', atts=dict(long_name='Y Coord. (PM)', pm=True)),
+                           z_pm = dict(name='z', units='m', atts=dict(long_name='Z Coord.', pm=True)),
+                           sheet    = dict(name='sheet', units='', dtype=np.int64, atts=dict(long_name='Sheet Number', pm=True)),
+                           nodes_pm = dict(name='node_pm', units='', dtype=np.int64, atts=dict(long_name='3D (PM) Node Number', pm=True)),
                            # Elemental (all)
-                           x_elm = dict(name='x_elm', units='m', atts=dict(long_name='X Coord. (Elemental)')),
-                           y_elm = dict(name='y_elm', units='m', atts=dict(long_name='Y Coord. (Elemental)')),
-                           z_elm = dict(name='zs_elm', units='m', atts=dict(long_name='Surface Elevation (Elemental)')),
-                           z_pmelm = dict(name='z_elm', units='m', atts=dict(long_name='Z Coord. (Elemental)')),
-                           layer   = dict(name='layer', units='', dtype=np.int64, atts=dict(long_name='Layer Number')),
-                           element = dict(name='element', units='', dtype=np.int64, atts=dict(long_name='2D Element Number')),
-                           elements_pm = dict(name='elemements_pm', units='', dtype=np.int64, atts=dict(long_name='3D Element Number')),
+                           x_elm = dict(name='x_elm', units='m', atts=dict(long_name='X Coord. (Elemental)', elemental=True)),
+                           y_elm = dict(name='y_elm', units='m', atts=dict(long_name='Y Coord. (Elemental)', elemental=True)),
+                           z_elm = dict(name='zs_elm', units='m', atts=dict(long_name='Surface Elevation (Elemental)', elemental=True)),
+                           z_pmelm = dict(name='z_elm', units='m', atts=dict(long_name='Z Coord. (Elemental)'), elemental=True, pm=True),
+                           layer   = dict(name='layer', units='', dtype=np.int64, atts=dict(long_name='Layer Number', elemental=True, pm=True)),
+                           element = dict(name='element', units='', dtype=np.int64, atts=dict(long_name='2D Element Number', elemental=True, pm=True)),
+                           elements_pm = dict(name='elemements_pm', units='', dtype=np.int64, atts=dict(long_name='3D Element Number', elemental=True, pm=True)),
+                           elem_k = dict(name='K', units='m/s', atts=dict(long_name='Elemental k'), elemental=True, tensor=True, pm=True),
                            # Time
                            time_ts    = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time since 1979-01')),
                            time_clim  = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time of the Year')),
@@ -537,8 +540,12 @@ def gridDataset(dataset, griddef=None, basin=None, subbasin=None, shape_file=Non
     shape_file = basininfo.shapefiles[subbasin if subbasin else basininfo.outline]
     if not os.path.exists(shape_file): 
         raise IOError(shape_file)
-  # interpolate
+  # interpolate (regular nodal values first)
   grid_ds = dataset.gridDataset(grid_axes=(griddef.ylat,griddef.xlon), method='cubic')
+  # also interpolate elemental values, if present
+  if 'x_elm' in grid_ds and 'y_elm' in grid_ds: 
+      grid_ds = grid_ds.gridDataset(grid_axes=(griddef.ylat,griddef.xlon), 
+                                    coord_map=dict(x='x_elm',y='y_elm'), method='cubic')
   # add GDAL
   gdal_ds = addGDALtoDataset(dataset=grid_ds, griddef=griddef, )
   # mask basin shape
@@ -565,11 +572,11 @@ def calculate_pressure_head(head_pm=None, head_olf=None, z_pm=None, z=None):
   
 ## function to load HGS binary data
 @BatchLoad
-def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=None, season=None, 
-            vector='z', lgrid=False, griddef=None, subbasin=None, shape_file=None, t_list=None, 
+def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season=None, 
+            lgrid=False, griddef=None, subbasin=None, shape_file=None, t_list=None, lflipdgw=False, 
             mode='climatology', file_mode='last_12', file_pattern='{PREFIX}o.head_olf.????',  
             lkgs=False, varatts=None, constatts=None, lstrip=True, lxyt=True, grid_folder=None, 
-            basin_list=None, metadata=None, conservation_authority=None, lflipdgw=False, **kwargs):
+            basin_list=None, metadata=None, conservation_authority=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None: raise ArgumentError
@@ -707,8 +714,8 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
       if varatts[hgsvar]['atts'].get('elemental',False): 
           lelem = True
           lelem3D = lelem3D or varatts[hgsvar]['atts'].get('pm',False)     
-  lelem = lelem or 'zs_elm' in final_varlist or 'z_elm' in final_varlist
-  lelem3D = lelem3D or 'z_elm' in final_varlist
+  lelem3D = lelem3D or 'z_elm' in final_varlist or 'K' in final_varlist
+  lelem = lelem or 'zs_elm' in final_varlist or lelem3D
   
   if lelem:
       elem_olf = reader.read_elements(domain='olf')
@@ -738,7 +745,16 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
                                                                   coord_list=('z',), lpd=False)
               dataset += Variable(data=elem_coords_pm['z'].reshape((nlay,nelem)), axes=(layer_ax,elem_ax,), 
                                   **constatts['z_pmelm']) # 'z' is already used for the 'zs' variable
-              assert np.all(np.diff(dataset['z_elm'][:], axis=0) > 0)          
+              assert np.all(np.diff(dataset['z_elm'][:], axis=0) > 0) 
+          # add elemental K
+          if 'K' in final_varlist:
+              elem_k = reader.read_k()
+              nten = len(elem_k.columns)
+              if nten == 1:
+                  dataset += Variable(data=elem_k.values.reshape((nlay,nelem)), axes=(layer_ax,elem_ax,), 
+                                      **constatts['elem_k']) # scalar value
+              else:
+                  raise NotImplementedError
           # N.B.: currently elements are assumed to be organiced in vertically symmetric layers
           
       
@@ -832,16 +848,18 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
           if ax not in final_varlist: dataset.removeAxis(ax, force=False) 
           # N.B.: force=False means only remove unused axes
   
-  # slice the sheets
-  if sheet and dataset.hasAxis('sheet'):
-      if sheet < 0: # allow reverse indexing (i.e. -1 is the last sheet) 
-          sheet = dataset.sheet.max() + sheet +1
-      dataset = dataset(sheet=sheet)
-
-  # slice vectors
-  if vector and dataset.hasAxis('vector'):
-      vector_map = dict(x=0,y=1,z=2)
-      dataset = dataset(vector=vector_map.get(vector,vector))
+  # do some multi-purpose slicing
+  tensor_idx = dict(x=0,y=1,z=2,xx=0,yy=1,zz=2,xy=3,yz=4,zx=5)
+  slc_axes = dict()
+  for axname,axval in kwargs.items():
+      if axname in dataset.axes:
+          # some special values...
+          if axname in ('vector','tensor'):
+              axval = tensor_idx.get(axval,axval)
+          if axval < 0: 
+              axval = dataset.axes[axname].max() + axval +1
+          slc_axes[axname] = axval
+  dataset = dataset(**slc_axes)
       
   # flip sign of depth to groundwater variable
   if lflipdgw:
@@ -883,8 +901,8 @@ if __name__ == '__main__':
 
 
 #   test_mode = 'gage_station'
-#   test_mode = 'dataset_regrid'
-  test_mode = 'binary_dataset'
+  test_mode = 'dataset_regrid'
+#   test_mode = 'binary_dataset'
 #   test_mode = 'time_axis'
 #   test_mode = 'station_dataset'
 #   test_mode = 'station_ensemble'
@@ -904,7 +922,8 @@ if __name__ == '__main__':
   elif test_mode == 'dataset_regrid':
 
     # load dataset
-    dataset = loadHGS(folder=hgs_folder, varlist=['zs'], conservation_authority='GRCA', sheet=-1,
+    dataset = loadHGS(folder=hgs_folder, varlist=['dflx'], conservation_authority='GRCA', 
+                      sheet=-2, layer=-2, vector='z',
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', basin=basin_name, basin_list=basin_list, 
                       lkgs=False, EXP='erai-g', name='{EXP:s} ({BASIN:s})',
                       lgrid=True, griddef='grw1',)
@@ -918,15 +937,17 @@ if __name__ == '__main__':
     print('')
     print(dataset)
     print('')
-    print(dataset.zs)
-    print(dataset.zs[15,:])
+    print(dataset.dflx)
+    print(dataset.dflx[2,15,:])
     
   
   elif test_mode == 'binary_dataset':
 
     # load dataset
-    dataset = loadHGS(varlist=['flow_olf',], EXP='erai-g', name='{EXP:s} ({BASIN:s})', sheet=-1,
-                      folder=hgs_folder, conservation_authority='GRCA', season='MAM', vector='z',
+    vecvar = 'dflx'
+    dataset = loadHGS(varlist=[vecvar,], EXP='erai-g', name='{EXP:s} ({BASIN:s})', 
+                      sheet=-2, layer=-2, season='MAM', vector='z',
+                      folder=hgs_folder, conservation_authority='GRCA', 
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                       basin=basin_name, basin_list=basin_list, lkgs=False, )
     # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
@@ -936,10 +957,11 @@ if __name__ == '__main__':
     print('')
     print(dataset.model_time)
     print(dataset.model_time[:])
-    print('')
-    vec = dataset.flow_olf.mean(axis=('element','time'))
-    print(vec)
-    print(vec[:])
+    if vecvar in dataset:
+        print('')
+        vec = dataset[vecvar].mean(axis=('element','time'))
+        print(vec)
+        print(vec[:])
     
   
   elif test_mode == 'time_axis':
