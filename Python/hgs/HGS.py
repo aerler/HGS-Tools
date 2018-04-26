@@ -93,18 +93,29 @@ binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                              olf_depth = dict(name='d_olf', units='m', atts=dict(long_name='Overland Flow Depth', function='calculate_olf_depth', 
                                                                                  dependencies=['coordinates_olf','head_olf']),),
                              )
-constant_attributes = dict(# variables that are not time-dependent
+constant_attributes = dict(# variables that are not time-dependent (mostly coordinate variables)
+                           vector = dict(name='vector', units='', dtype=np.int64, atts=dict(long_name='Vector Component',
+                                                                                            order='0:x, 1:y, 2:z')),
+                           # Nodal OLF
                            x    = dict(name='x', units='m', atts=dict(long_name='X Coord.')),
                            y    = dict(name='y', units='m', atts=dict(long_name='Y Coord.')),
                            z    = dict(name='zs', units='m', atts=dict(long_name='Surface Elevation')),
                            node = dict(name='node', units='', dtype=np.int64, atts=dict(long_name='Node Number')),
-                           vector = dict(name='vector', units='', dtype=np.int64, atts=dict(long_name='Vector Component',
-                                                                                            order='0:x, 1:y, 2:z')),
+                           # Nodal PM
                            x_pm = dict(name='x_pm', units='m', atts=dict(long_name='X Coord. (PM)')),
                            y_pm = dict(name='y_pm', units='m', atts=dict(long_name='Y Coord. (PM)')),
                            z_pm = dict(name='z', units='m', atts=dict(long_name='Z Coord.')),
                            sheet    = dict(name='sheet', units='', dtype=np.int64, atts=dict(long_name='Sheet Number')),
                            nodes_pm = dict(name='node_pm', units='', dtype=np.int64, atts=dict(long_name='3D (PM) Node Number')),
+                           # Elemental (all)
+                           x_elm = dict(name='x_elm', units='m', atts=dict(long_name='X Coord. (Elemental)')),
+                           y_elm = dict(name='y_elm', units='m', atts=dict(long_name='Y Coord. (Elemental)')),
+                           z_elm = dict(name='zs_elm', units='m', atts=dict(long_name='Surface Elevation (Elemental)')),
+                           z_pmelm = dict(name='z_elm', units='m', atts=dict(long_name='Z Coord. (Elemental)')),
+                           layer   = dict(name='layer', units='', dtype=np.int64, atts=dict(long_name='Layer Number')),
+                           element = dict(name='element', units='', dtype=np.int64, atts=dict(long_name='2D Element Number')),
+                           elements_pm = dict(name='elemements_pm', units='', dtype=np.int64, atts=dict(long_name='3D Element Number')),
+                           # Time
                            time_ts    = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time since 1979-01')),
                            time_clim  = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time of the Year')),
                            model_time = dict(name='model_time', units='s', atts=dict(long_name='Time since Simulation Start')),
@@ -194,7 +205,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
   if not os.path.exists(folder): raise IOError(folder)
   if expargs.get('PREFIX',None) is None:
     with open(os.path.join(folder,prefix_file), 'r') as pfx:
-      expargs['PREFIX'] = prefix = ''.join(pfx.readlines()).strip()  
+      expargs['PREFIX'] = prefix = ''.join(pfx.readlines()).strip()
   # some more argument expansions
   zone = prefix if zone is None else zone.format(**expargs) # this only applies to newton and water balance files      
   if file_title: file_title = file_title.format(**expargs) # used to validate file header below
@@ -555,10 +566,10 @@ def calculate_pressure_head(head_pm=None, head_olf=None, z_pm=None, z=None):
 ## function to load HGS binary data
 @BatchLoad
 def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=None, season=None, 
-            lgrid=False, griddef=None, subbasin=None, shape_file=None, t_list=None, lflipdgw=False,
+            vector='z', lgrid=False, griddef=None, subbasin=None, shape_file=None, t_list=None, 
             mode='climatology', file_mode='last_12', file_pattern='{PREFIX}o.head_olf.????',  
             lkgs=False, varatts=None, constatts=None, lstrip=True, lxyt=True, grid_folder=None, 
-            basin_list=None, metadata=None, conservation_authority=None, **kwargs):
+            basin_list=None, metadata=None, conservation_authority=None, lflipdgw=False, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None: raise ArgumentError
@@ -645,7 +656,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
   ne = len(node_ax)
   dataset += node_ax
   sheet_ax = Axis(coord=np.arange(coords_pm['sheet'].min(),coords_pm['sheet'].max()+1), 
-               **constatts['sheet'])
+                  **constatts['sheet'])
   se = len(sheet_ax)
   dataset += sheet_ax
   nne = len(coords_pm)
@@ -658,11 +669,11 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
                       **constatts['z_pm'])
   dataset += Variable(data=coords_pm.index.values.reshape((se,ne)), axes=(sheet_ax,node_ax), 
                       **constatts['nodes_pm'])
-  vector = Axis(coord=np.arange(3), **constatts['vector'])
+  vector_ax = Axis(coord=np.arange(3), **constatts['vector'])
   
   # different varlist for different purposes
   if lstrip:
-      final_varlist = set(['x','y','model_time']) if lxyt else set() # the variables we want at the end (to clean up)
+      final_varlist = set(['x','y','x_elm','y_elm','model_time']) if lxyt else set() # the variables we want at the end (to clean up)
       for var in varlist:
           if var not in bin_varmap and var not in const_varmap:
               raise ArgumentError("When using variable stripping, only GeoPy names can be used," +
@@ -689,24 +700,67 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
           else:
               raise VariableError("Variable '{}' not found in variable attributes.".format(var))
           
+          
+  # load elemental coordinate, if necessary
+  lelem = False; lelem3D = False
+  for hgsvar in varlist:
+      if varatts[hgsvar]['atts'].get('elemental',False): 
+          lelem = True
+          lelem3D = lelem3D or varatts[hgsvar]['atts'].get('pm',False)     
+  lelem = lelem or 'zs_elm' in final_varlist or 'z_elm' in final_varlist
+  lelem3D = lelem3D or 'z_elm' in final_varlist
+  
+  if lelem:
+      elem_olf = reader.read_elements(domain='olf')
+      nelem = len(elem_olf)
+      elem_ax = Axis(coord=np.arange(1,nelem+1), **constatts['element'])
+      dataset += elem_ax
+      elem_coords_olf = reader.compute_element_coordinates(elements=elem_olf, coords_pm=coords_pm, 
+                                                           coord_list=('x','y','z'), lpd=False)
+      # add surface element coordinate fields (x, y, and surface elevation zs)
+      for var in ('x','y','z'):
+          dataset += Variable(data=elem_coords_olf[var], axes=(elem_ax,), **constatts[var+'_elm'])
+          # N.B.: 'z' is actually 'zs' but this is already taken care of in constant_attributes
+      # add 3D element coordinates
+      if lelem3D:
+          elem_pm  = reader.read_elements(domain='pm')
+          nlay = len(elem_pm)/nelem
+          assert nelem*nlay == len(elem_pm) 
+          assert nlay+1 == se # there is one extra sheet 
+          layer_ax = Axis(coord=np.arange(1,nlay+1), **constatts['layer'])
+          dataset += layer_ax
+          # add 3D element numbers
+          dataset += Variable(data=elem_pm.index.values.reshape((nlay,nelem)), axes=(layer_ax,elem_ax), 
+                              **constatts['elements_pm'])
+          # add 3D element elevation (z coordinate), if requested
+          if 'z_elm' in final_varlist:
+              elem_coords_pm = reader.compute_element_coordinates(elements=elem_pm, coords_pm=coords_pm, 
+                                                                  coord_list=('z',), lpd=False)
+              dataset += Variable(data=elem_coords_pm['z'].reshape((nlay,nelem)), axes=(layer_ax,elem_ax,), 
+                                  **constatts['z_pmelm']) # 'z' is already used for the 'zs' variable
+              assert np.all(np.diff(dataset['z_elm'][:], axis=0) > 0)          
+          # N.B.: currently elements are assumed to be organiced in vertically symmetric layers
+          
+      
   # initialize variables
   load_varlist = []
   for hgsvar in varlist:
       atts = varatts[hgsvar]
       aa = atts['atts']
       # elemental variables are currently not supported
-      if not aa.get('elemental',False):
-          aa['HGS_name'] = hgsvar # needed later
+      aa['HGS_name'] = hgsvar # needed later
+      if aa.get('elemental',False):
+          axes = (elem_ax,)
+          if aa.get('pm',False): axes = (layer_ax,)+axes
+      else:
           axes = (node_ax,)
           if aa.get('pm',False): axes = (sheet_ax,)+axes
-          if aa.get('vector',False): axes = (vector,)+axes
-          axes = (time,)+axes
-          shape = tuple([len(ax) for ax in axes]) 
-          # save name and variable
-          dataset += Variable(data=np.zeros(shape),axes=axes, **atts)
-          load_varlist.append(atts['name'])
-      else:
-          raise NotImplementedError('elemental variables are currently not supported')
+      if aa.get('vector',False): axes = (vector_ax,)+axes
+      axes = (time,)+axes
+      shape = tuple([len(ax) for ax in axes]) 
+      # save name and variable
+      dataset += Variable(data=np.zeros(shape),axes=axes, **atts)
+      load_varlist.append(atts['name'])
   # add simulation time variable
   dataset += Variable(data=np.zeros((te,)), axes=(time,), **constatts['model_time'])
   
@@ -724,6 +778,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
       # loop over variables
       for var in load_varlist:
           variable = dataset[var]; aa = variable.atts; hgsvar = aa['HGS_name']
+          shp3d = (nlay,nelem) if lelem3D and aa.get('elemental',False) else (se,ne)
           # load data
           if aa.get('function',False):
               deplist = {depvar:all_deps[depvar] for depvar in aa.get('dependencies',[])}
@@ -732,7 +787,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
                   data = _locals[fct_name](**deplist)
               elif hasattr(reader, fct_name):
                   df = getattr(reader,fct_name)(**deplist)
-                  if variable.hasAxis(sheet_ax): data = df.values.reshape((se,ne))
+                  if variable.hasAxis(sheet_ax): data = df.values.reshape(shp3d)
                   else: 
                     data = df.values.squeeze()
                     if data.size == variable.shape[1]+1: 
@@ -744,9 +799,12 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
           elif aa.get('vector',False):
               data = reader.read_vec(hgsvar).values
               if variable.atts.get('pm',False): 
-                  data = data.reshape((se,ne,3))            
-              for j in range(3):
-                  variable.data_array[i,j,:] = data[:,j]
+                  data = data.reshape(shp3d+(3,))    
+                  for j in range(3): # transposing vectors
+                      variable.data_array[i,j,:,:] = data[:,:,j]
+              else:        
+                  for j in range(3): # transposing vectors
+                      variable.data_array[i,j,:] = data[:,j]
           else:
               # check simulation time
               st = reader.read_timestamp(var=hgsvar)
@@ -779,6 +837,11 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, sheet=
       if sheet < 0: # allow reverse indexing (i.e. -1 is the last sheet) 
           sheet = dataset.sheet.max() + sheet +1
       dataset = dataset(sheet=sheet)
+
+  # slice vectors
+  if vector and dataset.hasAxis('vector'):
+      vector_map = dict(x=0,y=1,z=2)
+      dataset = dataset(vector=vector_map.get(vector,vector))
       
   # flip sign of depth to groundwater variable
   if lflipdgw:
@@ -862,8 +925,8 @@ if __name__ == '__main__':
   elif test_mode == 'binary_dataset':
 
     # load dataset
-    dataset = loadHGS(varlist=['p_olf',], EXP='erai-g', name='{EXP:s} ({BASIN:s})', sheet=-1,
-                      folder=hgs_folder, conservation_authority='GRCA', season='MAM',
+    dataset = loadHGS(varlist=['flow_olf',], EXP='erai-g', name='{EXP:s} ({BASIN:s})', sheet=-1,
+                      folder=hgs_folder, conservation_authority='GRCA', season='MAM', vector='z',
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                       basin=basin_name, basin_list=basin_list, lkgs=False, )
     # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
@@ -874,8 +937,9 @@ if __name__ == '__main__':
     print(dataset.model_time)
     print(dataset.model_time[:])
     print('')
-    print(dataset.time)
-    print(dataset.time[:])
+    vec = dataset.flow_olf.mean(axis=('element','time'))
+    print(vec)
+    print(vec[:])
     
   
   elif test_mode == 'time_axis':
