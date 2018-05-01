@@ -117,7 +117,7 @@ constant_attributes = dict(# variables that are not time-dependent (mostly coord
                            layer   = dict(name='layer', units='', dtype=np.int64, atts=dict(long_name='Layer Number', elemental=True, pm=True)),
                            element = dict(name='element', units='', dtype=np.int64, atts=dict(long_name='2D Element Number', elemental=True, pm=True)),
                            elements_pm = dict(name='elemements_pm', units='', dtype=np.int64, atts=dict(long_name='3D Element Number', elemental=True, pm=True)),
-                           elem_k = dict(name='K', units='m/s', atts=dict(long_name='Elemental k'), elemental=True, tensor=True, pm=True),
+                           elem_k = dict(name='K', units='m/s', atts=dict(long_name='Elemental k', elemental=True, tensor=True, pm=True)),
                            # Time
                            time_ts    = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time since 1979-01')),
                            time_clim  = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time of the Year')),
@@ -576,7 +576,8 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
             lgrid=False, griddef=None, subbasin=None, shape_file=None, t_list=None, lflipdgw=False, 
             mode='climatology', file_mode='last_12', file_pattern='{PREFIX}o.head_olf.????',  
             lkgs=False, varatts=None, constatts=None, lstrip=True, lxyt=True, grid_folder=None, 
-            basin_list=None, metadata=None, conservation_authority=None, **kwargs):
+            basin_list=None, metadata=None, conservation_authority=None, 
+            override_k_option='Anisotropic Elemental K', **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None: raise ArgumentError
@@ -647,6 +648,10 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   te = len(time)
   assert len(t_list) == te, (len(t_list),te)
   
+  # save some more metadata
+  metadata['prefix'] = prefix
+  metadata['HGS_folder'] = folder
+  metadata['time_list'] = t_list
 
   ## construct dataset
   dataset = Dataset(atts=metadata)
@@ -748,14 +753,19 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
               assert np.all(np.diff(dataset['z_elm'][:], axis=0) > 0) 
           # add elemental K
           if 'K' in final_varlist:
-              elem_k = reader.read_k()
+              elem_k = reader.read_k(override_k_option=override_k_option)
               nten = len(elem_k.columns)
+              lk = len(elem_k)
+              if lk != nlay*nelem: 
+                  raise ValueError("Number of K values ({}) does not match number of elements ({}); consider overriding the k_option.".format(lk,nlay*nelem))
               if nten == 1:
                   dataset += Variable(data=elem_k.values.reshape((nlay,nelem)), axes=(layer_ax,elem_ax,), 
                                       **constatts['elem_k']) # scalar value
               else:
-                  raise NotImplementedError
-          # N.B.: currently elements are assumed to be organiced in vertically symmetric layers
+                  tensor_ax = Axis(coord=np.arange(1,nten+1), **constatts['tensor'])
+                  dataset += Variable(data=elem_k.values.reshape((nlay,nelem,nten)), 
+                                      axes=(layer_ax,elem_ax,tensor_ax), **constatts['elem_k']) # tensor value
+          # N.B.: currently elements are assumed to be organized in vertically symmetric layers
           
       
   # initialize variables
@@ -771,7 +781,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       else:
           axes = (node_ax,)
           if aa.get('pm',False): axes = (sheet_ax,)+axes
-      if aa.get('vector',False): axes = (vector_ax,)+axes
+      if aa.get('vector',False): axes = axes+(vector_ax,)
       axes = (time,)+axes
       shape = tuple([len(ax) for ax in axes]) 
       # save name and variable
@@ -816,11 +826,10 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
               data = reader.read_vec(hgsvar).values
               if variable.atts.get('pm',False): 
                   data = data.reshape(shp3d+(3,))    
-                  for j in range(3): # transposing vectors
-                      variable.data_array[i,j,:,:] = data[:,:,j]
-              else:        
-                  for j in range(3): # transposing vectors
-                      variable.data_array[i,j,:] = data[:,j]
+              variable.data_array[i,:] = data
+#               else:        
+#                   for j in range(3): # transposing vectors
+#                       variable.data_array[i,j,:] = data[:,j]
           else:
               # check simulation time
               st = reader.read_timestamp(var=hgsvar)
@@ -901,8 +910,8 @@ if __name__ == '__main__':
 
 
 #   test_mode = 'gage_station'
-  test_mode = 'dataset_regrid'
-#   test_mode = 'binary_dataset'
+#   test_mode = 'dataset_regrid'
+  test_mode = 'binary_dataset'
 #   test_mode = 'time_axis'
 #   test_mode = 'station_dataset'
 #   test_mode = 'station_ensemble'
@@ -923,10 +932,10 @@ if __name__ == '__main__':
 
     # load dataset
     dataset = loadHGS(folder=hgs_folder, varlist=['dflx'], conservation_authority='GRCA', 
-                      sheet=-2, layer=-2, vector='z',
+                      sheet=-2, layer=-3, vector='z',
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', basin=basin_name, basin_list=basin_list, 
                       lkgs=False, EXP='erai-g', name='{EXP:s} ({BASIN:s})',
-                      lgrid=True, griddef='grw1',)
+                      lgrid=True, griddef='grw3',)
     # load griddefition
     # interpolate to regular x,y-grid
 #     x = Axis(name='x', units='m', coord=np.linspace(dataset.x.min(),dataset.x.max(),200))
@@ -945,8 +954,9 @@ if __name__ == '__main__':
 
     # load dataset
     vecvar = 'dflx'
-    dataset = loadHGS(varlist=[vecvar,], EXP='erai-g', name='{EXP:s} ({BASIN:s})', 
-                      sheet=-2, layer=-2, season='MAM', vector='z',
+    #hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_deep'
+    dataset = loadHGS(varlist=[vecvar,], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
+                      sheet=-2, layer=-2, season='MAM', #vector='z', 
                       folder=hgs_folder, conservation_authority='GRCA', 
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                       basin=basin_name, basin_list=basin_list, lkgs=False, )
@@ -954,6 +964,7 @@ if __name__ == '__main__':
     # and print
     print('')
     print(dataset)
+    print(dataset.atts.HGS_folder)
     print('')
     print(dataset.model_time)
     print(dataset.model_time[:])
