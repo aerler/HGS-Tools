@@ -113,7 +113,7 @@ constant_attributes = dict(# variables that are not time-dependent (mostly coord
                            x_elm = dict(name='x_elm', units='m', atts=dict(long_name='X Coord. (Elemental)', elemental=True)),
                            y_elm = dict(name='y_elm', units='m', atts=dict(long_name='Y Coord. (Elemental)', elemental=True)),
                            z_elm = dict(name='zs_elm', units='m', atts=dict(long_name='Surface Elevation (Elemental)', elemental=True)),
-                           z_pmelm = dict(name='z_elm', units='m', atts=dict(long_name='Z Coord. (Elemental)'), elemental=True, pm=True),
+                           z_pmelm = dict(name='z_elm', units='m', atts=dict(long_name='Z Coord. (Elemental)', elemental=True, pm=True)),
                            layer   = dict(name='layer', units='', dtype=np.int64, atts=dict(long_name='Layer Number', elemental=True, pm=True)),
                            element = dict(name='element', units='', dtype=np.int64, atts=dict(long_name='2D Element Number', elemental=True, pm=True)),
                            elements_pm = dict(name='elemements_pm', units='', dtype=np.int64, atts=dict(long_name='3D Element Number', elemental=True, pm=True)),
@@ -861,7 +861,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   tensor_idx = dict(x=0,y=1,z=2,xx=0,yy=1,zz=2,xy=3,yz=4,zx=5)
   slc_axes = dict()
   for axname,axval in kwargs.items():
-      if axname in dataset.axes:
+      if axname in dataset.axes and axval is not None:
           # some special values...
           if axname in ('vector','tensor'):
               axval = tensor_idx.get(axval,axval)
@@ -955,8 +955,8 @@ if __name__ == '__main__':
     # load dataset
     vecvar = 'dflx'
     #hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_deep'
-    dataset = loadHGS(varlist=[vecvar,], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
-                      sheet=-2, layer=-2, season='MAM', #vector='z', 
+    dataset = loadHGS(varlist=['K','z_elm','zs_elm'], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
+                      sheet=-2, layer=(4,17), season='MAM', tensor='z', #vector='z', 
                       folder=hgs_folder, conservation_authority='GRCA', 
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                       basin=basin_name, basin_list=basin_list, lkgs=False, )
@@ -968,6 +968,14 @@ if __name__ == '__main__':
     print('')
     print(dataset.model_time)
     print(dataset.model_time[:])
+    # inspect layers and depth
+    print('')
+    print(dataset.layer)
+    print(dataset.layer[:])
+    if 'z_elm' in dataset and 'zs_elm' in dataset:
+        d0 = dataset.zs_elm - dataset.z_elm(layer=dataset.layer.max()+1 -14)
+        print(d0)
+        print(d0.min(),d0.mean(),d0.max())
     if vecvar in dataset:
         print('')
         vec = dataset[vecvar].mean(axis=('element','time'))
