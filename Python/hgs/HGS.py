@@ -80,11 +80,11 @@ binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                              p_olf        = dict(name='p_olf', units='m', atts=dict(long_name='Pressure Head (OLF)', function='calculate_pressure_head',
                                                                                     dependencies=['z','head_olf'])),
                              head_olf     = dict(name='head_olf', units='m', atts=dict(long_name='Total Head (OLF)'),),
-                             ExchFlux_olf = dict(name='exflx', units='m/s', atts=dict(long_name='Exchange Flux (OLF)'),),
-                             ETEvap_olf   = dict(name='evap', units='m/s', atts=dict(long_name='Surface Evaporation (OLF)'),),
-                             ETPmEvap_olf = dict(name='evap_pm', units='m/s', atts=dict(long_name='Porous Media Evaporation (OLF)'),),
-                             ETTotal_olf  = dict(name='ET', units='m/s', atts=dict(long_name='Total Evapo-Transpiration (OLF)'),),
-                             ETPmTranspire_olf = dict(name='trans', units='m/s', atts=dict(long_name='Porous Media Transpiration (OLF)'),),
+                             ExchFlux_olf = dict(name='exflx', units='m/s', atts=dict(long_name='Exchange Flux'),),
+                             ETEvap_olf   = dict(name='evap', units='m/s', atts=dict(long_name='Surface Evaporation'),),
+                             ETPmEvap_olf = dict(name='evap_pm', units='m/s', atts=dict(long_name='Porous Media Evaporation'),),
+                             ETTotal_olf  = dict(name='ET', units='m/s', atts=dict(long_name='Total Evapo-Transpiration'),),
+                             ETPmTranspire_olf = dict(name='trans', units='m/s', atts=dict(long_name='Plant Transpiration'),),
                              # Overland Flow (2D) variables (vector)
                              v_olf  = dict(name='flow_olf', units='m/s', atts=dict(long_name='Flow Velocity (OLF)', elemental=True, vector=True)),
                              # derived variables
@@ -541,18 +541,19 @@ def gridDataset(dataset, griddef=None, basin=None, subbasin=None, shape_file=Non
     if not os.path.exists(shape_file): 
         raise IOError(shape_file)
   # interpolate (regular nodal values first)
-  grid_ds = dataset.gridDataset(grid_axes=(griddef.ylat,griddef.xlon), method='cubic')
+  if 'x' in dataset and 'y' in dataset: 
+      dataset = dataset.gridDataset(grid_axes=(griddef.ylat,griddef.xlon), method='cubic')
   # also interpolate elemental values, if present
-  if 'x_elm' in grid_ds and 'y_elm' in grid_ds: 
-      grid_ds = grid_ds.gridDataset(grid_axes=(griddef.ylat,griddef.xlon), 
+  if 'x_elm' in dataset and 'y_elm' in dataset: 
+      dataset = dataset.gridDataset(grid_axes=(griddef.ylat,griddef.xlon), 
                                     coord_map=dict(x='x_elm',y='y_elm'), method='cubic')
   # add GDAL
-  gdal_ds = addGDALtoDataset(dataset=grid_ds, griddef=griddef, )
+  dataset = addGDALtoDataset(dataset=dataset, griddef=griddef, )
   # mask basin shape
-  if shape_file and gdal_ds.gdal:
-      gdal_ds.maskShape(name=basin, filename=shape_file, invert=True)
+  if shape_file and dataset.gdal:
+      dataset.maskShape(name=basin, filename=shape_file, invert=True)
   # return gridded and masked dataset
-  return gdal_ds
+  return dataset
 
 
 ## function to compute pressure head in loadHGS
@@ -577,13 +578,13 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
             mode='climatology', file_mode='last_12', file_pattern='{PREFIX}o.head_olf.????',  
             lkgs=False, varatts=None, constatts=None, lstrip=True, lxyt=True, grid_folder=None, 
             basin_list=None, metadata=None, conservation_authority=None, 
-            override_k_option='Anisotropic Elemental K', **kwargs):
+            override_k_option='Anisotropic Elemental K', lallelem=False, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
   if folder is None: raise ArgumentError
   if metadata is None: metadata = dict()
   # unit options: cubic meters or kg  
-  varatts = varatts or ( binary_attributes_kgs if lkgs else binary_attributes_mms )
+  varatts = ( varatts or ( binary_attributes_kgs if lkgs else binary_attributes_mms ) ).copy()
   constatts = constatts or constant_attributes
   if varlist is None: varlist = binary_list
 
@@ -653,39 +654,10 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   metadata['HGS_folder'] = folder
   metadata['time_list'] = t_list
 
-  ## construct dataset
-  dataset = Dataset(atts=metadata)
-  dataset += time
-        
-  ## load vardata using Graham's hgs_output package
-  # load first time step to create coordinate arrays etc.
-  prefixo = prefix+'o'
-  reader = binary.IO(prefixo,folder,t_list[0])
-  coords_pm = reader.read_coordinates_pm()
-  coords_olf = reader.read_coordinates_olf(coords_pm)
-  # create mesh axes
-  node_ax = Axis(coord=np.arange(1,len(coords_olf)+1), **constatts['node'])
-  ne = len(node_ax)
-  dataset += node_ax
-  sheet_ax = Axis(coord=np.arange(coords_pm['sheet'].min(),coords_pm['sheet'].max()+1), 
-                  **constatts['sheet'])
-  se = len(sheet_ax)
-  dataset += sheet_ax
-  nne = len(coords_pm)
-  assert ne*se == nne
-  # add coordinate fields (surface)
-  for var in ('x','y','z'):
-      dataset += Variable(data=coords_olf[var].values, axes=(node_ax,), **constatts[var])
-  # extract coordinate fields (porous medium)
-  dataset += Variable(data=coords_pm['z'].values.reshape((se,ne)), axes=(sheet_ax,node_ax), 
-                      **constatts['z_pm'])
-  dataset += Variable(data=coords_pm.index.values.reshape((se,ne)), axes=(sheet_ax,node_ax), 
-                      **constatts['nodes_pm'])
-  vector_ax = Axis(coord=np.arange(3), **constatts['vector'])
-  
   # different varlist for different purposes
   if lstrip:
-      final_varlist = set(['x','y','x_elm','y_elm','model_time']) if lxyt else set() # the variables we want at the end (to clean up)
+      # the variables we want at the end (to clean up)
+      final_varlist = set(['x','y','x_elm','y_elm','model_time']) if lxyt else set() 
       for var in varlist:
           if var not in bin_varmap and var not in const_varmap:
               raise ArgumentError("When using variable stripping, only GeoPy names can be used," +
@@ -707,20 +679,57 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
                   all_deps[depvar] = None
               varlist.append(var)
       else:
-          if var in constatts: 
-              varlist.remove(var) # handled differently
-          else:
+          if var not in constatts: 
               raise VariableError("Variable '{}' not found in variable attributes.".format(var))
           
-          
+  ## construct dataset
+  dataset = Dataset(atts=metadata)
+  dataset += time
+        
+  ## load vardata using Graham's hgs_output package
+  # load first time step to create coordinate arrays etc.
+  prefixo = prefix+'o'
+  reader = binary.IO(prefixo,folder,t_list[0])
+  coords_pm = reader.read_coordinates_pm()
+  coords_olf = reader.read_coordinates_olf(coords_pm)
+  # create mesh axes
+  ne = len(coords_olf)
+  se = coords_pm['sheet'].max()
+  # load necessary nodal coordinates
+  if not lallelem or any([var in varlist for var in ('x','y','z','z_pm','nodes_pm')]):
+      node_ax = Axis(coord=np.arange(1,ne+1), **constatts['node'])
+      assert ne == len(node_ax)
+      dataset += node_ax
+  if not lallelem or any([var in varlist for var in ('z_pm','nodes_pm')]):
+      sheet_ax = Axis(coord=np.arange(coords_pm['sheet'].min(),se+1), **constatts['sheet'])
+      assert se == len(sheet_ax)
+      dataset += sheet_ax
+  # add coordinate fields (surface)
+  for var in ('x','y','z'):
+      if not lallelem or var in varlist:
+          dataset += Variable(data=coords_olf[var].values, axes=(node_ax,), **constatts[var])
+  # extract coordinate fields (porous medium)
+  if not lallelem or 'z_pm' in varlist:
+      dataset += Variable(data=coords_pm['z'].values.reshape((se,ne)), axes=(sheet_ax,node_ax), 
+                          **constatts['z_pm'])
+  if not lallelem or 'nodes_pm' in varlist:      
+      dataset += Variable(data=coords_pm.index.values.reshape((se,ne)), axes=(sheet_ax,node_ax), 
+                          **constatts['nodes_pm'])
+  nne = len(coords_pm)
+  assert ne*se == nne
+  vector_ax = Axis(coord=np.arange(3), **constatts['vector'])
+
   # load elemental coordinate, if necessary
   lelem = False; lelem3D = False
   for hgsvar in varlist:
-      if varatts[hgsvar]['atts'].get('elemental',False): 
+      atts = constatts[hgsvar]['atts'] if hgsvar in constatts else varatts[hgsvar]['atts']
+      if atts.get('elemental',False) or lallelem: 
           lelem = True
-          lelem3D = lelem3D or varatts[hgsvar]['atts'].get('pm',False)     
-  lelem3D = lelem3D or 'z_elm' in final_varlist or 'K' in final_varlist
-  lelem = lelem or 'zs_elm' in final_varlist or lelem3D
+          lelem3D = lelem3D or atts.get('pm',False)  
+          if lallelem:
+              atts['interp_elem'] = ( not atts.get('elemental',False) )
+#   lelem3D = lelem3D or 'z_elm' in final_varlist or 'K' in final_varlist
+#   lelem = lelem or 'zs_elm' in final_varlist or lelem3D
   
   if lelem:
       elem_olf = reader.read_elements(domain='olf')
@@ -729,6 +738,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       dataset += elem_ax
       elem_coords_olf = reader.compute_element_coordinates(elements=elem_olf, coords_pm=coords_pm, 
                                                            coord_list=('x','y','z'), lpd=False)
+      if lallelem: elem_olf_offset = elem_olf - (se-1)*ne
       # add surface element coordinate fields (x, y, and surface elevation zs)
       for var in ('x','y','z'):
           dataset += Variable(data=elem_coords_olf[var], axes=(elem_ax,), **constatts[var+'_elm'])
@@ -767,7 +777,10 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
                                       axes=(layer_ax,elem_ax,tensor_ax), **constatts['elem_k']) # tensor value
           # N.B.: currently elements are assumed to be organized in vertically symmetric layers
           
-      
+          
+  # remove constant variables from varlist (already loaded)
+  varlist = [var for var in varlist if var not in constatts]  
+     
   # initialize variables
   load_varlist = []
   for hgsvar in varlist:
@@ -775,7 +788,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       aa = atts['atts']
       # elemental variables are currently not supported
       aa['HGS_name'] = hgsvar # needed later
-      if aa.get('elemental',False):
+      if aa.get('elemental',False) or aa.get('interp_elem',False):
           axes = (elem_ax,)
           if aa.get('pm',False): axes = (layer_ax,)+axes
       else:
@@ -799,12 +812,14 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       all_deps['coordinates_pm'] = coords_pm
       all_deps['coordinates_olf'] = coords_olf
       for depvar in ['z_pm','z']:
-          all_deps[depvar] = dataset[constatts[depvar]['name']][:] # these are just arrays
+          if depvar in all_deps:
+              all_deps[depvar] = dataset[constatts[depvar]['name']][:] # these are just arrays
       sim_time = reader.read_timestamp()
       # loop over variables
       for var in load_varlist:
           variable = dataset[var]; aa = variable.atts; hgsvar = aa['HGS_name']
-          shp3d = (nlay,nelem) if lelem3D and aa.get('elemental',False) else (se,ne)
+          linterp = aa.get('interp_elem',False); l3d = variable.atts.get('pm',False)
+          shp3d = (nlay,nelem) if lelem3D and ( aa.get('elemental',False) or linterp ) else (se,ne)
           # load data
           if aa.get('function',False):
               deplist = {depvar:all_deps[depvar] for depvar in aa.get('dependencies',[])}
@@ -812,10 +827,17 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
               if fct_name in _locals:
                   data = _locals[fct_name](**deplist)
               elif hasattr(reader, fct_name):
-                  df = getattr(reader,fct_name)(**deplist)
-                  if variable.hasAxis(sheet_ax): data = df.values.reshape(shp3d)
+                  df = getattr(reader,fct_name)(**deplist)                  
+                  if l3d: 
+                      if linterp:
+                          data = reader.interpolate_node2element(df, elements=elem_pm, lpd=False)
+                      else: data = df.values
+                      data = data.reshape(shp3d)
                   else: 
-                    data = df.values.squeeze()
+                    if linterp:
+                        data = reader.interpolate_node2element(df, elements=elem_olf_offset, lpd=False)
+                    else: data = df.values
+                    data = data.squeeze()
                     if data.size == variable.shape[1]+1: 
                         print("Warning: Trimming first element of {} array.".format(var))
                         data = data[1:] 
@@ -823,9 +845,12 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
                   raise NotImplementedError(fct_name)
               variable.data_array[i,:] = data       
           elif aa.get('vector',False):
-              data = reader.read_vec(hgsvar).values
-              if variable.atts.get('pm',False): 
-                  data = data.reshape(shp3d+(3,))    
+              df = reader.read_vec(hgsvar)
+              if linterp:
+                  if l3d: data = reader.interpolate_node2element(df, elements=elem_pm, lpd=False)
+                  else: data = reader.interpolate_node2element(df, elements=elem_olf_offset, lpd=False)
+              else: data = df.values
+              if l3d: data = data.reshape(shp3d+(3,))   
               variable.data_array[i,:] = data
 #               else:        
 #                   for j in range(3): # transposing vectors
@@ -836,14 +861,20 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
               if sim_time != st:
                   raise ValueError("Timestamps in output files are not consistent between variables: {} != {} ({})".format(sim_time,st,hgsvar))
               # read actual binary 2D or 3D data
-              if variable.atts.get('pm',False):
+              if l3d:
                   df = reader.read_var(hgsvar, nne)
-                  variable.data_array[i,:] = df.values.reshape((se,ne))
+                  if linterp:
+                      data = reader.interpolate_node2element(df, elements=elem_pm, lpd=False)
+                  else: data = df.values
+                  variable.data_array[i,:] = data.reshape(shp3d)
               else:
                   df = reader.read_var(hgsvar, ne)
-                  variable.data_array[i,:] = df.values.squeeze()
+                  if linterp:
+                      data = reader.interpolate_node2element(df, elements=elem_olf_offset, lpd=False)
+                  else: data = df.values
+                  variable.data_array[i,:] = data.squeeze()
           # save dependencies
-          if var in all_deps: all_deps[var] = df
+          if var in all_deps: all_deps[var] = df # dataframes are not interpolated to elements
       # save timestamp
       dataset['model_time'].data_array[i] = sim_time              
     
@@ -910,8 +941,8 @@ if __name__ == '__main__':
 
 
 #   test_mode = 'gage_station'
-#   test_mode = 'dataset_regrid'
-  test_mode = 'binary_dataset'
+  test_mode = 'dataset_regrid'
+#   test_mode = 'binary_dataset'
 #   test_mode = 'time_axis'
 #   test_mode = 'station_dataset'
 #   test_mode = 'station_ensemble'
@@ -931,8 +962,8 @@ if __name__ == '__main__':
   elif test_mode == 'dataset_regrid':
 
     # load dataset
-    dataset = loadHGS(folder=hgs_folder, varlist=['dflx'], conservation_authority='GRCA', 
-                      sheet=-2, layer=-3, vector='z',
+    dataset = loadHGS(folder=hgs_folder, varlist=['dflx','zs'], conservation_authority='GRCA', 
+                      sheet=-2, layer=-3, vector='z', lallelem=True,
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', basin=basin_name, basin_list=basin_list, 
                       lkgs=False, EXP='erai-g', name='{EXP:s} ({BASIN:s})',
                       lgrid=True, griddef='grw3',)
@@ -955,8 +986,8 @@ if __name__ == '__main__':
     # load dataset
     vecvar = 'dflx'
     #hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_deep'
-    dataset = loadHGS(varlist=['K','z_elm','zs_elm'], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
-                      sheet=-2, layer=(4,17), season='MAM', tensor='z', #vector='z', 
+    dataset = loadHGS(varlist=['d_gw','zs_elm',], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
+                      lallelem=True, sheet=-2, layer=(12,17), season='MAM', tensor='z', vector='z', 
                       folder=hgs_folder, conservation_authority='GRCA', 
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                       basin=basin_name, basin_list=basin_list, lkgs=False, )
@@ -969,11 +1000,12 @@ if __name__ == '__main__':
     print(dataset.model_time)
     print(dataset.model_time[:])
     # inspect layers and depth
-    print('')
-    print(dataset.layer)
-    print(dataset.layer[:])
+    if dataset.hasAxis('layer'):
+        print('')
+        print(dataset.layer)
+        print(dataset.layer[:])
     if 'z_elm' in dataset and 'zs_elm' in dataset:
-        d0 = dataset.zs_elm - dataset.z_elm(layer=dataset.layer.max()+1 -14)
+        d0 = dataset.zs_elm - dataset.z_elm(layer=dataset.layer.max())
         print(d0)
         print(d0.min(),d0.mean(),d0.max())
     if vecvar in dataset:
