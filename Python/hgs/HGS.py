@@ -738,7 +738,15 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       dataset += elem_ax
       elem_coords_olf = reader.compute_element_coordinates(elements=elem_olf, coords_pm=coords_pm, 
                                                            coord_list=('x','y','z'), lpd=False)
-      if lallelem: elem_olf_offset = elem_olf - (se-1)*ne
+      if lallelem: 
+          elem_olf_offset = elem_olf - (se-1)*ne
+          # N.B.: in principle it would be possible to look up the corresponding PM and OLF nodes,
+          #       and replace PM indices with OLF indices, but that is extremely inefficient, and
+          #       based on some testing it appears save to assume that the order of nodes is the 
+          #       same in each sheet (and the OLF domain), so that simple subtraction should work.
+          #       Nevertheless, it is still saver to test this, at least a little...
+          assert elem_olf_offset.values[:,1:3].min() == 1
+          assert elem_olf_offset.values[:,1:3].max() == ne
       # add surface element coordinate fields (x, y, and surface elevation zs)
       for var in ('x','y','z'):
           dataset += Variable(data=elem_coords_olf[var], axes=(elem_ax,), **constatts[var+'_elm'])
@@ -941,8 +949,8 @@ if __name__ == '__main__':
 
 
 #   test_mode = 'gage_station'
-  test_mode = 'dataset_regrid'
-#   test_mode = 'binary_dataset'
+#   test_mode = 'dataset_regrid'
+  test_mode = 'binary_dataset'
 #   test_mode = 'time_axis'
 #   test_mode = 'station_dataset'
 #   test_mode = 'station_ensemble'
