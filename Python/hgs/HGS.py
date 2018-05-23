@@ -527,7 +527,7 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
 
 ## function to interpolate nodal/elemental datasets to a regular grid
 def gridDataset(dataset, griddef=None, basin=None, subbasin=None, shape_file=None,  
-                basin_list=None, grid_folder=None):
+                basin_list=None, grid_folder=None, **kwargs):
   ''' interpolate nodal/elemental datasets to a regular grid, add GDAL, and mask to basin outlines '''
   if isinstance(griddef,basestring): 
       if grid_folder is None: grid_folder = common_grid_folder  
@@ -542,11 +542,11 @@ def gridDataset(dataset, griddef=None, basin=None, subbasin=None, shape_file=Non
         raise IOError(shape_file)
   # interpolate (regular nodal values first)
   if 'x' in dataset and 'y' in dataset: 
-      dataset = dataset.gridDataset(grid_axes=(griddef.ylat,griddef.xlon), method='cubic')
+      dataset = dataset.gridDataset(grid_axes=(griddef.ylat,griddef.xlon), **kwargs)
   # also interpolate elemental values, if present
   if 'x_elm' in dataset and 'y_elm' in dataset: 
       dataset = dataset.gridDataset(grid_axes=(griddef.ylat,griddef.xlon), 
-                                    coord_map=dict(x='x_elm',y='y_elm'), method='cubic')
+                                    coord_map=dict(x='x_elm',y='y_elm'), **kwargs)
   # add GDAL
   dataset = addGDALtoDataset(dataset=dataset, griddef=griddef, )
   # mask basin shape
@@ -846,9 +846,9 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
                         data = reader.interpolate_node2element(df, elements=elem_olf_offset, lpd=False)
                     else: data = df.values
                     data = data.squeeze()
-                    if data.size == variable.shape[1]+1: 
-                        print("Warning: Trimming first element of {} array.".format(var))
-                        data = data[1:] 
+#                     if data.size == variable.shape[1]+1: 
+#                         print("Warning: Trimming first element of {} array.".format(var))
+#                         data = data[1:] 
               else:
                   raise NotImplementedError(fct_name)
               variable.data_array[i,:] = data       
