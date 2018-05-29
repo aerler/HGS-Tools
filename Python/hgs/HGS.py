@@ -89,7 +89,8 @@ binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                              v_olf  = dict(name='flow_olf', units='m/s', atts=dict(long_name='Flow Velocity (OLF)', elemental=True, vector=True)),
                              # derived variables
                              depth2gw  = dict(name='d_gw', units='m', atts=dict(long_name='Depth to Groundwater Table', function='calculate_depth2gw', 
-                                                                                dependencies=['coordinates_pm','coordinates_olf','head_pm']),),
+                                                                                dependencies=['coordinates_pm','coordinates_olf','pm_olf_mapping',
+                                                                                              'head_pm','lordered','ldepth','lcap']),),
                              olf_depth = dict(name='d_olf', units='m', atts=dict(long_name='Overland Flow Depth', function='calculate_olf_depth', 
                                                                                  dependencies=['coordinates_olf','head_olf']),),
                              )
@@ -577,7 +578,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
             lgrid=False, griddef=None, subbasin=None, shape_file=None, t_list=None, lflipdgw=False, 
             mode='climatology', file_mode='last_12', file_pattern='{PREFIX}o.head_olf.????',  
             lkgs=False, varatts=None, constatts=None, lstrip=True, lxyt=True, grid_folder=None, 
-            basin_list=None, metadata=None, conservation_authority=None, 
+            basin_list=None, metadata=None, conservation_authority=None, gwt_opts=None,
             override_k_option='Anisotropic Elemental K', lallelem=False, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
@@ -654,6 +655,11 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   metadata['HGS_folder'] = folder
   metadata['time_list'] = t_list
 
+  # option for groundwater table calculation
+  tmp = dict(lordered=True, ldepth=True, lcap=False)
+  if gwt_opts: tmp.update(gwt_opts)
+  gwt_opts = tmp
+
   # different varlist for different purposes
   if lstrip:
       # the variables we want at the end (to clean up)
@@ -674,7 +680,8 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
               varlist.remove(var)
               for depvar in deplist:
                   if ( depvar not in varlist and depvar not in constant_attributes and
-                       depvar not in ('coordinates_pm','coordinates_olf') ): 
+                       depvar not in ('coordinates_pm','coordinates_olf','pm_olf_mapping') 
+                       and depvar not in gwt_opts): 
                       varlist.append(depvar)
                   all_deps[depvar] = None
               varlist.append(var)
@@ -731,6 +738,11 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
 #   lelem3D = lelem3D or 'z_elm' in final_varlist or 'K' in final_varlist
 #   lelem = lelem or 'zs_elm' in final_varlist or lelem3D
   
+  if lallelem or 'depth2gw' in varlist:
+      pm_olf_mapping = reader.get_pm_olf_node_mapping(coordinates_pm=coords_pm, 
+                                                      coordinates_olf=coords_olf)
+  else: pm_olf_mapping = None
+  
   if lelem:
       elem_olf = reader.read_elements(domain='olf')
       nelem = len(elem_olf)
@@ -739,12 +751,16 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       elem_coords_olf = reader.compute_element_coordinates(elements=elem_olf, coords_pm=coords_pm, 
                                                            coord_list=('x','y','z'), lpd=False)
       if lallelem: 
-          elem_olf_offset = elem_olf - (se-1)*ne
-          # N.B.: in principle it would be possible to look up the corresponding PM and OLF nodes,
-          #       and replace PM indices with OLF indices, but that is extremely inefficient, and
-          #       based on some testing it appears save to assume that the order of nodes is the 
-          #       same in each sheet (and the OLF domain), so that simple subtraction should work.
-          #       Nevertheless, it is still saver to test this, at least a little...
+#           elem_olf_offset = elem_olf - (se-1)*ne
+#           # N.B.: in principle it would be possible to look up the corresponding PM and OLF nodes,
+#           #       and replace PM indices with OLF indices, but that is extremely inefficient, and
+#           #       based on some testing it appears save to assume that the order of nodes is the 
+#           #       same in each sheet (and the OLF domain), so that simple subtraction should work.
+#           #       Nevertheless, it is still saver to test this, at least a little...
+          olf_node = pm_olf_mapping['olf_node'].values
+          elem_olf_offset = elem_olf.copy(deep=True) # copy element mapping and adjust
+          for i in (1,2,3):
+              elem_olf_offset.values[:,i] = olf_node[elem_olf_offset.values[:,i]-1] # 0-indexed
           assert elem_olf_offset.values[:,1:3].min() == 1
           assert elem_olf_offset.values[:,1:3].max() == ne
       # add surface element coordinate fields (x, y, and surface elevation zs)
@@ -810,7 +826,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       load_varlist.append(atts['name'])
   # add simulation time variable
   dataset += Variable(data=np.zeros((te,)), axes=(time,), **constatts['model_time'])
-  
+    
   # now fill in the remaining data
   for i,t in enumerate(t_list):
       if i > 0: # reuse old reader for first step 
@@ -819,6 +835,8 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       for depvar in all_deps.keys(): all_deps[depvar] = None
       all_deps['coordinates_pm'] = coords_pm
       all_deps['coordinates_olf'] = coords_olf
+      all_deps['pm_olf_mapping'] = pm_olf_mapping
+      all_deps.update(gwt_opts) # options for groundwater table calculation
       for depvar in ['z_pm','z']:
           if depvar in all_deps:
               all_deps[depvar] = dataset[constatts[depvar]['name']][:] # these are just arrays
@@ -991,6 +1009,9 @@ if __name__ == '__main__':
   
   elif test_mode == 'binary_dataset':
 
+    from timeit import default_timer as timer 
+    tic = timer()
+    
     # load dataset
     vecvar = 'dflx'
     #hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_deep'
@@ -1000,6 +1021,8 @@ if __name__ == '__main__':
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
                       basin=basin_name, basin_list=basin_list, lkgs=False, )
     # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
+    toc = timer()
+    print(toc-tic)
     # and print
     print('')
     print(dataset)
