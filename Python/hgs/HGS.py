@@ -10,6 +10,7 @@ Survey of Canada; the vardata is stored in human-readable text files and tables.
 # external imports
 import datetime as dt
 import numpy as np
+import pandas as pd
 import os.path as osp
 import os, glob
 # internal imports
@@ -69,16 +70,12 @@ variable_attributes_mms = dict(# hydrograph variables
                                s    = dict(name='sat', units='', atts=dict(long_name='Relative Saturation')),
                                )
 binary_attributes_mms = dict(# 3D porous medium variables (scalar)
-                             p_pm  = dict(name='p_pm', units='m', atts=dict(long_name='Pressure Head (PM)', function='calculate_pressure_head',
-                                                                            dependencies=['z_pm','head_pm'], pm=True),),
                              head_pm  = dict(name='head_pm', units='m', atts=dict(long_name='Total Head (PM)', pm=True),),
                              sat_pm   = dict(name='sat', units='', atts=dict(long_name='Relative Saturation', pm=True),),
                              # 3D porous medium variables (vector)
                              v_pm  = dict(name='flow_pm', units='m/s', atts=dict(long_name='Flow Velocity (PM)', pm=True, elemental=True, vector=True)),
                              q_pm  = dict(name='dflx', units='m/s', atts=dict(long_name='Darcy Flux', pm=True, elemental=True, vector=True)),
                              # Overland Flow (2D) variables (scalar)
-                             p_olf        = dict(name='p_olf', units='m', atts=dict(long_name='Pressure Head (OLF)', function='calculate_pressure_head',
-                                                                                    dependencies=['z','head_olf'])),
                              head_olf     = dict(name='head_olf', units='m', atts=dict(long_name='Total Head (OLF)'),),
                              ExchFlux_olf = dict(name='exflx', units='m/s', atts=dict(long_name='Exchange Flux'),),
                              ETEvap_olf   = dict(name='evap', units='m/s', atts=dict(long_name='Surface Evaporation'),),
@@ -93,6 +90,18 @@ binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                                                                                               'head_pm','lordered','ldepth','lcap']),),
                              olf_depth = dict(name='d_olf', units='m', atts=dict(long_name='Overland Flow Depth', function='calculate_olf_depth', 
                                                                                  dependencies=['coordinates_olf','head_olf']),),
+                             p_pm  = dict(name='p_pm', units='m', atts=dict(long_name='Pressure Head (PM)', function='calculate_pressure_head',
+                                                                            dependencies=['z_pm','head_pm'], pm=True),),
+                             p_olf        = dict(name='p_olf', units='m', atts=dict(long_name='Pressure Head (OLF)', function='calculate_pressure_head',
+                                                                                    dependencies=['z','head_olf'])),
+                             exfil     = dict(name='exfil', units='m/s', atts=dict(long_name='Groundwater Exfiltration', function='calculate_exfiltration', 
+                                                                                   dependencies=['ExchFlux_olf',]),),
+                             infil     = dict(name='infil', units='m/s', atts=dict(long_name='Surface Infiltration', function='calculate_infiltration', 
+                                                                                   dependencies=['ExchFlux_olf',]),),
+                             recharge_et  = dict(name='recharge_et', units='m/s', atts=dict(long_name='Groundwater Recharge (ET-based)', function='calculate_recharge_et', 
+                                                                                      dependencies=['ExchFlux_olf','ETPmEvap_olf','ETPmTranspire_olf']),),
+                             recharge_gwt = dict(name='recharge_gwt', units='m/s', atts=dict(long_name='Groundwater Recharge (GWT-based)', function='calculate_gw_recharge', 
+                                                                                             dependencies=['z_pmelm','depth2gw','q_pm','n_elm','n_lay','lreset']),),
                              )
 constant_attributes = dict(# variables that are not time-dependent (mostly coordinate variables)
                            vector = dict(name='vector', units='', dtype=np.int64, atts=dict(
@@ -123,7 +132,7 @@ constant_attributes = dict(# variables that are not time-dependent (mostly coord
                            time_ts    = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time since 1979-01')),
                            time_clim  = dict(name='time', units='month', dtype=np.int64, atts=dict(long_name='Time of the Year')),
                            model_time = dict(name='model_time', units='s', atts=dict(long_name='Time since Simulation Start')),
-                            )
+                           )
 # optional unit conversion
 mms_to_kgs = {'mm/s':'kg/m^2/s', 'm^3/s':'kg/s', 'm/s':'kg/m^2/s'}
 variable_attributes_kgs = dict() 
@@ -557,7 +566,7 @@ def gridDataset(dataset, griddef=None, basin=None, subbasin=None, shape_file=Non
   return dataset
 
 
-## function to compute pressure head in loadHGS
+## some function to compute derived variables in loadHGS
 def calculate_pressure_head(head_pm=None, head_olf=None, z_pm=None, z=None):
     ''' a function to calculate pressure head from total head and elevation '''
     if head_pm is not None and z_pm is not None:
@@ -572,13 +581,46 @@ def calculate_pressure_head(head_pm=None, head_olf=None, z_pm=None, z=None):
         raise ArgumentError()
     return p
   
+def calculate_exfiltration(ExchFlux_olf=None):
+    ''' a function to calculate exfiltration from the PM domain into the OLF domain '''
+    if isinstance(ExchFlux_olf, (pd.DataFrame,pd.Series)): ExchFlux_olf = ExchFlux_olf.values
+    assert isinstance(ExchFlux_olf,np.ndarray)
+    exfil = np.where(ExchFlux_olf<0,0,ExchFlux_olf)
+    # assuming exfiltration is equivalent to positive exchange flux
+    return exfil
+    
+def calculate_infiltration(ExchFlux_olf=None):
+    ''' a function to calculate infiltration from the OLF domain into the PM domain '''
+    if isinstance(ExchFlux_olf, (pd.DataFrame,pd.Series)): ExchFlux_olf = ExchFlux_olf.values
+    assert isinstance(ExchFlux_olf,np.ndarray)
+    infil = np.where(ExchFlux_olf>0,0,ExchFlux_olf)
+    infil *= -1.
+    # assuming infiltration is equivalent to negative exchange flux
+    return infil
+
+def calculate_recharge_et(ExchFlux_olf=None, ETPmEvap_olf=None, ETPmTranspire_olf=None):
+    ''' a function to calculate infiltration from the OLF domain into the PM domain '''
+    if isinstance(ExchFlux_olf, (pd.DataFrame,pd.Series)): ExchFlux_olf = ExchFlux_olf.values
+    if isinstance(ETPmEvap_olf, (pd.DataFrame,pd.Series)): ETPmEvap_olf = ETPmEvap_olf.values
+    if isinstance(ETPmTranspire_olf, (pd.DataFrame,pd.Series)): ETPmTranspire_olf = ETPmTranspire_olf.values
+    assert isinstance(ExchFlux_olf,np.ndarray), ExchFlux_olf
+    assert isinstance(ETPmEvap_olf,np.ndarray), ETPmEvap_olf
+    assert isinstance(ETPmTranspire_olf,np.ndarray), ETPmTranspire_olf
+    recharge = np.where(ExchFlux_olf>0,0,ExchFlux_olf) 
+    recharge *= -1.
+    recharge += ETPmEvap_olf 
+    recharge += ETPmTranspire_olf
+    # assuming infiltration is equivalent to negative exchange flux and evapotranspiration is negative
+    return recharge
+
+  
 ## function to load HGS binary data
 @BatchLoad
 def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season=None, 
             lgrid=False, griddef=None, subbasin=None, shape_file=None, t_list=None, lflipdgw=False, 
             mode='climatology', file_mode='last_12', file_pattern='{PREFIX}o.head_olf.????',  
             lkgs=False, varatts=None, constatts=None, lstrip=True, lxyt=True, grid_folder=None, 
-            basin_list=None, metadata=None, conservation_authority=None, gwt_opts=None,
+            basin_list=None, metadata=None, conservation_authority=None, var_opts=None,
             override_k_option='Anisotropic Elemental K', lallelem=False, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
@@ -656,9 +698,9 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   metadata['time_list'] = t_list
 
   # option for groundwater table calculation
-  tmp = dict(lordered=True, ldepth=True, lcap=False)
-  if gwt_opts: tmp.update(gwt_opts)
-  gwt_opts = tmp
+  tmp = dict(lordered=True, ldepth=True, lcap=False, lreset=False, lcheckZ=False)
+  if var_opts: tmp.update(var_opts)
+  var_opts = tmp
 
   # different varlist for different purposes
   if lstrip:
@@ -681,7 +723,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
               for depvar in deplist:
                   if ( depvar not in varlist and depvar not in constant_attributes and
                        depvar not in ('coordinates_pm','coordinates_olf','pm_olf_mapping') 
-                       and depvar not in gwt_opts): 
+                       and depvar not in var_opts and depvar not in ('n_elm','n_lay','n_node','n_sheet') ): 
                       varlist.append(depvar)
                   all_deps[depvar] = None
               varlist.append(var)
@@ -757,10 +799,8 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
 #           #       based on some testing it appears save to assume that the order of nodes is the 
 #           #       same in each sheet (and the OLF domain), so that simple subtraction should work.
 #           #       Nevertheless, it is still saver to test this, at least a little...
-          olf_node = pm_olf_mapping['olf_node'].values
-          elem_olf_offset = elem_olf.copy(deep=True) # copy element mapping and adjust
-          for i in (1,2,3):
-              elem_olf_offset.values[:,i] = olf_node[elem_olf_offset.values[:,i]-1] # 0-indexed
+          elem_olf_offset = reader.get_olf_node2element_mapping(pm_olf_mapping=pm_olf_mapping, 
+                                                                elem_olf=elem_olf, lcheck=True)
           assert elem_olf_offset.values[:,1:3].min() == 1
           assert elem_olf_offset.values[:,1:3].max() == ne
       # add surface element coordinate fields (x, y, and surface elevation zs)
@@ -779,7 +819,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
           dataset += Variable(data=elem_pm.index.values.reshape((nlay,nelem)), axes=(layer_ax,elem_ax), 
                               **constatts['elements_pm'])
           # add 3D element elevation (z coordinate), if requested
-          if 'z_elm' in final_varlist:
+          if 'z_elm' in final_varlist or 'recharge_gwt' in final_varlist:
               elem_coords_pm = reader.compute_element_coordinates(elements=elem_pm, coords_pm=coords_pm, 
                                                                   coord_list=('z',), lpd=False)
               dataset += Variable(data=elem_coords_pm['z'].reshape((nlay,nelem)), axes=(layer_ax,elem_ax,), 
@@ -836,8 +876,12 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       all_deps['coordinates_pm'] = coords_pm
       all_deps['coordinates_olf'] = coords_olf
       all_deps['pm_olf_mapping'] = pm_olf_mapping
-      all_deps.update(gwt_opts) # options for groundwater table calculation
-      for depvar in ['z_pm','z']:
+      all_deps['n_elm'] = nelem
+      all_deps['n_lay'] = nlay
+      all_deps['n_node'] = ne
+      all_deps['n_sheet'] = se
+      all_deps.update(var_opts) # options for groundwater table calculation
+      for depvar in ['z_pm','z','z_pmelm']:
           if depvar in all_deps:
               all_deps[depvar] = dataset[constatts[depvar]['name']][:] # these are just arrays
       sim_time = reader.read_timestamp()
@@ -851,7 +895,10 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
               deplist = {depvar:all_deps[depvar] for depvar in aa.get('dependencies',[])}
               fct_name = aa['function']; _locals = globals()
               if fct_name in _locals:
-                  data = _locals[fct_name](**deplist)
+                  data = _locals[fct_name](**deplist).squeeze()
+                  if linterp:
+                      if l3d: data = reader.interpolate_node2element(data, elements=elem_pm, lpd=False)
+                      else: data = reader.interpolate_node2element(data, elements=elem_olf_offset, lpd=False)
               elif hasattr(reader, fct_name):
                   df = getattr(reader,fct_name)(**deplist)                  
                   if l3d: 
@@ -900,7 +947,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
                   else: data = df.values
                   variable.data_array[i,:] = data.squeeze()
           # save dependencies
-          if var in all_deps: all_deps[var] = df # dataframes are not interpolated to elements
+          if hgsvar in all_deps: all_deps[hgsvar] = df # dataframes are not interpolated to elements
       # save timestamp
       dataset['model_time'].data_array[i] = sim_time              
     
@@ -1015,7 +1062,7 @@ if __name__ == '__main__':
     # load dataset
     vecvar = 'dflx'
     #hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_deep'
-    dataset = loadHGS(varlist=['d_gw','zs_elm',], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
+    dataset = loadHGS(varlist=['recharge_gwt','d_gw'], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
                       lallelem=True, sheet=-2, layer=(12,17), season='MAM', tensor='z', vector='z', 
                       folder=hgs_folder, conservation_authority='GRCA', 
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
@@ -1044,7 +1091,7 @@ if __name__ == '__main__':
         vec = dataset[vecvar].mean(axis=('element','time'))
         print(vec)
         print(vec[:])
-    
+
   
   elif test_mode == 'time_axis':
 
