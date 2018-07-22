@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import os.path as osp
 import os, glob
+import inspect
 # internal imports
 from geodata.misc import ArgumentError, VariableError, DataError, isNumber, DatasetError, translateSeasons
 from datasets.common import BatchLoad, getRootFolder
@@ -101,7 +102,9 @@ binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                              recharge_et  = dict(name='recharge_et', units='m/s', atts=dict(long_name='Groundwater Recharge (ET-based)', function='calculate_recharge_et', 
                                                                                       dependencies=['ExchFlux_olf','ETPmEvap_olf','ETPmTranspire_olf']),),
                              recharge_gwt = dict(name='recharge_gwt', units='m/s', atts=dict(long_name='Groundwater Recharge (GWT-based)', function='calculate_gw_recharge', 
-                                                                                             dependencies=['z_pmelm','depth2gw','q_pm','n_elm','n_lay','lreset']),),
+                                                                                             dependencies=['coordinates_pm','coordinates_olf','pm_olf_mapping', # dependencies
+                                                                                                           'head_pm','lordered','ldepth','lcap', 'depth2gw', # for depth2gw
+                                                                                                           'z_pmelm','depth2gw_elm','q_pm','n_elm','n_lay','lreset']),),
                              )
 constant_attributes = dict(# variables that are not time-dependent (mostly coordinate variables)
                            vector = dict(name='vector', units='', dtype=np.int64, atts=dict(
@@ -628,7 +631,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   if metadata is None: metadata = dict()
   # unit options: cubic meters or kg  
   varatts = ( varatts or ( binary_attributes_kgs if lkgs else binary_attributes_mms ) ).copy()
-  constatts = constatts or constant_attributes
+  constatts = ( constatts or constant_attributes ).copy()
   if varlist is None: varlist = binary_list
 
   # prepare name expansion arguments (all capitalized)
@@ -715,18 +718,26 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   varlist = [const_varmap.get(var,var) for var in varlist] # translate to HGS var names
   # make sure variable dependencies work (derived variables last)
   all_deps = dict()
-  for var in varlist[:]: # use copy to avoid interference
+  original_varlist = varlist[:]
+  varlist = []
+  # rebuild varlist while inserting dependencies
+  for var in original_varlist: 
+      if var not in varlist: 
+          varlist.append(var)
       if var in varatts:
           deplist = varatts[var]['atts'].get('dependencies',None)
           if deplist:
-              varlist.remove(var)
               for depvar in deplist:
-                  if ( depvar not in varlist and depvar not in constant_attributes and
-                       depvar not in ('coordinates_pm','coordinates_olf','pm_olf_mapping') 
-                       and depvar not in var_opts and depvar not in ('n_elm','n_lay','n_node','n_sheet') ): 
-                      varlist.append(depvar)
+                  if depvar in ('coordinates_pm','coordinates_olf','pm_olf_mapping'): pass
+                  elif depvar in var_opts or depvar in ('n_elm','n_lay','n_node','n_sheet'): pass
+                  elif depvar in varlist or depvar in constatts: pass
+                  elif depvar not in varatts and depvar.endswith('_elm'): pass
+                  else: 
+                      if depvar not in varlist:
+                          varlist.insert(varlist.index(var),depvar)
+#                       if not lallelem and depvar not in varatts and depvar.endswith('_elm'):
+#                           raise ArgumentError("Activate interpolation to elements ('lallelem'), if dependencies have to be interpolated.")
                   all_deps[depvar] = None
-              varlist.append(var)
       else:
           if var not in constatts: 
               raise VariableError("Variable '{}' not found in variable attributes.".format(var))
@@ -771,7 +782,12 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   # load elemental coordinate, if necessary
   lelem = False; lelem3D = False
   for hgsvar in varlist:
-      atts = constatts[hgsvar]['atts'] if hgsvar in constatts else varatts[hgsvar]['atts']
+      if hgsvar in constatts: atts = constatts[hgsvar]['atts']
+      elif hgsvar in varatts: atts = varatts[hgsvar]['atts']
+      if hgsvar+'_elm' in all_deps:
+          if not lallelem:
+              lallelem = True
+              print("Enabling interpolation to elements for all variables, since some dependencies require it (lallelem=True).")
       if atts.get('elemental',False) or lallelem: 
           lelem = True
           lelem3D = lelem3D or atts.get('pm',False)  
@@ -895,12 +911,16 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
               deplist = {depvar:all_deps[depvar] for depvar in aa.get('dependencies',[])}
               fct_name = aa['function']; _locals = globals()
               if fct_name in _locals:
-                  data = _locals[fct_name](**deplist).squeeze()
+                  fct = _locals[fct_name]
+                  args = {key:deplist[key] for key in inspect.getargs(fct.func_code)[0] if key in deplist}
+                  data = fct(**args).squeeze()
                   if linterp:
                       if l3d: data = reader.interpolate_node2element(data, elements=elem_pm, lpd=False)
                       else: data = reader.interpolate_node2element(data, elements=elem_olf_offset, lpd=False)
               elif hasattr(reader, fct_name):
-                  df = getattr(reader,fct_name)(**deplist)                  
+                  fct = getattr(reader,fct_name)
+                  args = {key:deplist[key] for key in inspect.getargs(fct.func_code)[0] if key in deplist}
+                  df = fct(**args)                  
                   if l3d: 
                       if linterp:
                           data = reader.interpolate_node2element(df, elements=elem_pm, lpd=False)
@@ -948,6 +968,9 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
                   variable.data_array[i,:] = data.squeeze()
           # save dependencies
           if hgsvar in all_deps: all_deps[hgsvar] = df # dataframes are not interpolated to elements
+          if linterp and hgsvar+'_elm' in all_deps: 
+              # array that has been interpolated to elements
+              all_deps[hgsvar+'_elm'] = data
       # save timestamp
       dataset['model_time'].data_array[i] = sim_time              
     
@@ -1062,7 +1085,7 @@ if __name__ == '__main__':
     # load dataset
     vecvar = 'dflx'
     #hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_deep'
-    dataset = loadHGS(varlist=['recharge_gwt','d_gw'], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
+    dataset = loadHGS(varlist=['recharge_gwt',], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
                       lallelem=True, sheet=-2, layer=(12,17), season='MAM', tensor='z', vector='z', 
                       folder=hgs_folder, conservation_authority='GRCA', 
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
