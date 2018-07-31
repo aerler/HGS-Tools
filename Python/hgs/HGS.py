@@ -14,6 +14,7 @@ import pandas as pd
 import os.path as osp
 import os, glob
 import inspect
+from copy import deepcopy
 # internal imports
 from geodata.misc import ArgumentError, VariableError, DataError, isNumber, DatasetError, translateSeasons
 from datasets.common import BatchLoad, getRootFolder
@@ -103,8 +104,9 @@ binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                                                                                       dependencies=['ExchFlux_olf','ETPmEvap_olf','ETPmTranspire_olf']),),
                              recharge_gwt = dict(name='recharge_gwt', units='m/s', atts=dict(long_name='Groundwater Recharge (GWT-based)', function='calculate_gw_recharge', 
                                                                                              dependencies=['coordinates_pm','coordinates_olf','pm_olf_mapping', # dependencies
-                                                                                                           'head_pm','lordered','ldepth','lcap', 'depth2gw', # for depth2gw
-                                                                                                           'z_pmelm','depth2gw_elm','q_pm','n_elm','n_lay','lreset']),),
+                                                                                                           'head_pm','lordered','ldepth','lcap', # for depth2gw
+                                                                                                           'z_pmelm','z_elm','depth2gw_elm','q_pm','ExchFlux_olf_elm',
+                                                                                                           'n_elm','n_lay','lreset','ldepth','lexfil0','lnoneg']),),
                              )
 constant_attributes = dict(# variables that are not time-dependent (mostly coordinate variables)
                            vector = dict(name='vector', units='', dtype=np.int64, atts=dict(
@@ -630,9 +632,10 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   if folder is None: raise ArgumentError
   if metadata is None: metadata = dict()
   # unit options: cubic meters or kg  
-  varatts = ( varatts or ( binary_attributes_kgs if lkgs else binary_attributes_mms ) ).copy()
-  constatts = ( constatts or constant_attributes ).copy()
-  if varlist is None: varlist = binary_list
+  varatts = deepcopy( varatts or ( binary_attributes_kgs if lkgs else binary_attributes_mms ) )
+  constatts = deepcopy( constatts or constant_attributes )
+  if varlist is None: varlist = deepcopy( binary_list )
+  # N.B.: the attribute dictionaries may be modified, if variables are interpolated to elements
 
   # prepare name expansion arguments (all capitalized)
   expargs = dict(ROOT_FOLDER=root_folder, NAME=name, TITLE=title, BASIN=basin,)
@@ -701,7 +704,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   metadata['time_list'] = t_list
 
   # option for groundwater table calculation
-  tmp = dict(lordered=True, ldepth=True, lcap=False, lreset=False, lcheckZ=False)
+  tmp = dict(lordered=True, ldepth=True, lcap=False, lreset=False, lcheckZ=False, lexfil0=True, lnoneg=False)
   if var_opts: tmp.update(var_opts)
   var_opts = tmp
 
@@ -728,16 +731,19 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
           deplist = varatts[var]['atts'].get('dependencies',None)
           if deplist:
               for depvar in deplist:
+                  all_deps[depvar] = None # add to list of dependencies
+                  # figure out which variable to add to actual load list (if any)
                   if depvar in ('coordinates_pm','coordinates_olf','pm_olf_mapping'): pass
                   elif depvar in var_opts or depvar in ('n_elm','n_lay','n_node','n_sheet'): pass
                   elif depvar in varlist or depvar in constatts: pass
-                  elif depvar not in varatts and depvar.endswith('_elm'): pass
                   else: 
+                      if depvar not in varatts and depvar.endswith('_elm') and depvar[:-4] in varatts:
+                          depvar = depvar[:-4]
+                          if not lallelem:
+                              lallelem = True
+                              print("Enabling interpolation to elements for all variables, since some dependencies require it (lallelem=True).")
                       if depvar not in varlist:
                           varlist.insert(varlist.index(var),depvar)
-#                       if not lallelem and depvar not in varatts and depvar.endswith('_elm'):
-#                           raise ArgumentError("Activate interpolation to elements ('lallelem'), if dependencies have to be interpolated.")
-                  all_deps[depvar] = None
       else:
           if var not in constatts: 
               raise VariableError("Variable '{}' not found in variable attributes.".format(var))
@@ -784,10 +790,6 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   for hgsvar in varlist:
       if hgsvar in constatts: atts = constatts[hgsvar]['atts']
       elif hgsvar in varatts: atts = varatts[hgsvar]['atts']
-      if hgsvar+'_elm' in all_deps:
-          if not lallelem:
-              lallelem = True
-              print("Enabling interpolation to elements for all variables, since some dependencies require it (lallelem=True).")
       if atts.get('elemental',False) or lallelem: 
           lelem = True
           lelem3D = lelem3D or atts.get('pm',False)  
@@ -800,6 +802,8 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       pm_olf_mapping = reader.get_pm_olf_node_mapping(coordinates_pm=coords_pm, 
                                                       coordinates_olf=coords_olf)
   else: pm_olf_mapping = None
+  
+  nelem = None; nlay = None # need to be defined later... even if not used
   
   if lelem:
       elem_olf = reader.read_elements(domain='olf')
@@ -897,7 +901,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       all_deps['n_node'] = ne
       all_deps['n_sheet'] = se
       all_deps.update(var_opts) # options for groundwater table calculation
-      for depvar in ['z_pm','z','z_pmelm']:
+      for depvar in ['z_pm','z','z_pmelm','z_elm']:
           if depvar in all_deps:
               all_deps[depvar] = dataset[constatts[depvar]['name']][:] # these are just arrays
       sim_time = reader.read_timestamp()
@@ -1085,10 +1089,10 @@ if __name__ == '__main__':
     # load dataset
     vecvar = 'dflx'
     #hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_deep'
-    dataset = loadHGS(varlist=['recharge_gwt',], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
-                      lallelem=True, sheet=-2, layer=(12,17), season='MAM', tensor='z', vector='z', 
+    dataset = loadHGS(varlist=['d_gw','sat'], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
+                      lallelem=False, sheet=-2, layer=(12,17), season='MAM', tensor='z', vector='z', 
                       folder=hgs_folder, conservation_authority='GRCA', 
-                      PRD='', DOM=2, CLIM='clim_15', BC='AABC_', 
+                      PRD='', DOM=2, CLIM='clim_15', BC='AABC_', #lgrid=True, griddef='grw2',
                       basin=basin_name, basin_list=basin_list, lkgs=False, )
     # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
     toc = timer()
