@@ -214,14 +214,16 @@ if __name__ == '__main__':
     testfile = 'test.inc'; testpattern = 'test_file'; inputfolder = '../test_folder'
     
     # for production
-    grid = 'can1'; project = 'CAN'; length = 360
+    grid = 'uph1'; project = 'Elisha'; length = 360
+#     grid = 'can1'; project = 'CAN'; length = 360
 #     grid = 'brd1'; project = 'ASB'; length = 360
 #     grid = 'asb1'; project = 'ASB'; length = 432
 #     grid = 'grw2'; project = 'GRW'; length = 360
 #     grid = 'snw1'; project = 'SNW'; length = 360
-#     varname = 'liqwatlfx'; testfile = 'precip.inc';
+    varname = 'liqwatlfx'; testfile = 'precip.inc';
 #     varname = 'liqwatlfx_CMC'; testfile = 'precip_CMC.inc'; 
-    varname = 'pet'; testfile = 'pet.inc'      
+#     varname = 'pet'; testfile = 'pet.inc'      
+#     varname = 'pet_wrf'; testfile = 'pet_wrf.inc'      
     inputfolder = '../climate_forcing/'; testpattern = '{:s}_{:s}_iTime'.format(grid,varname)
     testfolder = 'D:/Data/HGS/{PRJ}/{GRD}/'.format(PRJ=project,GRD=grid)
       

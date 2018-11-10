@@ -56,7 +56,8 @@ def interpolateIrregular(old_time, data, new_time, start_date=None, lkgs=True, l
     ''' a mass-conservative function to interpolate irregular HGS timeseries output to a regular time axis 
         the function works by first integrating the flux, then interpolating the cumulative flux, and subsequently
         differentiating to obtain the average instantaneous flux; this method is mass-conservative, assuming 
-        piece-wise linearly varying flux '''
+        piece-wise linearly varying flux. (N.B.: the 'new_time' array elements bracket the averaging time periods 
+        and the array has to be one element longer than the desired number of interpolated time steps.)'''
     # convert monthly time series to regular array of seconds since start date
     if start_date is None: start_date = new_time[0] 
     new_time = ( new_time.astype('datetime64[s]') - start_date.astype('datetime64[s]') ) / np.timedelta64(1,'s') 
