@@ -56,9 +56,11 @@ def main(argv=None):
     # hydrograph file (only positional argument, since it is required)
     parser.add_argument('file', metavar='file', type=str, help="the hydrograph file to be used")
     # optional arguments
+    parser.add_argument("--variable", dest="variable", default=None, type=str,
+                        help="variable name; overrides '--var-col' and determines column based on name in file header")
     parser.add_argument("--var-col", dest="varcol", default=1, type=int, # should be streamflow
                         help="variable column in hydrograph file (zero is time; streamflow should be 1) [default: %(default)s]")
-    parser.add_argument("--resample_output", dest="daily_output", default=False, type=str, 
+    parser.add_argument("--daily-output", dest="daily_output", default=False, type=str, 
                         help="save resampled hydrograph timeseries to this file [default: %(default)s]")
     parser.add_argument("--low-flow", dest="lowflow", default=None, type=float, 
                         help="count occurences and duration of flow below this threshold")                
@@ -66,7 +68,7 @@ def main(argv=None):
                         help="count occurences and duration of flow above this threshold")                
     parser.add_argument("--min_duration", dest="mindays", default=None, type=int, 
                         help="minimum duration of high/low flow conditions to be recorded")                
-    parser.add_argument("--flow_output", dest="flow_output", default='flow_duration.dat', type=str, 
+    parser.add_argument("--flow-output", dest="flow_output", default='flow_duration.dat', type=str, 
                         help="minimum duration of high/low flow conditions to be recorded [default: %(default)s]")                
     # misc options
     parser.add_argument('-V', '--version', action='version', version=program_version_message)
@@ -76,6 +78,7 @@ def main(argv=None):
     # Process arguments
     args = parser.parse_args()
     filepath     = args.file
+    variable     = args.variable
     varcol       = args.varcol
     daily_output = args.daily_output
     lowflow      = args.lowflow
@@ -89,6 +92,27 @@ def main(argv=None):
         raise CLIError("No input hydrograph file specified!")
     elif not os.path.exists(filepath):
         raise IOError("Input file '{:s}' not found!".format(filepath))
+
+    # determine column (based on variable name in header)
+    # parse header
+    with open(filepath, 'r') as f:
+        f.readline(); line = f.readline(); lline = line.lower() # skip to 2nd line and lower case
+        # parse variables and determine columns
+        if not "variables" in lline: raise IOError(line)
+        variable_list = [v for v in line[line.find('=')+1:].strip().split(',') if len(v) > 0]
+        # clean up a little and remove some problematic characters
+        variable_list = [v.strip().strip('"').strip().lower() for v in variable_list]
+        if variable:
+            # assign variable column
+            try:
+                varcol = variable_list.index(variable)
+            except ValueError:
+                raise ValueError("Variable '{}' not found in file '{}'.".format(variable,filepath))
+        else:
+            if varcol >= len(variable_list):
+                raise ValueError("Invalid colum index '{:d}': only {:d} columns present".format(varcol,len(variable_list)))
+            variable = variable_list[varcol]
+        if lverbose: print("\nFound variable '{:s}' in column {:d}".format(variable,varcol))
 
     # read hydrograph timeseries
     if lverbose: print("\nLoading hydrograph data from file:\n '{:s}'".format(filepath))
@@ -113,7 +137,7 @@ def main(argv=None):
     
     # output hydrograph timeseries resampled to daily output
     if daily_output:
-        header = "file='{:s}'\ncolumn={:d}\nresampled to daily averages".format(filepath,varcol)
+        header = "file='{:s}'\nvariable='{:s}',column={:d}\nresampled to daily averages".format(filepath,variable,varcol)
         if lverbose: print("\nSaving resampled timeseries to:\n '{:s}'".format(daily_output))
         np.savetxt(daily_output, flow, delimiter=',', header=header, comments='#')
 
@@ -161,7 +185,7 @@ def main(argv=None):
     if hiflow or lowflow:
         # save hi/low flow data to CSV file
         header += "\noccurence (day): line 1; duration (days): line 2"
-        header += "\nsource='{:s}',column={:d},resampled to daily averages".format(filepath,varcol)
+        header += "\nsource='{:s}',variable='{:s}',column={:d},resampled to daily averages".format(filepath,variable,varcol)
         if lverbose: print("\nSaving hi/low flow occurences and durations to:\n '{:s}'".format(flow_output))
         np.savetxt(flow_output, np.vstack((occurence,duration)), fmt='%d',
                    delimiter=',', header=header, comments='#')
@@ -226,7 +250,7 @@ OPTIONS
         except Exception, e:
             indent = len(program_name) * " "
             sys.stderr.write(program_name + ": " + repr(e) + "\n")
-            sys.stderr.write(indent + "  for help use --help")
+            sys.stderr.write(indent + "  for help use --help\n")
             sys.exit(2)
             
     if TEST:
