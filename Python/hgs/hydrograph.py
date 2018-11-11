@@ -1,7 +1,10 @@
 #!/usr/local/bin/python2.7
 # encoding: utf-8
 '''
-A program to read HGS hydrograph files, resample to daily time-steps and count occurences of low/high flow days
+A program to read HGS hydrograph files, resample to daily time-steps and count occurences of low/high flow days.
+
+The program is a command line utility that can be executed on any HGS hydrograph file and will write output to 
+CSV files.
 
 @author:     Andre R. Erler
 
@@ -23,12 +26,12 @@ from argparse import RawDescriptionHelpFormatter
 from misc import interpolateIrregular
 
 __all__ = []
-__version__ = 0.1
+__version__ = 0.2
 __date__ = '2018-11-09'
-__updated__ = '2018-11-09'
+__updated__ = '2018-11-10'
 
-DEBUG = 1
-TEST  = 1
+DEBUG = 0
+TEST  = 0
 
 class CLIError(Exception):
     '''Generic exception to raise and log different fatal errors.'''
@@ -55,7 +58,7 @@ def main(argv=None):
     # optional arguments
     parser.add_argument("--var-col", dest="varcol", default=1, type=int, 
                         help="variable column in hydrograph file")
-    parser.add_argument("--resample_output", dest="resample_out", default=None, type=str, 
+    parser.add_argument("--resample_output", dest="daily_output", default=None, type=str, 
                         help="save resampled hydrograph timeseries to this file")
     parser.add_argument("--low-flow", dest="lowflow", default=None, type=float, 
                         help="count occurences and duration of flow below this threshold")                
@@ -63,7 +66,7 @@ def main(argv=None):
                         help="count occurences and duration of flow above this threshold")                
     parser.add_argument("--min_duration", dest="mindays", default=None, type=int, 
                         help="minimum duration of high/low flow conditions to be recorded")                
-    parser.add_argument("--duration_output", dest="duration_out", default='duration.dat', type=str, 
+    parser.add_argument("--flow_output", dest="flow_output", default='flow_duration.dat', type=str, 
                         help="minimum duration of high/low flow conditions to be recorded")                
     # misc options
     parser.add_argument('-V', '--version', action='version', version=program_version_message)
@@ -74,11 +77,11 @@ def main(argv=None):
     args = parser.parse_args()
     filepath     = args.file
     varcol       = args.varcol
-    resample_out = args.resample_out
+    daily_output = args.daily_output
     lowflow      = args.lowflow
     hiflow       = args.hiflow
     mindays      = args.mindays
-    duration_out = args.duration_out
+    flow_output  = args.flow_output
     ldebug       = args.debug
     lverbose     = args.verbose
     
@@ -109,10 +112,10 @@ def main(argv=None):
     assert len(flow) == len(time_resampled)-1, (flow.shape,len(time_resampled-1))
     
     # output hydrograph timeseries resampled to daily output
-    if resample_out:
+    if daily_output:
         header = "file='{:s}'\ncolumn={:d}\nresampled to daily averages".format(filepath,varcol)
-        if lverbose: print("\nSaving resampled timeseries to:\n '{:s}'".format(resample_out))
-        np.savetxt(resample_out, flow, delimiter=',', header=header, comments='#')
+        if lverbose: print("\nSaving resampled timeseries to:\n '{:s}'".format(daily_output))
+        np.savetxt(daily_output, flow, delimiter=',', header=header, comments='#')
 
     ## count and output low-flow occurences and durations
     if lowflow:
@@ -159,8 +162,8 @@ def main(argv=None):
         # save hi/low flow data to CSV file
         header += "\noccurence (day): line 1; duration (days): line 2"
         header += "\nsource='{:s}',column={:d},resampled to daily averages".format(filepath,varcol)
-        if lverbose: print("\nSaving hi/low flow occurences and durations to:\n '{:s}'".format(duration_out))
-        np.savetxt(duration_out, np.vstack((occurence,duration)), fmt='%d',
+        if lverbose: print("\nSaving hi/low flow occurences and durations to:\n '{:s}'".format(flow_output))
+        np.savetxt(flow_output, np.vstack((occurence,duration)), fmt='%d',
                    delimiter=',', header=header, comments='#')
                 
 
@@ -187,6 +190,15 @@ if __name__ == "__main__":
   or conditions of any kind, either express or implied.
 
 USAGE
+
+python -u ~/path/to/HGS\ Tools/Python/hgs/hydrograph.py --verbose --resample_out daily_hydrograph.dat \\
+                                                        --low-flow=45 --min_duration=30 --flow_output=low_flow_duration.dat \\
+                                                        grw_omafrao.hydrograph.2GB001.dat
+
+N.B.: the program depends on the misc.py module in the same package, so make sure the package is in your PYTHONPATH
+      or the program is executed from the package directory (as shown above)
+
+OPTIONS
 '''.format(program_shortdesc, str(__date__))
 
     # debug and testing settings
@@ -200,7 +212,7 @@ USAGE
         sys.argv.append('--resample_output='+resample_file)
         # test low flow output
         duration_file = '{:s}/durations.dat'.format(os.getcwd())
-        sys.argv.append('--duration_output='+duration_file)
+        sys.argv.append('--flow_output='+duration_file)
         sys.argv.append('--low-flow=45')
     # execute program
     if DEBUG:
