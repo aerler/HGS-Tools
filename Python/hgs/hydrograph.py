@@ -56,10 +56,10 @@ def main(argv=None):
     # hydrograph file (only positional argument, since it is required)
     parser.add_argument('file', metavar='file', type=str, help="the hydrograph file to be used")
     # optional arguments
-    parser.add_argument("--var-col", dest="varcol", default=1, type=int, 
-                        help="variable column in hydrograph file")
-    parser.add_argument("--resample_output", dest="daily_output", default=None, type=str, 
-                        help="save resampled hydrograph timeseries to this file")
+    parser.add_argument("--var-col", dest="varcol", default=1, type=int, # should be streamflow
+                        help="variable column in hydrograph file (zero is time; streamflow should be 1) [default: %(default)s]")
+    parser.add_argument("--resample_output", dest="daily_output", default=False, type=str, 
+                        help="save resampled hydrograph timeseries to this file [default: %(default)s]")
     parser.add_argument("--low-flow", dest="lowflow", default=None, type=float, 
                         help="count occurences and duration of flow below this threshold")                
     parser.add_argument("--high-flow", dest="hiflow", default=None, type=float, 
@@ -67,7 +67,7 @@ def main(argv=None):
     parser.add_argument("--min_duration", dest="mindays", default=None, type=int, 
                         help="minimum duration of high/low flow conditions to be recorded")                
     parser.add_argument("--flow_output", dest="flow_output", default='flow_duration.dat', type=str, 
-                        help="minimum duration of high/low flow conditions to be recorded")                
+                        help="minimum duration of high/low flow conditions to be recorded [default: %(default)s]")                
     # misc options
     parser.add_argument('-V', '--version', action='version', version=program_version_message)
     parser.add_argument("--debug", dest="debug", action="store_true", help="print debug output [default: %(default)s]")
@@ -193,7 +193,7 @@ USAGE
 
 python -u ~/path/to/HGS\ Tools/Python/hgs/hydrograph.py --verbose --resample_out daily_hydrograph.dat \\
                                                         --low-flow=45 --min_duration=30 --flow_output=low_flow_duration.dat \\
-                                                        grw_omafrao.hydrograph.2GB001.dat
+                                                        prefixo.hydrograph.some_station.dat
 
 N.B.: the program depends on the misc.py module in the same package, so make sure the package is in your PYTHONPATH
       or the program is executed from the package directory (as shown above)
