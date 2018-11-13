@@ -11,13 +11,18 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
 from warnings import warn
-# internal imports
-from geodata.misc import DataError, ArgumentError
-from datasets.WSC import GageStationError
-from hgsrun.misc import HGSError
 
 
-class ParserError(HGSError):
+# these errors are defined here to minimize dependencies
+class ArgumentError(ValueError):
+  ''' error related to input parameters '''
+  pass
+
+class DataError(IOError):
+  ''' error related to data loaded from file '''
+  pass
+
+class ParserError(IOError):
   ''' error related to parsing timeseries files '''
   pass
 

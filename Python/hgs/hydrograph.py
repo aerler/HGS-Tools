@@ -23,7 +23,7 @@ from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 
 # internal imports
-from misc import interpolateIrregular
+from misc import interpolateIrregular, ArgumentError
 
 __all__ = []
 __version__ = 0.2
@@ -107,10 +107,10 @@ def main(argv=None):
             try:
                 varcol = variable_list.index(variable)
             except ValueError:
-                raise ValueError("Variable '{}' not found in file '{}'.".format(variable,filepath))
+                raise ArgumentError("Variable '{}' not found in file '{}'.".format(variable,filepath))
         else:
             if varcol >= len(variable_list):
-                raise ValueError("Invalid colum index '{:d}': only {:d} columns present".format(varcol,len(variable_list)))
+                raise ArgumentError("Invalid colum index '{:d}': only {:d} columns present".format(varcol,len(variable_list)))
             variable = variable_list[varcol]
         if lverbose: print("\nFound variable '{:s}' in column {:d}".format(variable,varcol))
 
