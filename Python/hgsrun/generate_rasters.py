@@ -20,6 +20,15 @@ from rasterio.warp import Resampling, reproject, calculate_default_transform
 import xarray as xr
 from importlib import import_module
 
+# WindowsError is not defined on Linux - need a dummy
+try: 
+    lWin = True
+    WindowsError
+except NameError:
+    lWin = False
+    WindowsError = None
+
+
 ## functions to interface rasterio and xarray
 
 def getGeoTransform(xvar=None, x=None, y=None, lcheck=True):
@@ -171,21 +180,39 @@ if __name__ == '__main__':
     
     start = time()
 
+    ## fast test config
+#     loverwrite = True
+#     start_date = '2011-01-01'; end_date = '2011-02-01'
+#     grid_name  = 'son1'
+    ## operational test config
+    loverwrite = False
+    start_date = '2011-06-01'; end_date = '2011-07-01'
+    grid_name  = 'son2'
+    ## operational config
+#     loverwrite = False
+#     start_date = None; end_date = None
+#     grid_name  = 'son2'
+
     ## define target data/projection
-    start_date = '2011-01-01'; end_date = '2011-02-01'
-    root_folder = '{:s}/SON/test/'.format(os.getenv('HGS_ROOT'))
-    raster_name = '{:s}_{:s}_{:s}.asc'
+    root_folder = '{:s}/SON/{:s}/'.format(os.getenv('HGS_ROOT'),grid_name)
+    raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
     raster_format = 'AAIGrid'
     # southern Ontario grid (UTM 17)
-    tgt_crs = getProjection("+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name='son1',)
-#     tgt_geotrans = rio.transform.Affine.from_gdal(320920.,5.e3,0,4624073.,0,5.e3); tgt_size = (118,82) # 5 km
-    tgt_geotrans = rio.transform.Affine.from_gdal(320920.,1.e3,0,4624073.,0,1.e3); tgt_size = (590,410) # 1 km    
+    if grid_name == 'son1':
+        tgt_size = (118,82) # lower resolution 5 km grid
+        tgt_geotrans = rio.transform.Affine.from_gdal(320920.,5.e3,0,4624073.,0,5.e3) # 5 km
+    elif grid_name == 'son2':
+        tgt_size = (590,410) # higher resolution 1 km grid (~ 1 MB per day)
+        tgt_geotrans = rio.transform.Affine.from_gdal(320920.,1.e3,0,4624073.,0,1.e3) # 1 km    
+    # southern Ontario projection
+    tgt_crs = getProjection("+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
     
     ## define source data
     # SnoDAS
     dataset = 'SnoDAS'
-    varname = 'snwmlt'
-    filename_pattern = raster_name.format(dataset.lower(),varname.lower(),'{:s}')
+    varname = 'liqwatflx'
+    filename_pattern = raster_name.format(dataset=dataset.lower(), variable=varname.lower(),
+                                          grid=grid_name.lower(), date='{:s}') # no date for now...
     print("\n***   Exporting '{}' from '{}' to raster format {}   ***\n".format(varname,dataset,raster_format))
     
     ## get dataset
@@ -200,13 +227,19 @@ if __name__ == '__main__':
                                              left=left, bottom=bottom, right=right, top=top,)
     left,top = trans*(0,0); rigth,bottom = trans*(w,h)
     # clip source data
-    xvar = xds[varname].loc[start_date:end_date, bottom:top, left:right]
+    xvar = xds[varname].loc[:, bottom:top, left:right]
+    if start_date and end_date:
+        xvar = xds[varname].loc[start_date:end_date,:,:]
     print(xvar)
     
     ## write rasters
     subfolder = '{:s}/transient/'.format(dataset,)
     target_folder = root_folder + subfolder
-    if not osp.exists(target_folder): os.mkdir(target_folder)
+    # make sure path exists
+    try:
+        if not osp.exists(target_folder): os.mkdir(target_folder)
+    except (WindowsError,OSError):
+        os.makedirs(target_folder)
     filepath_pattern = target_folder + filename_pattern
     
     # generate workload for lazy execution
@@ -217,16 +250,20 @@ if __name__ == '__main__':
     for i,date in enumerate(xvar.coords['time'].data):
       
         # use date to construct file name
-        filepath = filepath_pattern.format(pd.to_datetime(date).strftime('%Y%m%d'))
-        #print(filepath)
-        data = xvar[i,:,:] # chunk to work on
-        # command to regrid data
-        data = dask.delayed( regrid_array )(data, tgt_crs=tgt_crs, tgt_transform=tgt_geotrans, tgt_size=tgt_size,
-                                            src_crs=src_crs, src_transform=src_geotrans, src_size=src_size, 
-                                            resampling='average')
-        # command to write raster
-        work_load.append( dask.delayed( write_raster )(filepath, data, driver=raster_format, 
-                                                       crs=tgt_crs, transform=tgt_geotrans) )
+        filename = filename_pattern.format(pd.to_datetime(date).strftime('%Y%m%d'))
+        filepath = target_folder + filename
+        if osp.exists(filepath) and not loverwrite: 
+            print("Skipping existing file: {}".format(filename))
+        else:
+            #print(filepath)
+            data = xvar[i,:,:] # chunk to work on
+            # command to regrid data
+            data = dask.delayed( regrid_array )(data, tgt_crs=tgt_crs, tgt_transform=tgt_geotrans, tgt_size=tgt_size,
+                                                src_crs=src_crs, src_transform=src_geotrans, src_size=src_size, 
+                                                resampling='average')
+            # command to write raster
+            work_load.append( dask.delayed( write_raster )(filepath, data, driver=raster_format, 
+                                                           crs=tgt_crs, transform=tgt_geotrans) )
     
 #     # try batch-executing everything at once in a single workload
 #     work_load = [ dask.delayed( batch_write_rasters )(filepath_pattern, xvar, 
