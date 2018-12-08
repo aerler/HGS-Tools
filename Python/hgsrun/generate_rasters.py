@@ -31,29 +31,92 @@ except NameError:
 
 ## functions to interface rasterio and xarray
 
-def getGeoTransform(xvar=None, x=None, y=None, lcheck=True):
+# valid geographic/projected coordinates
+x_coords = (('lon','long','longitude',), ('x','easting') )
+y_coords = (('lat','latitude',),         ('y','northing'))
+
+
+def getGeoCoords(xvar, x_coords=x_coords, y_coords=y_coords, lraise=True):
+    '''  helper function to extract geographic/projected coordinates from xarray'''
+    if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
+        if lraise: # optionally check input
+            raise TypeError("Can only infer coordinates from xarray - not from {}".format(xvar.__class__))
+    else:
+        # test geographic grid and projected grids separately
+        xlon,ylat = None,None # return None, if nothing is found
+        for i in range(len(x_coords)):
+            for name,coord in xvar.coords.items():
+                if name.lower() in x_coords[i]: 
+                    xlon = coord; break
+            for name,coord in xvar.coords.items():
+                if name.lower() in y_coords[i]: 
+                    ylat = coord; break
+            if xlon is not None and ylat is not None: break
+            else: xlon,ylat = None,None
+        # optionally raise error if no coordinates are found, otherwise just return None
+        if lraise and (xlon is None or ylat is None):
+            raise ValueError("No valid pair of geographic coodinates found:\n {}".format(xvar.dims))
+    # return a valid pair of geographic or projected coordinate axis
+    return xlon,ylat
+
+  
+def isGeoVar(xvar, x_coords=x_coords, y_coords=y_coords, lraise=True):
+    ''' helper function to identify variables that have geographic or projected coordintes '''
+    if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
+        if lraise: # optionally check input
+            raise TypeError("Can only infer coordinate system from xarray - not from {}".format(xvar.__class__))
+        else: 
+            return None # evaluates as False, but allows checking
+    else:
+        # test geographic grid and projected grids separately
+        for i in range(len(x_coords)):
+            xlon,ylat = False,False
+            for name in xvar.coords.keys():
+                if name.lower() in x_coords[i]: 
+                    xlon = True; break
+            for name in xvar.coords.keys():
+                if name.lower() in y_coords[i]: 
+                    ylat = True; break
+            if xlon and ylat: break
+    # if it has a valid pair of geographic or projected coordinate axis
+    return ( xlon and ylat )
+
+  
+def isGeoCRS(xvar, lraise=True):
+    ''' helper function to determine if we have a simple geographic lat/lon CRS '''
+    lat,lon = False,False
+    if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
+        if lraise:
+            raise TypeError("Can only infer coordinate system from xarray - not from {}".format(xvar.__class__))
+        else: 
+            return None # evaluates as False, but allows checking
+    else:
+        for name in xvar.coords.keys():
+            if name.lower() in ('lon','long','longitude',): 
+                lon = True; break
+        for name in xvar.coords.keys():
+            if name.lower() in ('lat','latitude',): 
+                lat = True; break
+    # it is a geographic coordinate system if both, lat & lon are present
+    return ( lat and lon )
+
+
+def getTransform(xvar=None, x=None, y=None, lcheck=True):
     ''' generate an affine transformation from coordinate axes '''
     if isinstance(xvar,(xr.DataArray,xr.Dataset)):
-        for name in ('lon','long','longitude','x'):
-            if name in xvar.coords: 
-                x = xvar.coords[name]; break
-        if x is None: raise ValueError('No x/lon coordinate found!')
-        for name in ('lat','latitude','y'):
-            if name in xvar.coords: 
-                y = xvar.coords[name]; break
-        if y is None: raise ValueError('No y/lat coordinate found!')
-#     elif isinstance(xvar,xr.Dataset):
-#         raise NotImplementedError(xvar)
+        x,y = getGeoCoords(xvar, lraise=True)
+    elif xvar:
+        raise TypeError('Can only infer GeoTransform from xarray Dataset or DataArray - not from {}.'.format(xvar))
     # check X-axis
     if isinstance(x,xr.DataArray): x = x.data
-    elif not isinstance(x,np.ndarray): 
+    if not isinstance(x,np.ndarray): 
         raise TypeError(x)
     diff_x = np.diff(x); dx = diff_x.min()
     if lcheck and not np.isclose(dx, diff_x.max(), rtol=1.e-2): 
         raise ValueError("X-axis is not regular: {} - {}".format(dx, diff_x.max()))
     # check Y-axis
     if isinstance(y,xr.DataArray): y = y.data
-    elif not isinstance(y,np.ndarray): 
+    if not isinstance(y,np.ndarray): 
         raise TypeError(y)
     diff_y = np.diff(y); dy = diff_y.min()
     if lcheck and not np.isclose(dy, diff_y.max(), rtol=1.e-2): 
@@ -61,7 +124,8 @@ def getGeoTransform(xvar=None, x=None, y=None, lcheck=True):
     # generate transform
     return rio.transform.Affine.from_gdal(x[0],dx,0.,y[0],0.,dy), (len(x),len(y))
 
-def getProjection(*args,**kwargs):
+
+def genProj(*args,**kwargs):
     ''' generate a rasterio CRS object, based on Proj4/pyproj convention '''
     if args:
         if len(args) > 1: raise ValueError(args)
@@ -87,31 +151,78 @@ def getProjection(*args,**kwargs):
     return crs
 
 
+def getProj(xvar, lraise=True):
+    ''' infer projection from a xarray Dataset of DataArray '''
+    if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
+        if lraise:
+            raise TypeError("Can only infer coordinate system from xarray - not from {}".format(xvar.__class__))
+        else: 
+            return None # no projection
+    proj = None
+    # search for Proj4 string
+    for key,value in xvar.attr.items():
+        if key.lower() == 'proj4': proj = genProj(value); break
+    # search for EPSG number
+    if proj is None:
+        for key,value in xvar.attr.items():
+            if key.upper() == 'EPSG': proj = genProj(value); break
+    # check for simple geographic lat/lon system
+    if proj is None:
+        if isGeoCRS(xvar, lraise=False): # error will be raised below (if desired)
+            proj = genProj() # no arguments for default lat/lon
+    # return values
+    if lraise and proj is None:
+        raise ValueError("No projection information found in attributes.")
+    return proj
+
+
 ## functions for Dask execution
 
 def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampling='bilinear', 
-                 src_crs=None, src_transform=None, src_size=None, **kwargs):
+                 src_crs=None, src_transform=None, src_size=None, lxarray=False, **kwargs):
     ''' a function to regrid/reproject a data array to a new grid; src attributes can be inferred from xarray '''
     # infer source attributes
     if isinstance(data,xr.DataArray):
-        src_transform, src_size = getGeoTransform(data,)
+        if src_transform is None:
+            src_transform, size = getTransform(data,)
+        if src_size and src_size != size: raise ValueError(src_size,size)
+        else: src_size = size
+        if data.attrs.get('dim_order',None) is False:
+            raise NotImplementedError("This the x/lon and y/lat axes of this xarray have to be swapped:\n {}".format(data))
+        if src_crs is None:
+            if isGeoCRS(data): src_crs = getProj()
+            else: raise ValueError("No source projection 'src_crs' supplied and can't infer projection from source data.")
         data = data.data
     if src_size: 
-        src_shp = src_size[::-1] # GDAL convention is band,y/lat,x/lon
-        if data.shape[-2:] != src_shp:
-            raise ValueError(data.shape,src_shp)
+        if data.shape[-2:] != src_size[::-1]:
+            raise ValueError(data.shape,src_size[::-1])
+        src_shp = data.shape[:-2] + src_size[::-1] # GDAL convention is band,y/lat,x/lon
     else:
         src_shp = data.shape[-2:]
-    if data.ndim > 2:
+    if data.ndim > 3:
         raise NotImplementedError 
-    # prepare
-    tgt_shp = tgt_size[::-1] # GDAL convention is band,y/lat,x/lon
-    tgt_data = np.zeros(tgt_shp)
+    # prepare data
+    tgt_shp = src_shp[:-2] + tgt_size[::-1] # GDAL convention is band,y/lat,x/lon
+    # reshape data
+    if len(src_shp) > 3:
+        bnds = np.prod(src_shp[:-2])
+        src_data = data.reshape((bnds,)+src_shp[-2:])
+        tgt_data = np.zeros((bnds,)+tgt_shp[-2:])
+    else:
+        src_data = data
+        tgt_data = np.zeros(tgt_shp)
+    # prepare reprojection
     if isinstance(resampling,basestring):
         resampling = getattr(Resampling,resampling)
     # do GDAL reprojection
-    reproject(data, tgt_data, src_transform=src_transform, src_crs=src_crs,
+    reproject(src_data, tgt_data, src_transform=src_transform, src_crs=src_crs,
               dst_transform=tgt_transform, dst_crs=tgt_crs, resampling=resampling, **kwargs)
+    # restore shape
+    if len(tgt_shp) > 3:
+        tgt_data = tgt_data.reshape(tgt_shp)
+    # cast as xarray
+    if lxarray:
+        raise NotImplementedError
     # return regridded data
     return tgt_data
 
@@ -129,9 +240,10 @@ def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', mis
         count,height,width = data.shape
     # optionally infer grid from xarray and defaults
     if crs is None:
-        crs = getProjection() # default lat/lon
+        crs = getProj(data, lraise=True) # default lat/lon
     if transform is None:
-        transform = getGeoTransform(data) 
+        transform, size = getTransform(data, lcheck=False) 
+        assert data.shape == size, data.shape
     # prep data
     if isinstance(data,xr.DataArray): data = data.data
     if isinstance(data,np.ma.MaskedArray): data = data.filled(missing_value)
@@ -205,7 +317,7 @@ if __name__ == '__main__':
         tgt_size = (590,410) # higher resolution 1 km grid (~ 1 MB per day)
         tgt_geotrans = rio.transform.Affine.from_gdal(320920.,1.e3,0,4624073.,0,1.e3) # 1 km    
     # southern Ontario projection
-    tgt_crs = getProjection("+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
+    tgt_crs = genProj("+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
     
     ## define source data
     # SnoDAS
@@ -219,8 +331,7 @@ if __name__ == '__main__':
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
     xds = ds_mod.loadDataset_Daily(varname=varname, time_chunks=8)
     # get georeference
-    src_crs = getProjection(name=dataset, **ds_mod.projdict)
-    src_geotrans,src_size = getGeoTransform(xds)
+    src_crs = getProj(xds)
     # figure out bounds for clipping
     left,bottom = tgt_geotrans*(0,0); right,top = tgt_geotrans*tgt_size
     trans, w,h = calculate_default_transform(src_crs=tgt_crs, dst_crs=src_crs, width=tgt_size[0], height=tgt_size[1], 
@@ -231,6 +342,7 @@ if __name__ == '__main__':
     if start_date and end_date:
         xvar = xds[varname].loc[start_date:end_date,:,:]
     print(xvar)
+    src_geotrans,src_size = getTransform(xvar)
     
     ## write rasters
     subfolder = '{:s}/transient/'.format(dataset,)
