@@ -160,11 +160,11 @@ def getProj(xvar, lraise=True):
             return None # no projection
     proj = None
     # search for Proj4 string
-    for key,value in xvar.attr.items():
+    for key,value in xvar.attrs.items():
         if key.lower() == 'proj4': proj = genProj(value); break
     # search for EPSG number
     if proj is None:
-        for key,value in xvar.attr.items():
+        for key,value in xvar.attrs.items():
             if key.upper() == 'EPSG': proj = genProj(value); break
     # check for simple geographic lat/lon system
     if proj is None:
@@ -176,6 +176,18 @@ def getProj(xvar, lraise=True):
     return proj
 
 
+def rechunkXlonYalt(xvar):
+    ''' convenience function to rechunk an xarray so that the horizontal dimensions are contiguous (not chunked)
+        N.B.: rechunking in a way that does not simply combine existing chunks seems to cause all chunks/data
+              to be loaded into memory (we want to avoid that); also, chunks are defined by their size, not by 
+              their number '''
+    if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
+        raise TypeError(xvar)
+    # find horizontal/map dimentions
+    xlon = xvar.coords[xvar.attrs['xlon']]; ylat = xvar.coords[xvar.attrs['ylat']]
+    return xvar.chunk(chunks={xlon.name:len(xlon),ylat.name:len(ylat)}) # rechunk x/lon and y/lat
+         
+
 ## functions for Dask execution
 
 def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampling='bilinear', 
@@ -185,6 +197,7 @@ def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampli
     if isinstance(data,xr.DataArray):
         if src_transform is None:
             src_transform, size = getTransform(data,)
+        else: size = (data.shape[-1],data.shape[-2])
         if src_size and src_size != size: raise ValueError(src_size,size)
         else: src_size = size
         if data.attrs.get('dim_order',None) is False:
@@ -226,68 +239,79 @@ def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampli
     # return regridded data
     return tgt_data
 
+
 def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', missing_value=-9999, 
-                 lmask_invalid=True):
+                 lmask_invalid=True, lecho=True):
     ''' write an array to a raster '''
-    print(filename)
-    data = data.squeeze()
-    if data.ndim == 2 :
-        count = 1
-        height,width = data.shape
+    if osp.exists(filename) and not loverwrite: 
+        if lecho: print("Skipping existing file: {}".format(filename))
     else:
-        if driver == 'AAIGrid':
-            raise ValueError(driver)
-        count,height,width = data.shape
-    # optionally infer grid from xarray and defaults
-    if crs is None:
-        crs = getProj(data, lraise=True) # default lat/lon
-    if transform is None:
-        transform, size = getTransform(data, lcheck=False) 
-        assert data.shape == size, data.shape
-    # prep data
-    if isinstance(data,xr.DataArray): data = data.data
-    if isinstance(data,np.ma.MaskedArray): data = data.filled(missing_value)
-    if lmask_invalid: data[~np.isfinite(data)] = missing_value
-    # fix transform
-    if transform.e > 0:
-        geotrans = list(transform.to_gdal())
-        # move origin to upper left corner
-        geotrans[3] += geotrans[5]*height
-        geotrans[5] *= -1
-        transform = rio.transform.Affine.from_gdal(*geotrans)
-        data = np.flip(data, axis=-2) # and now flip data along y-axis!
-    # write data
-    with rio.open(filename, mode='w', driver=driver, crs=crs, transform=transform,
-                  width=width, height=height, count=count, dtype=str(data.dtype), nodata=missing_value) as dst:
-        if count == 1:
-            dst.write(data,1) # GDAL/rasterio bands are one-based
+        if lecho: print(filename)
+        data = data.squeeze()
+        if data.ndim == 2 :
+            count = 1
+            height,width = data.shape
         else:
-            # loop over bands (if there are bands)
-            for i in range(1,count+1):
-                dst.write(data[i,:,:],i) # GDAL/rasterio bands are one-based
+            if driver == 'AAIGrid':
+                raise ValueError(driver)
+            count,height,width = data.shape
+        # optionally infer grid from xarray and defaults
+        if crs is None:
+            crs = getProj(data, lraise=True) # default lat/lon
+        if transform is None:
+            transform, size = getTransform(data, lcheck=False) 
+            assert data.shape == size, data.shape
+        # prep data
+        if isinstance(data,xr.DataArray): data = data.data
+        if isinstance(data,np.ma.MaskedArray): data = data.filled(missing_value)
+        if lmask_invalid: data[~np.isfinite(data)] = missing_value
+        # fix transform
+        if transform.e > 0:
+            geotrans = list(transform.to_gdal())
+            # move origin to upper left corner
+            geotrans[3] += geotrans[5]*height
+            geotrans[5] *= -1
+            transform = rio.transform.Affine.from_gdal(*geotrans)
+            data = np.flip(data, axis=-2) # and now flip data along y-axis!
+        # write data
+        with rio.open(filename, mode='w', driver=driver, crs=crs, transform=transform,
+                      width=width, height=height, count=count, dtype=str(data.dtype), nodata=missing_value) as dst:
+            if count == 1:
+                dst.write(data,1) # GDAL/rasterio bands are one-based
+            else:
+                # loop over bands (if there are bands)
+                for i in range(1,count+1):
+                    dst.write(data[i,:,:],i) # GDAL/rasterio bands are one-based
     # done...  
     return
   
-def batch_write_rasters(filepath_pattern, xvar, crs=None, transform=None, driver='AAIGrid', missing_value=-9999):
+def batch_write_rasters(filepath_pattern, xvar, time_coord=None, crs=None, transform=None, 
+                        driver='AAIGrid', missing_value=-9999, lecho=True):
     ''' a wrapper that loops over write_raster; note, however, that this loads all data into memory! '''
    
-    # print time coordinate
-    print(xvar.coords['time']) 
+    # determine time coordinate
+    if time_coord is None:
+        if isinstance(xvar,xr.DataArray):
+            time_coord = xvar.coords['time'].data
+        else: TypeError(xvar)
+    elif not np.issubdtype(time_coord.dtype,np.datetime64): 
+        raise TypeError(time_coord)
     
     # loop over time axis
-    for i,date in enumerate(xvar.coords['time'].data):
+    for i,date in enumerate(time_coord):
     
         # use date to construct file name
         filepath = filepath_pattern.format(pd.to_datetime(date).strftime('%Y%m%d'))
-        #print(filepath)
         # command to write raster
-        write_raster(filepath, xvar[i,:,:],crs=crs, transform=transform, driver=driver, missing_value=missing_value)
+        write_raster(filepath, xvar[i,:,:],crs=crs, transform=transform, driver=driver, 
+                     missing_value=missing_value, lecho=lecho)
 
 
 ## execute raster export
 if __name__ == '__main__':
 
     import dask
+    from multiprocessing.pool import ThreadPool
     from time import time
     
     start = time()
@@ -297,13 +321,15 @@ if __name__ == '__main__':
 #     start_date = '2011-01-01'; end_date = '2011-02-01'
 #     grid_name  = 'son1'
     ## operational test config
-    loverwrite = False
-    start_date = '2011-06-01'; end_date = '2011-07-01'
-    grid_name  = 'son2'
-    ## operational config
-#     loverwrite = False
-#     start_date = None; end_date = None
+#     loverwrite = True
+#     start_date = '2011-06-01'; end_date = '2011-07-01'
 #     grid_name  = 'son2'
+    ## operational config
+    loverwrite = True
+    start_date = None; end_date = None
+    grid_name  = 'son2'
+    # HGS include file
+    inc_file = 'precip.inc'
 
     ## define target data/projection
     root_folder = '{:s}/SON/{:s}/'.format(os.getenv('HGS_ROOT'),grid_name)
@@ -329,7 +355,7 @@ if __name__ == '__main__':
     
     ## get dataset
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
-    xds = ds_mod.loadDataset_Daily(varname=varname, time_chunks=8)
+    xds = ds_mod.loadDataset_Daily(varname=varname, time_chunks=2)
     # get georeference
     src_crs = getProj(xds)
     # figure out bounds for clipping
@@ -339,7 +365,7 @@ if __name__ == '__main__':
     left,top = trans*(0,0); rigth,bottom = trans*(w,h)
     # clip source data
     xvar = xds[varname].loc[:, bottom:top, left:right]
-    if start_date and end_date:
+    if start_date or end_date:
         xvar = xds[varname].loc[start_date:end_date,:,:]
     print(xvar)
     src_geotrans,src_size = getTransform(xvar)
@@ -355,40 +381,84 @@ if __name__ == '__main__':
     filepath_pattern = target_folder + filename_pattern
     
     # generate workload for lazy execution
+    start_load = time()
     print("\n***   Constructing Workload from {} to {}.   ***\n".format(start_date,end_date))
     print("Output folder: '{}'\nRaster pattern: '{}'\n".format(target_folder,filename_pattern)) 
-    # loop over time coordinate
-    work_load = []
-    for i,date in enumerate(xvar.coords['time'].data):
-      
-        # use date to construct file name
-        filename = filename_pattern.format(pd.to_datetime(date).strftime('%Y%m%d'))
-        filepath = target_folder + filename
-        if osp.exists(filepath) and not loverwrite: 
-            print("Skipping existing file: {}".format(filename))
-        else:
-            #print(filepath)
-            data = xvar[i,:,:] # chunk to work on
-            # command to regrid data
-            data = dask.delayed( regrid_array )(data, tgt_crs=tgt_crs, tgt_transform=tgt_geotrans, tgt_size=tgt_size,
-                                                src_crs=src_crs, src_transform=src_geotrans, src_size=src_size, 
-                                                resampling='average')
-            # command to write raster
-            work_load.append( dask.delayed( write_raster )(filepath, data, driver=raster_format, 
-                                                           crs=tgt_crs, transform=tgt_geotrans) )
     
-#     # try batch-executing everything at once in a single workload
-#     work_load = [ dask.delayed( batch_write_rasters )(filepath_pattern, xvar, 
-#                                                       crs=tgt_crs, transform=tgt_geotrans, driver=raster_format) ]
-#     ## N.B.: a single workload leads to everything being loaded at once...
+    # explicitly determine chunking to get complete 2D lat/lon slices
+    xvar = rechunkXlonYalt(xvar)
+    assert all([len(c)==1 for c in xvar.chunks[-2:]]), xvar.chunks
+    time_coord = xvar.coords['time'].data
+    time_chunks = np.concatenate([[0],np.cumsum(xvar.chunks[0][:-1], dtype=np.int)])
+    # define function to apply to blocks
+    dummy = np.zeros((1,1,1), dtype=np.int8)
+    def regrid_and_write(data, block_id=None):
+        ''' function to apply regridding and subsequent export to raster on blocks '''
+        # figure out time coordinates/dates
+        ts = time_chunks[block_id[0]]; te = ts + data.shape[0] 
+        time_chunk = time_coord[ts:te] # chunk of time axis that corresponds to this chunk 
+        #print(time_chunk)
+        # regrid array
+        data = regrid_array(data, tgt_crs=tgt_crs, tgt_transform=tgt_geotrans, tgt_size=tgt_size, 
+                            src_crs=src_crs, src_transform=src_geotrans, src_size=src_size, 
+                            resampling='bilinear', lxarray=False)
+        # write raster files
+        batch_write_rasters(filepath_pattern, data, time_coord=time_chunk, crs=tgt_crs, 
+                            transform=tgt_geotrans, driver='AAIGrid', missing_value=0., lecho=True)
+        # return data
+        return data
+    # now map regridding operation to blocks
+    n_loads = len(xvar.chunks[0])
+    dummy_output = xvar.data.map_blocks(regrid_and_write, chunks=dummy.shape, dtype=dummy.dtype)
+    work_load = [dummy_output]
     
+    end_load = time()
+    print("Timing to construct workload: {} seconds\n".format(end_load-start_load))
+    
+#     # to simply regrid and obtain a new variable
+#     yvar = xvar.data.map_blocks(regrid_and_write, chunks=(xvar.chunks[0],tgt_size[1],tgt_size[0]), dtype=xvar.dtype)
+#     ## TODO: cast yvar back into an xarray, using properties from xvar
+    
+    ## generate inc file
+    start_inc = time()
+    inc_filepath = target_folder+inc_file
+    print("\nWriting HGS include file:\n '{:s}'\n".format(inc_filepath))
+    with open(inc_filepath, mode='w') as incf:
+        
+        # first line
+        filename = filename_pattern.format(pd.to_datetime(time_coord[0]).strftime('%Y%m%d'))
+        line = '{:15d}     {:s}\n'.format(0,filename)
+        incf.write(line)
+        
+        # loop over time coordinate
+        for i,date in enumerate(time_coord):
+             
+            # use date to construct file name
+            filename = filename_pattern.format(pd.to_datetime(date).strftime('%Y%m%d'))
+            line = '{:15d}     {:s}\n'.format(43200+86400*i,filename)
+            incf.write(line)
+            
+        # last line
+        filename = filename_pattern.format(pd.to_datetime(time_coord[-1]).strftime('%Y%m%d'))
+        line = '{:15d}     {:s}\n'.format(86400*len(time_coord),filename)
+        incf.write(line)
+        
+        ## N.B.: are the first and last lines really necessary???
+    end_inc = time()
+    print("Timing to write include file: {} seconds\n".format(end_inc-start_inc))
+        
     # execute delayed computation
-    print("\n***   Executing Workload using Dask   ***\n")
+    print("\n***   Executing {} Workloads using Dask   ***".format(n_loads))
+    print("Chunks (time only): {}\n".format(xvar.chunks[0]))
 
-#     with dask.set_options(scheduler='processes'):  
-    from multiprocessing.pool import ThreadPool
+#     with dask.set_options(scheduler='processes'):      
     with dask.set_options(pool=ThreadPool(4)):    
         dask.compute(*work_load)
+        
+    print("\nDummy output:")
+    print(dummy_output)
+    print("Size in memory: {} MB\n".format(dummy_output.nbytes/1024./1024.))
+
     
     end = time()
     print("\n***   Completed in {:.2f} seconds   ***\n".format(end-start))
