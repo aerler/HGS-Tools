@@ -9,7 +9,7 @@ A Python module to generate the input file list that contains the atmospheric fo
 import numpy as np
 import os
 from geodata.misc import days_per_month, days_per_month_365, seconds_per_month, seconds_per_month_365, abbr_of_month, ArgumentError
-list_format = '{T:18.3f} {F:s}'
+list_format = '{T:15.0f}     {F:s}'
 
 
 # iterator for monthly intervals
@@ -177,7 +177,7 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
         time %= period; idx %= idxprd
       if lFortran: idx += 1 # Fortran index starts at 1, not 0    
       input_file = input_pattern.format(TIME=time,IDX=idx)
-      if input_folder is None: filepath = input_file
+      if not input_folder: filepath = input_file
       else: filepath = '{:s}/{:s}'.format(input_folder,input_file) # assemble current file name
       # check if file actually exists
       abspath = filepath if os.path.isabs(filepath) else '{:s}/{:s}'.format(folder,filepath) 
@@ -214,17 +214,19 @@ if __name__ == '__main__':
     testfile = 'test.inc'; testpattern = 'test_file'; inputfolder = '../test_folder'
     
     # for production
-    grid = 'uph1'; project = 'Elisha'; length = 360
+#     grid = 'uph1'; project = 'Elisha'; length = 360
 #     grid = 'can1'; project = 'CAN'; length = 360
 #     grid = 'brd1'; project = 'ASB'; length = 360
 #     grid = 'asb1'; project = 'ASB'; length = 432
 #     grid = 'grw2'; project = 'GRW'; length = 360
 #     grid = 'snw1'; project = 'SNW'; length = 360
-    varname = 'liqwatlfx'; testfile = 'precip.inc';
+    grid = 'son1'; project = 'SON'; length = 120
+#     varname = 'liqwatlfx'; testfile = 'precip.inc';
 #     varname = 'liqwatlfx_CMC'; testfile = 'precip_CMC.inc'; 
-#     varname = 'pet'; testfile = 'pet.inc'      
+    varname = 'pet'; testfile = 'pet.inc'      
 #     varname = 'pet_wrf'; testfile = 'pet_wrf.inc'      
-    inputfolder = '../climate_forcing/'; testpattern = '{:s}_{:s}_iTime'.format(grid,varname)
+    inputfolder = '../climate_forcing/'
+    testpattern = '{:s}_{:s}_iTime'.format(grid,varname)
     testfolder = 'D:/Data/HGS/{PRJ}/{GRD}/'.format(PRJ=project,GRD=grid)
       
     ## write test file

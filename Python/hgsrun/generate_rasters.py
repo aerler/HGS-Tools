@@ -321,14 +321,15 @@ if __name__ == '__main__':
 #     start_date = '2011-01-01'; end_date = '2011-02-01'
 #     grid_name  = 'son1'
     ## operational test config
-#     loverwrite = True
-#     start_date = '2011-06-01'; end_date = '2011-07-01'
-#     grid_name  = 'son2'
-    ## operational config
     loverwrite = True
-    start_date = None; end_date = None
+    start_date = '2010-11-01'; end_date = '2011-01-01'
     grid_name  = 'son2'
+    ## operational config
+#     loverwrite = True
+#     start_date = '2011-01-01'; end_date = None
+#     grid_name  = 'son2'
     # HGS include file
+    lexec = True
     inc_file = 'precip.inc'
 
     ## define target data/projection
@@ -349,6 +350,8 @@ if __name__ == '__main__':
     # SnoDAS
     dataset = 'SnoDAS'
     varname = 'liqwatflx'
+    scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
+#     varname = 'snow'
     filename_pattern = raster_name.format(dataset=dataset.lower(), variable=varname.lower(),
                                           grid=grid_name.lower(), date='{:s}') # no date for now...
     print("\n***   Exporting '{}' from '{}' to raster format {}   ***\n".format(varname,dataset,raster_format))
@@ -369,9 +372,11 @@ if __name__ == '__main__':
         xvar = xds[varname].loc[start_date:end_date,:,:]
     print(xvar)
     src_geotrans,src_size = getTransform(xvar)
+    time_coord = xvar.coords['time'].data
+    
     
     ## write rasters
-    subfolder = '{:s}/transient/'.format(dataset,)
+    subfolder = '{:s}/snow/'.format(dataset,)
     target_folder = root_folder + subfolder
     # make sure path exists
     try:
@@ -380,44 +385,6 @@ if __name__ == '__main__':
         os.makedirs(target_folder)
     filepath_pattern = target_folder + filename_pattern
     
-    # generate workload for lazy execution
-    start_load = time()
-    print("\n***   Constructing Workload from {} to {}.   ***\n".format(start_date,end_date))
-    print("Output folder: '{}'\nRaster pattern: '{}'\n".format(target_folder,filename_pattern)) 
-    
-    # explicitly determine chunking to get complete 2D lat/lon slices
-    xvar = rechunkXlonYalt(xvar)
-    assert all([len(c)==1 for c in xvar.chunks[-2:]]), xvar.chunks
-    time_coord = xvar.coords['time'].data
-    time_chunks = np.concatenate([[0],np.cumsum(xvar.chunks[0][:-1], dtype=np.int)])
-    # define function to apply to blocks
-    dummy = np.zeros((1,1,1), dtype=np.int8)
-    def regrid_and_write(data, block_id=None):
-        ''' function to apply regridding and subsequent export to raster on blocks '''
-        # figure out time coordinates/dates
-        ts = time_chunks[block_id[0]]; te = ts + data.shape[0] 
-        time_chunk = time_coord[ts:te] # chunk of time axis that corresponds to this chunk 
-        #print(time_chunk)
-        # regrid array
-        data = regrid_array(data, tgt_crs=tgt_crs, tgt_transform=tgt_geotrans, tgt_size=tgt_size, 
-                            src_crs=src_crs, src_transform=src_geotrans, src_size=src_size, 
-                            resampling='bilinear', lxarray=False)
-        # write raster files
-        batch_write_rasters(filepath_pattern, data, time_coord=time_chunk, crs=tgt_crs, 
-                            transform=tgt_geotrans, driver='AAIGrid', missing_value=0., lecho=True)
-        # return data
-        return data
-    # now map regridding operation to blocks
-    n_loads = len(xvar.chunks[0])
-    dummy_output = xvar.data.map_blocks(regrid_and_write, chunks=dummy.shape, dtype=dummy.dtype)
-    work_load = [dummy_output]
-    
-    end_load = time()
-    print("Timing to construct workload: {} seconds\n".format(end_load-start_load))
-    
-#     # to simply regrid and obtain a new variable
-#     yvar = xvar.data.map_blocks(regrid_and_write, chunks=(xvar.chunks[0],tgt_size[1],tgt_size[0]), dtype=xvar.dtype)
-#     ## TODO: cast yvar back into an xarray, using properties from xvar
     
     ## generate inc file
     start_inc = time()
@@ -447,6 +414,50 @@ if __name__ == '__main__':
     end_inc = time()
     print("Timing to write include file: {} seconds\n".format(end_inc-start_inc))
         
+    if not lexec: exit()
+           
+           
+    # generate workload for lazy execution
+    start_load = time()
+    print("\n***   Constructing Workload from {} to {}.   ***\n".format(start_date,end_date))
+    print("Output folder: '{}'\nRaster pattern: '{}'\n".format(target_folder,filename_pattern)) 
+       
+    # explicitly determine chunking to get complete 2D lat/lon slices
+    xvar = rechunkXlonYalt(xvar)
+    assert all([len(c)==1 for c in xvar.chunks[-2:]]), xvar.chunks
+    time_chunks = np.concatenate([[0],np.cumsum(xvar.chunks[0][:-1], dtype=np.int)])
+    
+    # apply a scaling factor
+    xvar /= scalefactor
+    # N.B.: apply scalefactor 'in-place' so that xarray variable attributes 
+    #       are preserved (it will still execute delayed); applying the scale-
+    #       factor after regridding is slightly faster, but this is cleaner
+
+    # define function to apply to blocks
+    dummy = np.zeros((1,1,1), dtype=np.int8)
+    def regrid_and_write(data, block_id=None):
+        ''' function to apply regridding and subsequent export to raster on blocks '''
+        # figure out time coordinates/dates
+        ts = time_chunks[block_id[0]]; te = ts + data.shape[0] 
+        time_chunk = time_coord[ts:te] # chunk of time axis that corresponds to this chunk 
+        #print(time_chunk)
+        # regrid array
+        data = regrid_array(data, tgt_crs=tgt_crs, tgt_transform=tgt_geotrans, tgt_size=tgt_size, 
+                            src_crs=src_crs, src_transform=src_geotrans, src_size=src_size, 
+                            resampling='bilinear', lxarray=False)
+        # write raster files
+        batch_write_rasters(filepath_pattern, data, time_coord=time_chunk, crs=tgt_crs, 
+                            transform=tgt_geotrans, driver='AAIGrid', missing_value=0., lecho=True)
+        # return data
+        return data
+    # now map regridding operation to blocks
+    n_loads = len(xvar.chunks[0])
+    dummy_output = xvar.data.map_blocks(regrid_and_write, chunks=dummy.shape, dtype=dummy.dtype)
+    work_load = [dummy_output]
+    
+    end_load = time()
+    print("Timing to construct workload: {} seconds\n".format(end_load-start_load))
+    
     # execute delayed computation
     print("\n***   Executing {} Workloads using Dask   ***".format(n_loads))
     print("Chunks (time only): {}\n".format(xvar.chunks[0]))
