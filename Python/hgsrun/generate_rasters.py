@@ -241,7 +241,7 @@ def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampli
 
 
 def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', missing_value=-9999, 
-                 lmask_invalid=True, lecho=True):
+                 missing_flag=None, lmask_invalid=True, lecho=True):
     ''' write an array to a raster '''
     if osp.exists(filename) and not loverwrite: 
         if lecho: print("Skipping existing file: {}".format(filename))
@@ -274,6 +274,7 @@ def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', mis
             transform = rio.transform.Affine.from_gdal(*geotrans)
             data = np.flip(data, axis=-2) # and now flip data along y-axis!
         # write data
+        if missing_flag is None: missing_flag = missing_value
         with rio.open(filename, mode='w', driver=driver, crs=crs, transform=transform,
                       width=width, height=height, count=count, dtype=str(data.dtype), nodata=missing_value) as dst:
             if count == 1:
@@ -286,7 +287,7 @@ def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', mis
     return
   
 def batch_write_rasters(filepath_pattern, xvar, time_coord=None, crs=None, transform=None, 
-                        driver='AAIGrid', missing_value=-9999, lecho=True):
+                        driver='AAIGrid', missing_value=-9999, missing_flag=None, lecho=True):
     ''' a wrapper that loops over write_raster; note, however, that this loads all data into memory! '''
    
     # determine time coordinate
@@ -304,7 +305,7 @@ def batch_write_rasters(filepath_pattern, xvar, time_coord=None, crs=None, trans
         filepath = filepath_pattern.format(pd.to_datetime(date).strftime('%Y%m%d'))
         # command to write raster
         write_raster(filepath, xvar[i,:,:],crs=crs, transform=transform, driver=driver, 
-                     missing_value=missing_value, lecho=lecho)
+                     missing_value=missing_value, missing_flag=missing_flag, lecho=lecho)
 
 
 ## execute raster export
@@ -317,34 +318,48 @@ if __name__ == '__main__':
     start = time()
 
     ## fast test config
+#     project = 'SON'
 #     loverwrite = True
 #     start_date = '2011-01-01'; end_date = '2011-02-01'
 #     grid_name  = 'son1'
     ## operational test config
-    loverwrite = True
-    start_date = '2010-11-01'; end_date = '2011-01-01'
-    grid_name  = 'son2'
-    ## operational config
+#     loverwrite = True
+#     start_date = '2010-11-01'; end_date = '2011-01-01'
+#     grid_name  = 'son2'
+    ## operational config for SON2
 #     loverwrite = True
 #     start_date = '2011-01-01'; end_date = None
 #     grid_name  = 'son2'
+    ## operational config for ASB2
+    project = 'ASB'
+    loverwrite = True
+    start_date = '2009-12-13'; end_date = None
+    grid_name  = 'asb2'
     # HGS include file
     lexec = True
     inc_file = 'precip.inc'
 
     ## define target data/projection
-    root_folder = '{:s}/SON/{:s}/'.format(os.getenv('HGS_ROOT'),grid_name)
+    root_folder = '{:s}/{:s}/{:s}/'.format(os.getenv('HGS_ROOT'),project,grid_name)
     raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
     raster_format = 'AAIGrid'
-    # southern Ontario grid (UTM 17)
+    # projection/UTM zone
+    if project.upper() == 'SON':
+        # southern Ontario projection
+        tgt_crs = genProj("+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
+    elif project.upper() == 'ASB':
+        # Assiniboin projection
+        tgt_crs = genProj("+proj=utm +zone=14 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs", name=grid_name)
+    # UTM grid definition
     if grid_name == 'son1':
         tgt_size = (118,82) # lower resolution 5 km grid
         tgt_geotrans = rio.transform.Affine.from_gdal(320920.,5.e3,0,4624073.,0,5.e3) # 5 km
     elif grid_name == 'son2':
         tgt_size = (590,410) # higher resolution 1 km grid (~ 1 MB per day)
-        tgt_geotrans = rio.transform.Affine.from_gdal(320920.,1.e3,0,4624073.,0,1.e3) # 1 km    
-    # southern Ontario projection
-    tgt_crs = genProj("+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
+        tgt_geotrans = rio.transform.Affine.from_gdal(320920.,1.e3,0,4624073.,0,1.e3) # 1 km 
+    elif grid_name == 'asb2':
+        tgt_size = (955,675) # higher resolution 1 km grid (> 1 MB per day)
+        tgt_geotrans = rio.transform.Affine.from_gdal(-159.e3, 1.e3, 0., 5202.e3, 0., 1.e3) # 1 km 
     
     ## define source data
     # SnoDAS
@@ -358,7 +373,7 @@ if __name__ == '__main__':
     
     ## get dataset
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
-    xds = ds_mod.loadDataset_Daily(varname=varname, time_chunks=2)
+    xds = ds_mod.loadDailyTimeSeries(varname=varname, time_chunks=2)
     # get georeference
     src_crs = getProj(xds)
     # figure out bounds for clipping
@@ -446,8 +461,8 @@ if __name__ == '__main__':
                             src_crs=src_crs, src_transform=src_geotrans, src_size=src_size, 
                             resampling='bilinear', lxarray=False)
         # write raster files
-        batch_write_rasters(filepath_pattern, data, time_coord=time_chunk, crs=tgt_crs, 
-                            transform=tgt_geotrans, driver='AAIGrid', missing_value=0., lecho=True)
+        batch_write_rasters(filepath_pattern, data, time_coord=time_chunk, crs=tgt_crs, lecho=True,
+                            transform=tgt_geotrans, driver='AAIGrid', missing_value=0., missing_flag=-9999.)
         # return data
         return data
     # now map regridding operation to blocks
@@ -463,7 +478,7 @@ if __name__ == '__main__':
     print("Chunks (time only): {}\n".format(xvar.chunks[0]))
 
 #     with dask.set_options(scheduler='processes'):      
-    with dask.set_options(pool=ThreadPool(4)):    
+    with dask.config.set(pool=ThreadPool(4)):    
         dask.compute(*work_load)
         
     print("\nDummy output:")
