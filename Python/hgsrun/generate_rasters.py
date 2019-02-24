@@ -16,7 +16,7 @@ import os.path as osp
 import numpy as np
 import pandas as pd
 import rasterio as rio
-from rasterio.warp import calculate_default_transform
+from rasterio.warp import calculate_default_transform # need to import separately...
 from importlib import import_module
 # internal imports
 from geospatial.rasterio_tools import genProj,regrid_array, write_time_rasters
@@ -29,6 +29,43 @@ try:
 except NameError:
     lWin = False
     WindowsError = None
+
+
+# write HGS include file
+def writeIncFile(filepath, time_coord, filename_pattern, time_fmt='{:15.0f}', date_fmt='%Y%m%d'):
+    ''' write an HGS include file based on a time coordinate and a filename pattern;
+        the date is used as part of the filename '''
+    line_fmt = time_fmt+'     {:s}\n'
+    # open file and write entries
+    with open(filepath, mode='w') as incf:
+        
+        # first line
+        filename = filename_pattern.format(pd.to_datetime(time_coord[0]).strftime(date_fmt))
+        line = line_fmt.format(0,filename)
+        incf.write(line)
+        
+        # construct array of seconds from simulation start
+        sim_time = (time_coord - time_coord[0])/np.timedelta64(1, 's')
+        sim_time[:-1] += ( np.diff(sim_time) / 2. ) # recenter between time-steps
+        sim_time[-1] += ( sim_time[-1] - sim_time[-2] ) # extrapolate offset for last element
+        
+        # loop over time coordinate
+        for stime,date in zip(sim_time,time_coord):
+             
+            # use date to construct file name
+            filename = filename_pattern.format(pd.to_datetime(date).strftime(date_fmt))
+            line = line_fmt.format(stime,filename)
+            incf.write(line)
+            
+        # last line
+        last_time = sim_time[-1] + (sim_time[-1] - sim_time[-2])/2. # the official end of validity
+        filename = filename_pattern.format(pd.to_datetime(time_coord[-1]).strftime(date_fmt))
+        line = line_fmt.format(last_time,filename)
+        incf.write(line)
+        
+    ## N.B.: are the first and last lines really necessary???
+    # done...
+    return None
 
 
 ## execute raster export
@@ -64,7 +101,7 @@ if __name__ == '__main__':
 #     start_date = '2010-01-01'; end_date = None
 #     grid_name  = 'asb2'
     # HGS include file
-    lexec = True
+    lexec = False
     inc_file = 'precip.inc'
 
     ## define target data/projection
@@ -148,27 +185,8 @@ if __name__ == '__main__':
     start_inc = time()
     inc_filepath = target_folder+inc_file
     print("\nWriting HGS include file:\n '{:s}'\n".format(inc_filepath))
-    with open(inc_filepath, mode='w') as incf:
-        
-        # first line
-        filename = filename_pattern.format(pd.to_datetime(time_coord[0]).strftime('%Y%m%d'))
-        line = '{:15d}     {:s}\n'.format(0,filename)
-        incf.write(line)
-        
-        # loop over time coordinate
-        for i,date in enumerate(time_coord):
-             
-            # use date to construct file name
-            filename = filename_pattern.format(pd.to_datetime(date).strftime('%Y%m%d'))
-            line = '{:15d}     {:s}\n'.format(43200+86400*i,filename)
-            incf.write(line)
-            
-        # last line
-        filename = filename_pattern.format(pd.to_datetime(time_coord[-1]).strftime('%Y%m%d'))
-        line = '{:15d}     {:s}\n'.format(86400*len(time_coord),filename)
-        incf.write(line)
-        
-        ## N.B.: are the first and last lines really necessary???
+    writeIncFile(filepath=inc_filepath, time_coord=time_coord, 
+                  filename_pattern=filename_pattern, date_fmt='%Y%m%d')
     end_inc = time()
     print("Timing to write include file: {} seconds\n".format(end_inc-start_inc))
         
@@ -191,6 +209,7 @@ if __name__ == '__main__':
     #       are preserved (it will still execute delayed); applying the scale-
     #       factor after regridding is slightly faster, but this is cleaner
 
+
     # define function to apply to blocks
     dummy = np.zeros((1,1,1), dtype=np.int8)
     def regrid_and_write(data, block_id=None):
@@ -212,6 +231,8 @@ if __name__ == '__main__':
                             lecho=True, loverwrite=loverwrite)
         # return data
         return data
+      
+      
     # now map regridding operation to blocks
     n_loads = len(xvar.chunks[0])
     dummy_output = xvar.data.map_blocks(regrid_and_write, chunks=dummy.shape, dtype=dummy.dtype)
@@ -219,6 +240,7 @@ if __name__ == '__main__':
     
     end_load = time()
     print("Timing to construct workload: {} seconds\n".format(end_load-start_load))
+    
     
     # execute delayed computation
     print("\n***   Executing {} Workloads using Dask   ***".format(n_loads))
