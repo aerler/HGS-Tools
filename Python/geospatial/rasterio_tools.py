@@ -6,6 +6,7 @@ Utility tools to work with rasterio or that use rasterio as their backend.
 @author: Andre R. Erler, GPL v3
 '''
 
+import functools
 import os.path as osp
 import numpy as np
 import pandas as pd
@@ -197,6 +198,88 @@ def write_time_rasters(filepath_pattern, xvar, time_coord=None, crs=None, transf
                      missing_value=missing_value, missing_flag=missing_flag, lecho=lecho, loverwrite=loverwrite)    
     # done...
     return None
+
+
+dummy_array = np.zeros((1,1,1), dtype=np.int8)
+def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_geotrans=None, src_size=None, 
+                      tgt_crs=None, tgt_geotrans=None, tgt_size=None, mode='raster2D', resampling='bilinear',
+                      filepath=None, time_coord=None, driver='AAIGrid',missing_value=0., missing_flag=-9999.,
+                      lecho=True, loverwrite=True, return_dummy=dummy_array):
+    ''' a function for use with Dask lazy execution that regrids an array and exports/writes the results 
+        to either NetCDF or any GDAL/rasterio raster format; the array has to be chunked in a way that  
+        full 2D horizontal surfaces are processed, otherwise regridding does not work '''
+    
+    # regrid array
+    if tgt_crs != src_crs:
+        # reproject data
+        data = regrid_array(data, tgt_crs=tgt_crs, tgt_transform=tgt_geotrans, tgt_size=tgt_size, 
+                            src_crs=src_crs, src_transform=src_geotrans, src_size=src_size, 
+                            resampling=resampling, lxarray=False)
+
+    # figure out time coordinates/dates
+    ts = time_chunks[block_id[0]]; te = ts + data.shape[0] 
+
+    if mode.lower() == 'raster2d':    
+        # write raster files, one per time step
+        time_chunk = time_coord[ts:te] # chunk of time axis that corresponds to this chunk 
+        #print(time_chunk)
+        write_time_rasters(filepath, data, time_coord=time_chunk, driver=driver, crs=tgt_crs, 
+                           transform=tgt_geotrans, missing_value=missing_value, missing_flag=missing_flag, 
+                           lecho=lecho, loverwrite=loverwrite)    
+    else:
+        raise NotImplementedError
+    
+    # return a small dummy array, because we need to return something array-like
+    return return_dummy
+
+
+def generate_regrid_and_export(xvar, tgt_crs=None, tgt_geotrans=None, tgt_size=None, time_coord='time',
+                               mode='raster2D', resampling='bilinear', filepath=None, driver='AAIGrid',
+                               missing_value=0., missing_flag=-9999., lecho=True, loverwrite=True,):
+    ''' a function that returns another function, which is suitable for regridding and direct export to disk 
+        using Dask lazy execution; some parameters can be inferred from xarray attributes '''
+    
+    # infer xarray meta data
+    if not isinstance(xvar,DataArray): 
+        raise NotImplementedError("Can only infer grid/projection from xarray DataArray.")
+    if len(xvar.dims) != 3:
+        raise NotImplementedError(xvar)
+    
+    # infer grid from xarray and defaults
+    src_crs = getProj(xvar, lraise=True) # default lat/lon
+    src_geotrans, src_size = getTransform(xvar, lcheck=True) 
+    
+    # time axis
+    if isinstance(time_coord,str):
+        assert xvar.dims[0] == time_coord, xvar
+        time_coord = xvar.coords[time_coord].data
+    elif isinstance(time_coord,DataArray):
+        if len(xvar.coords[time_coord.name].data) != len(time_coord):
+            raise ValueError(time_coord)
+    elif isinstance(time_coord,np.ndarray):
+        if xvar.shape[0] != len(time_coord):
+            raise ValueError(time_coord)
+    else:
+        raise TypeError(time_coord)        
+        
+    # ensure correct chunking 
+    if not all([len(c)==1 for c in xvar.chunks[-2:]]): 
+        raise ValueError("Regridding can only work, if horizontal dimensions are contiguous;" + 
+                         "\n however, the horizontal dimensions appear to be chunked:\n {}".format(xvar.chunks) +
+                         "\n Consider using the 'rechunkTo2Dslices' function to fix chunking.")
+    
+    # define options for dask execution
+    time_chunks = np.concatenate([[0],np.cumsum(xvar.chunks[0][:-1], dtype=np.int)])
+    dummy_array = np.zeros((1,1,1), dtype=np.int8)
+    dask_fct = functools.partial(regrid_and_export, time_chunks=time_chunks,  
+                                 src_crs=src_crs, src_geotrans=src_geotrans, src_size=src_size, 
+                                 tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
+                                 mode=mode, resampling=resampling, filepath=filepath, time_coord=time_coord, 
+                                 driver=driver,missing_value=missing_value, missing_flag=missing_flag,
+                                 lecho=lecho, loverwrite=loverwrite, return_dummy=dummy_array)
+    
+    # return function with dummy array (for measure)
+    return dask_fct, dummy_array
 
 
 if __name__ == '__main__':

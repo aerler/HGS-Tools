@@ -19,7 +19,7 @@ import rasterio as rio
 from rasterio.warp import calculate_default_transform # need to import separately...
 from importlib import import_module
 # internal imports
-from geospatial.rasterio_tools import genProj,regrid_array, write_time_rasters
+from geospatial.rasterio_tools import genProj, generate_regrid_and_export
 from geospatial.xarray_tools import getProj, getTransform, rechunkTo2Dslices
 
 # WindowsError is not defined on Linux - need a dummy
@@ -101,7 +101,7 @@ if __name__ == '__main__':
 #     start_date = '2010-01-01'; end_date = None
 #     grid_name  = 'asb2'
     # HGS include file
-    lexec = False
+    lexec = True
     inc_file = 'precip.inc'
 
     ## define target data/projection
@@ -197,45 +197,27 @@ if __name__ == '__main__':
     start_load = time()
     print("\n***   Constructing Workload from {} to {}.   ***\n".format(start_date,end_date))
     print("Output folder: '{}'\nRaster pattern: '{}'\n".format(target_folder,filename_pattern)) 
-       
+     
     # explicitly determine chunking to get complete 2D lat/lon slices
-    xvar = rechunkTo2Dslices(xvar)
-    assert all([len(c)==1 for c in xvar.chunks[-2:]]), xvar.chunks
-    time_chunks = np.concatenate([[0],np.cumsum(xvar.chunks[0][:-1], dtype=np.int)])
-    
+    xvar = rechunkTo2Dslices(xvar)    
+      
     # apply a scaling factor
     xvar /= scalefactor
     # N.B.: apply scalefactor 'in-place' so that xarray variable attributes 
     #       are preserved (it will still execute delayed); applying the scale-
     #       factor after regridding is slightly faster, but this is cleaner
 
-
-    # define function to apply to blocks
-    dummy = np.zeros((1,1,1), dtype=np.int8)
-    def regrid_and_write(data, block_id=None):
-        ''' function to apply regridding and subsequent export to raster on blocks '''
-        # figure out time coordinates/dates
-        ts = time_chunks[block_id[0]]; te = ts + data.shape[0] 
-        time_chunk = time_coord[ts:te] # chunk of time axis that corresponds to this chunk 
-        #print(time_chunk)
-        # regrid array
-        if tgt_crs != src_crs:
-            # reproject data
-            data = regrid_array(data, tgt_crs=tgt_crs, tgt_transform=tgt_geotrans, tgt_size=tgt_size, 
-                                src_crs=src_crs, src_transform=src_geotrans, src_size=src_size, 
-                                resampling='bilinear', lxarray=False)
-
-        # write raster files
-        write_time_rasters(filepath_pattern, data, time_coord=time_chunk, driver='AAIGrid', crs=tgt_crs,
-                            transform=tgt_geotrans, missing_value=0., missing_flag=-9999.,
-                            lecho=True, loverwrite=loverwrite)
-        # return data
-        return data
-      
+   
+    # generate dask execution function
+    dask_fct,dummy = generate_regrid_and_export(xvar, time_coord=time_coord,
+                                                tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
+                                                mode='raster2D', resampling='bilinear', filepath=filepath_pattern,  
+                                                driver='AAIGrid',missing_value=0., missing_flag=-9999.,
+                                                lecho=True, loverwrite=True,)
       
     # now map regridding operation to blocks
     n_loads = len(xvar.chunks[0])
-    dummy_output = xvar.data.map_blocks(regrid_and_write, chunks=dummy.shape, dtype=dummy.dtype)
+    dummy_output = xvar.data.map_blocks(dask_fct, chunks=dummy.shape, dtype=dummy.dtype)
     work_load = [dummy_output]
     
     end_load = time()
