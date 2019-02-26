@@ -7,6 +7,7 @@ Utility tools to work with rasterio or that use rasterio as their backend.
 '''
 
 import functools
+import os
 import os.path as osp
 import numpy as np
 import pandas as pd
@@ -31,7 +32,9 @@ def genProj(*args,**kwargs):
     if args:
         if len(args) > 1: raise ValueError(args)
         arg = args[0]
-        if isinstance(arg,basestring):
+        if isinstance(arg,rio.crs.CRS):
+            crs = arg # nothing to do
+        elif isinstance(arg,basestring):
             if kwargs:
                 for key,value in kwargs.items():
                     arg += ' +{:s}={}'.format(key,value)
@@ -54,6 +57,27 @@ def genProj(*args,**kwargs):
 
     # return a rasterio CRS instance (should be based on GDAL CRS)
     return crs
+
+
+def constructCoords(geotrans, size, dtype='float32'):
+    ''' construct coordinate arrays from geotransform and size; coordiantes are centered w.r.t. pixels '''
+    
+    # use GDAL conventions
+    if isinstance(geotrans,rio.transform.Affine):
+        geotrans = geotrans.to_gdal()
+    # can't handle tilted axes
+    if geotrans[2] != 0 or geotrans[4] != 0:
+        raise NotImplementedError(geotrans)
+    
+    # compute x/lon
+    xlon = np.arange(size[0], dtype=np.dtype(dtype))
+    xlon *= geotrans[1]; xlon += geotrans[0] + geotrans[1]/2.
+    # compute y/lat
+    ylat = np.arange(size[1], dtype=np.dtype(dtype)) 
+    ylat *= geotrans[5]; ylat += geotrans[3] + geotrans[5]/2.
+    
+    # return numpy arrays     
+    return xlon,ylat
 
 
 ## functions for Dask execution
@@ -204,6 +228,7 @@ dummy_array = np.zeros((1,1,1), dtype=np.int8)
 def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_geotrans=None, src_size=None, 
                       tgt_crs=None, tgt_geotrans=None, tgt_size=None, mode='raster2D', resampling='bilinear',
                       filepath=None, time_coord=None, driver='AAIGrid',missing_value=0., missing_flag=-9999.,
+                      ncvar=None,
                       lecho=True, loverwrite=True, return_dummy=dummy_array):
     ''' a function for use with Dask lazy execution that regrids an array and exports/writes the results 
         to either NetCDF or any GDAL/rasterio raster format; the array has to be chunked in a way that  
@@ -225,17 +250,21 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
         #print(time_chunk)
         write_time_rasters(filepath, data, time_coord=time_chunk, driver=driver, crs=tgt_crs, 
                            transform=tgt_geotrans, missing_value=missing_value, missing_flag=missing_flag, 
-                           lecho=lecho, loverwrite=loverwrite)    
+                           lecho=lecho, loverwrite=loverwrite)
+    elif mode.upper() == 'NETCDF':
+        # append to existing NetCDF variable
+        ncvar[ts:ts,:,:] = data
     else:
-        raise NotImplementedError
+        raise NotImplementedError(mode)
     
     # return a small dummy array, because we need to return something array-like
     return return_dummy
 
 
-def generate_regrid_and_export(xvar, tgt_crs=None, tgt_geotrans=None, tgt_size=None, time_coord='time',
-                               mode='raster2D', resampling='bilinear', filepath=None, driver='AAIGrid',
-                               missing_value=0., missing_flag=-9999., lecho=True, loverwrite=True,):
+def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=None, filename=None,
+                               tgt_crs=None, tgt_geotrans=None, tgt_size=None, resampling='bilinear', 
+                               driver='AAIGrid', missing_value=0., missing_flag=-9999., 
+                               lecho=True, loverwrite=True,):
     ''' a function that returns another function, which is suitable for regridding and direct export to disk 
         using Dask lazy execution; some parameters can be inferred from xarray attributes '''
     
@@ -268,6 +297,19 @@ def generate_regrid_and_export(xvar, tgt_crs=None, tgt_geotrans=None, tgt_size=N
                          "\n however, the horizontal dimensions appear to be chunked:\n {}".format(xvar.chunks) +
                          "\n Consider using the 'rechunkTo2Dslices' function to fix chunking.")
     
+    # create folder
+    filepath = osp.join(folder,filename)
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+#     # also create the NetCDF file/dataset/variable, if necessary
+#     if mode.upper() == 'NETCDF':
+#         
+#         # create variable, if necessary
+#         if xvar.name in ncds.variables:
+#             ncvar = ncds.variables[xvar.name]
+#         else:
+#             pass
+
     # define options for dask execution
     time_chunks = np.concatenate([[0],np.cumsum(xvar.chunks[0][:-1], dtype=np.int)])
     dummy_array = np.zeros((1,1,1), dtype=np.int8)
@@ -276,6 +318,7 @@ def generate_regrid_and_export(xvar, tgt_crs=None, tgt_geotrans=None, tgt_size=N
                                  tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
                                  mode=mode, resampling=resampling, filepath=filepath, time_coord=time_coord, 
                                  driver=driver,missing_value=missing_value, missing_flag=missing_flag,
+                                 ncvar=ncvar,
                                  lecho=lecho, loverwrite=loverwrite, return_dummy=dummy_array)
     
     # return function with dummy array (for measure)
