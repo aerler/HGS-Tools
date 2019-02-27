@@ -317,8 +317,10 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
             shp = xvar.shape[:-2]+tgt_size[::-1]
             ncvar = add_var(ncds, name=xvar.name, dims=dims, data=None, shape=shp, 
                             atts=xvar.attrs.copy(), dtype=xvar.dtype, zlib=True,)
+        dataset = ncds 
     else:
         ncvar = None
+        dataset = folder
 
     # define options for dask execution
     time_chunks = np.concatenate([[0],np.cumsum(xvar.chunks[0][:-1], dtype=np.int)])
@@ -331,7 +333,7 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
                                  lecho=lecho, loverwrite=loverwrite, return_dummy=dummy_array)
     
     # return function with dummy array (for measure)
-    return dask_fct, dummy_array
+    return dask_fct,dummy_array,dataset
 
 
 if __name__ == '__main__':

@@ -85,7 +85,7 @@ if __name__ == '__main__':
     ## fast test config
     project = 'SON'
     loverwrite = True
-    start_date = '2011-01-01'; end_date = '2011-02-01'
+    start_date = '2014-01-01'; end_date = '2014-02-01'
     grid_name  = 'son1'
     ## operational test config
 #     loverwrite = True
@@ -105,7 +105,7 @@ if __name__ == '__main__':
     inc_file = 'precip.inc'
 
     ## define target data/projection
-    resampling = 'bilinear'
+    resampling = 'nearest'
     # projection/UTM zone
     if project == 'SnoDAS':
         tgt_crs = None # native grid
@@ -134,14 +134,14 @@ if __name__ == '__main__':
     ## define source data
     # SnoDAS
     dataset = 'SnoDAS'
-#     varname = 'liqwatflx'; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
-    varname = 'snow'; scalefactor = 1.
+    varname = 'liqwatflx'; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
+#     varname = 'snow'; scalefactor = 1.
     # get dataset
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
     xds = ds_mod.loadDailyTimeSeries(varname=varname, time_chunks=2)
     
     ## define export parameters
-    mode = 'NetCDF'
+    mode = 'raster2D'
     raster_format = None
     if mode.lower() == 'raster2d':
         root_folder = '{:s}/{:s}/{:s}/'.format(os.getenv('HGS_ROOT'),project,grid_name)
@@ -226,12 +226,12 @@ if __name__ == '__main__':
 
    
     # generate dask execution function
-    dask_fct,dummy = generate_regrid_and_export(xvar, time_coord=time_coord,
+    dask_fct,dummy,dataset = generate_regrid_and_export(xvar, time_coord=time_coord,
                                                 tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
                                                 mode=mode, resampling=resampling, 
                                                 folder=target_folder, filename=filename, driver=raster_format,
                                                 lecho=True, loverwrite=loverwrite,)
-      
+              
     # now map regridding operation to blocks
     n_loads = len(xvar.chunks[0])
     dummy_output = xvar.data.map_blocks(dask_fct, chunks=dummy.shape, dtype=dummy.dtype)
@@ -253,6 +253,8 @@ if __name__ == '__main__':
     print(dummy_output)
     print("Size in memory: {} MB\n".format(dummy_output.nbytes/1024./1024.))
 
+    if mode.upper() == 'NETCDF':
+        dataset.close()
     
     end = time()
     print("\n***   Completed in {:.2f} seconds   ***\n".format(end-start))
