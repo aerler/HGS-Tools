@@ -253,7 +253,7 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
                            lecho=lecho, loverwrite=loverwrite)
     elif mode.upper() == 'NETCDF':
         # append to existing NetCDF variable
-        ncvar[ts:ts,:,:] = data
+        ncvar[ts:te,:,:] = data
     else:
         raise NotImplementedError(mode)
     
@@ -301,24 +301,33 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
     filepath = osp.join(folder,filename)
     if not os.path.exists(folder):
         os.makedirs(folder)
-#     # also create the NetCDF file/dataset/variable, if necessary
-#     if mode.upper() == 'NETCDF':
-#         
-#         # create variable, if necessary
-#         if xvar.name in ncds.variables:
-#             ncvar = ncds.variables[xvar.name]
-#         else:
-#             pass
+        
+    # also create the NetCDF file/dataset/variable, if necessary
+    if mode.upper() == 'NETCDF':
+        
+        from netcdf_tools import createGeoNetCDF, add_var
+        ncds = createGeoNetCDF(filepath, time=time_coord, crs=tgt_crs, geotrans=tgt_geotrans, size=tgt_size, 
+                               zlib=True, loverwrite=loverwrite)
+        
+        # create variable, if necessary
+        if xvar.name in ncds.variables:
+            ncvar = ncds.variables[xvar.name]
+        else:
+            dims = xvar.dims[:-2]+(ncds.ylat,ncds.xlon) # geographic dimensions need to be replaced
+            shp = xvar.shape[:-2]+tgt_size[::-1]
+            ncvar = add_var(ncds, name=xvar.name, dims=dims, data=None, shape=shp, 
+                            atts=xvar.attrs.copy(), dtype=xvar.dtype, zlib=True,)
+    else:
+        ncvar = None
 
     # define options for dask execution
     time_chunks = np.concatenate([[0],np.cumsum(xvar.chunks[0][:-1], dtype=np.int)])
     dummy_array = np.zeros((1,1,1), dtype=np.int8)
-    dask_fct = functools.partial(regrid_and_export, time_chunks=time_chunks,  
+    dask_fct = functools.partial(regrid_and_export, time_chunks=time_chunks, resampling=resampling,   
                                  src_crs=src_crs, src_geotrans=src_geotrans, src_size=src_size, 
                                  tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
-                                 mode=mode, resampling=resampling, filepath=filepath, time_coord=time_coord, 
-                                 driver=driver,missing_value=missing_value, missing_flag=missing_flag,
-                                 ncvar=ncvar,
+                                 mode=mode, filepath=filepath, time_coord=time_coord, ncvar=ncvar,
+                                 driver=driver,missing_value=missing_value, missing_flag=missing_flag,                                 
                                  lecho=lecho, loverwrite=loverwrite, return_dummy=dummy_array)
     
     # return function with dummy array (for measure)

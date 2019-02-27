@@ -372,8 +372,9 @@ def createGeoNetCDF(filename, atts=None, folder=None, xlon=None, ylat=None, time
             raise NotImplementedError(time)
         # add time axis and time stamps based on datetime64
         kwargs = dict(name=time_axis, atts=time_atts, ltimestamp=True, zlib=zlib)
-        kwargs.update(time_args)
-        add_time_coord(ds, time_coord, **kwargs)
+        if time_args: kwargs.update(time_args)
+        if kwargs['name'] not in ds.variables or loverwrite:
+            add_time_coord(ds, time_coord, **kwargs)
         
     ## construct geographic coordinate axes from xarray or GDAL/rasterio georeference
         
@@ -381,8 +382,7 @@ def createGeoNetCDF(filename, atts=None, folder=None, xlon=None, ylat=None, time
     if crs is None:
         raise NotImplementedError
     crs = genProj(crs)
-    lproj = crs.is_projected
-    
+    lproj = crs.is_projected    
     # construct coordinate axes
     if not xlon and not ylat:
         xlon,ylat = ('x','y') if lproj else ('lon','lat')
@@ -390,16 +390,19 @@ def createGeoNetCDF(filename, atts=None, folder=None, xlon=None, ylat=None, time
     xlon_coord,ylat_coord = constructCoords(geotrans, size, dtype=netcdf_dtype)    
     
     # latitude (intermediate/regular dimension)
-    yatts = varatts[ylat] 
-    dtype = yatts.get('dtype',netcdf_dtype)
-    add_coord(ds, yatts['name'], data=ylat_coord, length=size[1], atts=yatts, dtype=dtype, zlib=zlib)
+    yatts = varatts[ylat]; yname = yatts['name']
+    if yname not in ds.variables or loverwrite: 
+        dtype = yatts.get('dtype',netcdf_dtype)
+        add_coord(ds, yname, data=ylat_coord, length=size[1], atts=yatts, dtype=dtype, zlib=zlib)
     # longitude is typically the inner-most dimension (continuous)
-    xatts = varatts[xlon]
-    dtype = xatts.get('dtype',netcdf_dtype)
-    add_coord(ds, xatts['name'], data=xlon_coord, length=size[0], atts=xatts, dtype=dtype, zlib=zlib)
+    xatts = varatts[xlon]; xname = xatts['name']
+    if xname not in ds.variables or loverwrite: 
+        dtype = xatts.get('dtype',netcdf_dtype)
+        add_coord(ds, xname, data=xlon_coord, length=size[0], atts=xatts, dtype=dtype, zlib=zlib)
     
     ## save attributes, including georeferencing information
-    atts = coerceAtts(atts)
+    if atts is None: atts = dict()
+    else: atts = coerceAtts(atts)
     atts['xlon'] = xlon; atts['ylat'] = ylat
     atts['proj4'] = crs.to_string(); atts['is_projected'] = str(lproj)
     for key,value in atts.items():

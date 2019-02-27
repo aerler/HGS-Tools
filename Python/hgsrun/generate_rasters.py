@@ -105,9 +105,7 @@ if __name__ == '__main__':
     inc_file = 'precip.inc'
 
     ## define target data/projection
-    root_folder = '{:s}/{:s}/{:s}/'.format(os.getenv('HGS_ROOT'),project,grid_name)
-    raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
-    raster_format = 'AAIGrid'
+    resampling = 'bilinear'
     # projection/UTM zone
     if project == 'SnoDAS':
         tgt_crs = None # native grid
@@ -138,13 +136,29 @@ if __name__ == '__main__':
     dataset = 'SnoDAS'
 #     varname = 'liqwatflx'; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
     varname = 'snow'; scalefactor = 1.
-    filename_pattern = raster_name.format(dataset=dataset.lower(), variable=varname.lower(),
-                                          grid=grid_name.lower(), date='{:s}') # no date for now...
-    print("\n***   Exporting '{}' from '{}' to raster format {}   ***\n".format(varname,dataset,raster_format))
-    
-    ## get dataset
+    # get dataset
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
     xds = ds_mod.loadDailyTimeSeries(varname=varname, time_chunks=2)
+    
+    ## define export parameters
+    mode = 'NetCDF'
+    raster_format = None
+    if mode.lower() == 'raster2d':
+        root_folder = '{:s}/{:s}/{:s}/'.format(os.getenv('HGS_ROOT'),project,grid_name)
+        raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
+        raster_format = 'AAIGrid'
+        # define export name
+        filename = raster_name.format(dataset=dataset.lower(), variable=varname.lower(),
+                                      grid=grid_name.lower(), date='{:s}') # no date for now...
+        print("\n***   Exporting '{}' from '{}' to raster format {}   ***\n".format(varname,dataset,raster_format))
+    elif mode.upper() == 'NETCDF':
+        root_folder = ds_mod.daily_folder
+        filename = ds_mod.netcdf_filename.format('{:s}_{:s}'.format(varname.lower(),grid_name))
+        print("\n***   Regridding '{}' from '{}' to '{}' (NetCDF format)   ***\n".format(varname,dataset,grid_name))
+    else:
+        raise NotImplementedError
+    
+    
     # get georeference
     src_crs = getProj(xds)
     if tgt_crs is None: tgt_crs = src_crs
@@ -178,17 +192,17 @@ if __name__ == '__main__':
         if not osp.exists(target_folder): os.mkdir(target_folder)
     except (WindowsError,OSError):
         os.makedirs(target_folder)
-    filepath_pattern = target_folder + filename_pattern
-    
+   
     
     ## generate inc file
-    start_inc = time()
-    inc_filepath = target_folder+inc_file
-    print("\nWriting HGS include file:\n '{:s}'\n".format(inc_filepath))
-    writeIncFile(filepath=inc_filepath, time_coord=time_coord, 
-                  filename_pattern=filename_pattern, date_fmt='%Y%m%d')
-    end_inc = time()
-    print("Timing to write include file: {} seconds\n".format(end_inc-start_inc))
+    if mode.lower() == 'raster2d':
+        start_inc = time()
+        inc_filepath = target_folder+inc_file
+        print("\nWriting HGS include file:\n '{:s}'\n".format(inc_filepath))
+        writeIncFile(filepath=inc_filepath, time_coord=time_coord, 
+                      filename_pattern=filename, date_fmt='%Y%m%d')
+        end_inc = time()
+        print("Timing to write include file: {} seconds\n".format(end_inc-start_inc))
         
     if not lexec: exit()
            
@@ -196,7 +210,10 @@ if __name__ == '__main__':
     # generate workload for lazy execution
     start_load = time()
     print("\n***   Constructing Workload from {} to {}.   ***\n".format(start_date,end_date))
-    print("Output folder: '{}'\nRaster pattern: '{}'\n".format(target_folder,filename_pattern)) 
+    if mode.lower() == 'raster2d':
+        print("Output folder: '{}'\nRaster pattern: '{}'\n".format(target_folder,filename))
+    elif mode.upper() == 'NETCDF':
+        print("NetCDF file: '{}'\n".format(osp.join(target_folder,filename)))        
      
     # explicitly determine chunking to get complete 2D lat/lon slices
     xvar = rechunkTo2Dslices(xvar)    
@@ -211,9 +228,9 @@ if __name__ == '__main__':
     # generate dask execution function
     dask_fct,dummy = generate_regrid_and_export(xvar, time_coord=time_coord,
                                                 tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
-                                                mode='raster2D', resampling='bilinear', filepath=filepath_pattern,  
-                                                driver='AAIGrid',missing_value=0., missing_flag=-9999.,
-                                                lecho=True, loverwrite=True,)
+                                                mode=mode, resampling=resampling, 
+                                                folder=target_folder, filename=filename, driver=raster_format,
+                                                lecho=True, loverwrite=loverwrite,)
       
     # now map regridding operation to blocks
     n_loads = len(xvar.chunks[0])
