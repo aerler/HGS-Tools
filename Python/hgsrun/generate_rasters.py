@@ -141,7 +141,7 @@ if __name__ == '__main__':
     xds = ds_mod.loadDailyTimeSeries(varname=varname, time_chunks=2)
     
     ## define export parameters
-    mode = 'raster2D'
+    mode = 'NetCDF'
     raster_format = None
     if mode.lower() == 'raster2d':
         root_folder = '{:s}/{:s}/{:s}/'.format(os.getenv('HGS_ROOT'),project,grid_name)

@@ -10,13 +10,14 @@ import functools
 import os
 import os.path as osp
 import numpy as np
+from six import string_types # for testing string in Python 2 and 3
 import pandas as pd
 import rasterio as rio
 
 # prevent failue if xarray is not installed
 try: 
     from xarray import DataArray
-    from xarray_tools import getTransform, isGeoCRS, getProj
+    from geospatial.xarray_tools import getTransform, isGeoCRS, getProj
 except: 
     DataArray = NotImplemented
     getTransform  = NotImplemented
@@ -34,7 +35,7 @@ def genProj(*args,**kwargs):
         arg = args[0]
         if isinstance(arg,rio.crs.CRS):
             crs = arg # nothing to do
-        elif isinstance(arg,basestring):
+        elif isinstance(arg,string_types):
             if kwargs:
                 for key,value in kwargs.items():
                     arg += ' +{:s}={}'.format(key,value)
@@ -123,7 +124,7 @@ def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampli
         tgt_data = np.zeros(tgt_shp)
     
     # prepare reprojection
-    if isinstance(resampling,basestring):
+    if isinstance(resampling,string_types):
         resampling = getattr(rio.warp.Resampling,resampling)
     # do GDAL reprojection
     rio.warp.reproject(src_data, tgt_data, src_transform=src_transform, src_crs=src_crs,
@@ -185,7 +186,7 @@ def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', mis
         # write data
         if missing_flag is None: missing_flag = missing_value
         with rio.open(filename, mode='w', driver=driver, crs=crs, transform=transform,
-                      width=width, height=height, count=count, dtype=str(data.dtype), nodata=missing_value) as dst:
+                      width=width, height=height, count=count, dtype=str(data.dtype), nodata=missing_flag) as dst:
             if count == 1:
                 dst.write(data,1) # GDAL/rasterio bands are one-based
             else:
@@ -305,7 +306,7 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
     # also create the NetCDF file/dataset/variable, if necessary
     if mode.upper() == 'NETCDF':
         
-        from netcdf_tools import createGeoNetCDF, add_var
+        from geospatial.netcdf_tools import createGeoNetCDF, add_var
         ncds = createGeoNetCDF(filepath, time=time_coord, crs=tgt_crs, geotrans=tgt_geotrans, size=tgt_size, 
                                zlib=True, loverwrite=loverwrite)
         

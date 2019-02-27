@@ -125,7 +125,7 @@ def getTransform(xvar=None, x=None, y=None, lcheck=True):
 def getProj(xvar, lraise=True):
     ''' infer projection from a xarray Dataset or DataArray; this function assumes that either a proj4 string or
         an EPSG designation is stored in the attributes of the dataset/variable. '''
-    from rasterio_tools import genProj # used to generate CRS object
+    from geospatial.rasterio_tools import genProj # used to generate CRS object
     
     if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
         if lraise:

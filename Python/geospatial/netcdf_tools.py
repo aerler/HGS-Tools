@@ -37,7 +37,7 @@ class NCAxisError(Exception):
 # prevent failue if xarray is not installed
 try: 
     from xarray import DataArray
-    from xarray_tools import getTransform, isGeoCRS, getProj
+    from geospatial.xarray_tools import getTransform, isGeoCRS, getProj
 except: 
     DataArray = NotImplemented
     getTransform  = NotImplemented
@@ -125,7 +125,7 @@ def add_var(dst, name, dims, data=None, shape=None, atts=None, dtype=None, zlib=
     
     # use data array to infer dimensions and data type
     if data is not None:
-        if not isinstance(data,np.ndarray): raise TypeError     
+        if not isinstance(data,np.ndarray): raise TypeError(data)  
         if len(dims) != data.ndim: 
             raise NCDataError("Number of dimensions in '{:s}' does not match data array.".format(name,))
         if shape: 
@@ -136,7 +136,7 @@ def add_var(dst, name, dims, data=None, shape=None, atts=None, dtype=None, zlib=
         if dtype: 
             if dtype != data.dtype: data = data.astype(dtype)
         else: dtype = data.dtype
-    if dtype is None: raise NCDataError, "Cannot construct a NetCDF Variable without a data array or an abstract data type."
+    if dtype is None: raise NCDataError("Cannot construct a NetCDF Variable without a data array or an abstract data type.")
     dtype = np.dtype(dtype) # use numpy types
     if dtype is np.dtype('bool_'): dtype = np.dtype('i1') # cast numpy bools as 8-bit integers
     
@@ -145,7 +145,7 @@ def add_var(dst, name, dims, data=None, shape=None, atts=None, dtype=None, zlib=
     else: shape = list(shape)
     if len(shape) != len(dims): 
         raise NCAxisError(shape)
-    for i,dim in zip(xrange(len(dims)),dims):
+    for i,dim in zip(range(len(dims)),dims):
         if dim in dst.dimensions:
           if shape[i] is None: 
               shape[i] = len(dst.dimensions[dim])
@@ -316,7 +316,7 @@ def add_time_coord(dst, data, name=None, units='D', atts=None, ts_atts=None, dat
             ts_atts['long_name'] = "Human-readable Time Stamp"
             ts_atts['units'] = ''        
         add_var(dst, name+'_stamp', dims=(name,), data=ts_data, shape=(len(data),), 
-                atts=ts_atts, dtype=np.dtype('S'), zlib=zlib, **kwargs) # time-stamp
+                atts=ts_atts, dtype=np.dtype('U'), zlib=zlib, **kwargs) # time-stamp
         
     # return dataset handle
     return dst
@@ -337,7 +337,7 @@ def createGeoNetCDF(filename, atts=None, folder=None, xlon=None, ylat=None, time
                     nc_format='NETCDF4', zlib=True, loverwrite=True):
     ''' create a NetCDF-4 file, create dimensions and geographic coordinates, and set attributes '''
     
-    from rasterio_tools import genProj, constructCoords
+    from geospatial.rasterio_tools import genProj, constructCoords
     
     # create Dataset/file    
     if folder:
