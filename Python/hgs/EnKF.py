@@ -123,16 +123,16 @@ def loadEnKF_StnTS(folder=None, varlist='all', varatts=None, name='enkf', title=
     out_folder = os.path.join(folder,'out/') # default output folder
     if not os.path.exists(out_folder): raise IOError(out_folder)
     # default values
-    if isinstance(varlist,basestring) and varlist == 'hydro': 
+    if isinstance(varlist,str) and varlist == 'hydro': 
         varlist = Hydro.varlist
-    elif isinstance(varlist,basestring) and varlist == 'obs': 
+    elif isinstance(varlist,str) and varlist == 'obs': 
         varlist = Obs.varlist
-    elif isinstance(varlist,basestring) and varlist == 'all':
+    elif isinstance(varlist,str) and varlist == 'all':
         varlist = Hydro.varlist + Obs.varlist
     elif not isinstance(varlist,(tuple,list)): 
         raise TypeError(varlist)
     if varatts is None: varatts = variable_attributes.copy()
-    varmap = {varatt['name']:enkf_name for enkf_name,varatt in varatts.items()} 
+    varmap = {varatt['name']:enkf_name for enkf_name,varatt in list(varatts.items())} 
     varlist = [varmap[var] for var in varlist]
     # load WSC station meta data
     pass 
@@ -144,7 +144,7 @@ def loadEnKF_StnTS(folder=None, varlist='all', varatts=None, name='enkf', title=
         # load data
         vardata = loadObs(varlist=[var for var in varlist if var in Obs.atts], 
                           folder=out_folder, lpandas=False)
-        ntime,nobs,nreal = vardata.values()[0].shape
+        ntime,nobs,nreal = list(vardata.values())[0].shape
         # create Axes
         if time is None:
             # figure out time axis
@@ -163,7 +163,7 @@ def loadEnKF_StnTS(folder=None, varlist='all', varatts=None, name='enkf', title=
         elif len(observation) != nobs:
             raise AxisError(observation)
         # create variables
-        for varname,data in vardata.items():
+        for varname,data in list(vardata.items()):
             dataset += Variable(atts=varatts[varname], data=data, axes=(time,observation,ensemble))
         # load YAML data, if available
         if lYAML:
@@ -174,8 +174,8 @@ def loadEnKF_StnTS(folder=None, varlist='all', varatts=None, name='enkf', title=
                 obs_meta = yaml.load(yf)
             if obs_meta is None: raise IOError(yaml_path) # not a YAML file? 
             # constant create variables            
-            for cvar,cval in obs_meta[0].items():
-                if isinstance(cval,basestring): dtype,missing = np.string_,''
+            for cvar,cval in list(obs_meta[0].items()):
+                if isinstance(cval,str): dtype,missing = np.string_,''
                 elif isinstance(cval, (np.integer,int)): dtype,missing = np.int_,0
                 elif isinstance(cval, (np.inexact,float)): dtype,missing = np.float_,np.NaN
                 else: dtype = None # skip
@@ -224,7 +224,7 @@ def loadKister_StnTS(station=None, well=None, folder=None, varlist='default', va
     ''' load EnKF ensemble data as formatted GeoPy Dataset '''
     if folder and not os.path.exists(folder): raise IOError(folder)
     # default values
-    if isinstance(varlist,basestring) and varlist == 'default':
+    if isinstance(varlist,str) and varlist == 'default':
         varlist = [] 
         if station: varlist += ['discharge']
         if well: varlist += ['head']

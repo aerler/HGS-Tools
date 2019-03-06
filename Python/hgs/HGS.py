@@ -208,7 +208,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
   expargs = dict(ROOT_FOLDER=root_folder, STATION=name_tag, WELL=name_tag, NAME=name, TITLE=title,
                  BASIN=basin, WSC_STATION=WSC_station)
   for key,value in metadata.items():
-      if isinstance(value,basestring):
+      if isinstance(value,str):
           expargs[meta_pfx+key.upper()] = value # in particular, this includes WSC_ID
   if 'WSC_ID' in expargs: 
       if expargs['WSC_ID'][0] == '0': expargs['WSC_ID0'] = expargs['WSC_ID'][1:]
@@ -311,9 +311,9 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
   elif well is not None: 
       offset = 0 # observation wells have different time stamps
   else: raise GageStationError(variable_order)
-  if isinstance(varlist,basestring) and varlist.lower() == 'all': 
+  if isinstance(varlist,str) and varlist.lower() == 'all': 
       varlist = variable_order[:] # load all in the file
-  elif varlist is None or ( isinstance(varlist,basestring) and varlist.lower() == 'default' ): 
+  elif varlist is None or ( isinstance(varlist,str) and varlist.lower() == 'default' ): 
       varlist = [varname for varname in variable_attributes_mms.keys() if varname in variable_order] # load all that are known
       varlist += [varname for varname in constant_attributes.keys() if varname in variable_order] # load all constants
   else:
@@ -330,8 +330,8 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
   # load vardata as tab separated values
   if well:
       # resolve layers
-      if isinstance(layers,basestring) and z_layers is None: z_layers = layers
-      if isinstance(z_layers,basestring):
+      if isinstance(layers,str) and z_layers is None: z_layers = layers
+      if isinstance(z_layers,str):
           if z_layers.lower() == 'screen':
               if 'z_t' in metadata and 'z_b' in metadata:
                   if 'Screen' not in metadata and 'screen' not in metadata and 'SCREEN' not in metadata: 
@@ -544,7 +544,7 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
 def gridDataset(dataset, griddef=None, basin=None, subbasin=None, shape_file=None,  
                 basin_list=None, grid_folder=None, **kwargs):
   ''' interpolate nodal/elemental datasets to a regular grid, add GDAL, and mask to basin outlines '''
-  if isinstance(griddef,basestring): 
+  if isinstance(griddef,str): 
       if grid_folder is None: grid_folder = common_grid_folder  
       griddef = loadPickledGridDef(grid=griddef, folder=grid_folder)
   elif not isinstance(griddef,GridDefinition):
@@ -640,7 +640,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   # prepare name expansion arguments (all capitalized)
   expargs = dict(ROOT_FOLDER=root_folder, NAME=name, TITLE=title, BASIN=basin,)
   for key,value in metadata.items():
-      if isinstance(value,basestring): expargs[key.upper()] = value 
+      if isinstance(value,str): expargs[key.upper()] = value 
   # exparg preset keys will get overwritten if capitalized versions are defined
   for key,value in kwargs.items():
     KEY = key.upper() # we only use capitalized keywords, and non-capitalized keywords are only used/converted
@@ -830,7 +830,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       # add 3D element coordinates
       if lelem3D:
           elem_pm  = reader.read_elements(domain='pm')
-          nlay = len(elem_pm)/nelem
+          nlay = len(elem_pm)//nelem
           assert nelem*nlay == len(elem_pm) 
           assert nlay+1 == se # there is one extra sheet 
           layer_ax = Axis(coord=np.arange(1,nlay+1), **constatts['layer'])
@@ -916,14 +916,14 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
               fct_name = aa['function']; _locals = globals()
               if fct_name in _locals:
                   fct = _locals[fct_name]
-                  args = {key:deplist[key] for key in inspect.getargs(fct.func_code)[0] if key in deplist}
+                  args = {key:deplist[key] for key in inspect.getargs(fct.__code__)[0] if key in deplist}
                   data = fct(**args).squeeze()
                   if linterp:
                       if l3d: data = reader.interpolate_node2element(data, elements=elem_pm, lpd=False)
                       else: data = reader.interpolate_node2element(data, elements=elem_olf_offset, lpd=False)
               elif hasattr(reader, fct_name):
                   fct = getattr(reader,fct_name)
-                  args = {key:deplist[key] for key in inspect.getargs(fct.func_code)[0] if key in deplist}
+                  args = {key:deplist[key] for key in inspect.getargs(fct.__code__)[0] if key in deplist}
                   df = fct(**args)                  
                   if l3d: 
                       if linterp:
@@ -981,10 +981,10 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   # now remove all unwanted variables...
   if lstrip:
       # clean up variables
-      for var in dataset.variables.keys():
+      for var in list(dataset.variables.keys()):
           if var not in final_varlist: dataset.removeVariable(var)
       # clean up axes
-      for ax in dataset.axes.keys():
+      for ax in list(dataset.axes.keys()):
           if ax not in final_varlist: dataset.removeAxis(ax, force=False) 
           # N.B.: force=False means only remove unused axes
   
@@ -1041,8 +1041,8 @@ if __name__ == '__main__':
 
 
 #   test_mode = 'gage_station'
-#   test_mode = 'dataset_regrid'
-  test_mode = 'binary_dataset'
+  test_mode = 'dataset_regrid'
+#   test_mode = 'binary_dataset'
 #   test_mode = 'time_axis'
 #   test_mode = 'station_dataset'
 #   test_mode = 'station_ensemble'
@@ -1077,8 +1077,8 @@ if __name__ == '__main__':
     print('')
     print(dataset)
     print('')
-    print(dataset.dflx)
-    print(dataset.dflx[2,15,:])
+    print((dataset.dflx))
+    print((dataset.dflx[2,15,:]))
     
   
   elif test_mode == 'binary_dataset':
@@ -1096,28 +1096,28 @@ if __name__ == '__main__':
                       basin=basin_name, basin_list=basin_list, lkgs=False, )
     # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
     toc = timer()
-    print(toc-tic)
+    print((toc-tic))
     # and print
     print('')
     print(dataset)
-    print(dataset.atts.HGS_folder)
+    print((dataset.atts.HGS_folder))
     print('')
-    print(dataset.model_time)
-    print(dataset.model_time[:])
+    print((dataset.model_time))
+    print((dataset.model_time[:]))
     # inspect layers and depth
     if dataset.hasAxis('layer'):
         print('')
-        print(dataset.layer)
-        print(dataset.layer[:])
+        print((dataset.layer))
+        print((dataset.layer[:]))
     if 'z_elm' in dataset and 'zs_elm' in dataset:
         d0 = dataset.zs_elm - dataset.z_elm(layer=dataset.layer.max())
         print(d0)
-        print(d0.min(),d0.mean(),d0.max())
+        print((d0.min(),d0.mean(),d0.max()))
     if vecvar in dataset:
         print('')
         vec = dataset[vecvar].mean(axis=('element','time'))
         print(vec)
-        print(vec[:])
+        print((vec[:]))
 
   
   elif test_mode == 'time_axis':
@@ -1135,19 +1135,19 @@ if __name__ == '__main__':
     # and print
     print(dataset)
     print('')
-    print(dataset.name)
-    print(dataset.prettyPrint(short=True))
+    print((dataset.name))
+    print((dataset.prettyPrint(short=True)))
     
     # view time axis
     print('')
-    print(dataset.time)
-    print(dataset.time[:])
+    print((dataset.time))
+    print((dataset.time[:]))
 
     # some variable
     if 'discharge' in dataset:
         print('')
-        print(dataset.discharge)
-        print(dataset.discharge.plot)
+        print((dataset.discharge))
+        print((dataset.discharge.plot))
 
 #     # test climatology... currently only works with month
 #     print('')
@@ -1169,8 +1169,8 @@ if __name__ == '__main__':
     # and print
     print(dataset)
     print('')
-    print(dataset.name)
-    print(dataset.prettyPrint(short=True))
+    print((dataset.name))
+    print((dataset.prettyPrint(short=True)))
     
     # some common operations
     print('')
@@ -1179,9 +1179,9 @@ if __name__ == '__main__':
     if dataset.hasAxis('z'):
         print('')
         #print(dataset.x[:],dataset.y[:],)
-        print(dataset.z[:])
+        print((dataset.z[:]))
         assert dataset.z.units == 'm', dataset.z
-        print("Screen Interval: {}m - {}m".format(dataset.atts.z_b,dataset.atts.z_t))
+        print(("Screen Interval: {}m - {}m".format(dataset.atts.z_b,dataset.atts.z_t)))
     
     if hgs_station == 'Station_GR_Brantford':
         test_results = np.asarray([24793.523584608138, 25172.635322536684, 39248.71087752686, 73361.80217956303, 64505.67974315114, 
@@ -1190,7 +1190,7 @@ if __name__ == '__main__':
         if not lkgs: test_results /= 1000.
         # test exact results
         if dataset.name == 'erai-g (GRW)':
-            print(clim.discharge[:])
+            print((clim.discharge[:]))
             assert np.allclose(clim.discharge[:], test_results)
     #     print(clim.sfroff[:]*86400)
 
@@ -1222,4 +1222,4 @@ if __name__ == '__main__':
     # N.B.: all need to have unique names... whihc is a problem with obs...
     print(ens)
     print('\n')
-    print(ens[-1])
+    print((ens[-1]))

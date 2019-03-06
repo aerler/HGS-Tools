@@ -23,10 +23,10 @@ from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 
 # internal imports
-from misc import interpolateIrregular, ArgumentError
+from hgs.misc import interpolateIrregular, ArgumentError
 
 __all__ = []
-__version__ = 0.2
+__version__ = '0.2'
 __date__ = '2018-11-09'
 __updated__ = '2018-11-10'
 
@@ -112,10 +112,10 @@ def main(argv=None):
             if varcol >= len(variable_list):
                 raise ArgumentError("Invalid colum index '{:d}': only {:d} columns present".format(varcol,len(variable_list)))
             variable = variable_list[varcol]
-        if lverbose: print("\nFound variable '{:s}' in column {:d}".format(variable,varcol))
+        if lverbose: print(("\nFound variable '{:s}' in column {:d}".format(variable,varcol)))
 
     # read hydrograph timeseries
-    if lverbose: print("\nLoading hydrograph/timeseries data from file:\n '{:s}'".format(filepath))
+    if lverbose: print(("\nLoading hydrograph/timeseries data from file:\n '{:s}'".format(filepath)))
     data = np.genfromtxt(filepath, dtype=np.float64, delimiter=None, skip_header=3, usecols = (0,varcol))
     assert data.shape[1] == 2, data.shape
     time = data[:,0]; flow = data[:,1:]
@@ -126,7 +126,7 @@ def main(argv=None):
     te = np.ceil( ( time_end - time_start ) / 86400. )
     time_resampled = np.arange(0,te+1)*86400
     if ldebug:
-        print("\nResampling timeseries to daily intervals (in seconds):\n "+repr(time_resampled))
+        print(("\nResampling timeseries to daily intervals (in seconds):\n "+repr(time_resampled)))
         # N.B.: the array elements represent the boundaries of averaging periods, 
         #       i.e. start and end of each day
     # call function to interpolate irregular HGS timeseries to regular daily timseries  
@@ -138,7 +138,7 @@ def main(argv=None):
     # output hydrograph timeseries resampled to daily output
     if daily_output:
         header = "file='{:s}'\nvariable='{:s}',column={:d}\nresampled to daily averages".format(filepath,variable,varcol)
-        if lverbose: print("\nSaving resampled daily timeseries to:\n '{:s}'".format(daily_output))
+        if lverbose: print(("\nSaving resampled daily timeseries to:\n '{:s}'".format(daily_output)))
         np.savetxt(daily_output, flow, delimiter=',', header=header, comments='#')
 
     ## count and output low-flow occurences and durations
@@ -157,8 +157,8 @@ def main(argv=None):
                 # reset counter
                 c = 0
         if ldebug:
-            print("Low flow occurences:\n "+repr(occurence))
-            print("Low flow durations:\n "+repr(duration))
+            print(("Low flow occurences:\n "+repr(occurence)))
+            print(("Low flow durations:\n "+repr(duration)))
         # header for low flow
         header = "Occurence and duration of flow below {}".format(lowflow)
     # N.B.: the code below is duplicated, to avoid unnecessary branching in the loop
@@ -177,8 +177,8 @@ def main(argv=None):
                 # reset counter
                 c = 0
         if ldebug:
-            print("High flow occurences:\n "+repr(occurence))
-            print("High flow durations:\n "+repr(duration))
+            print(("High flow occurences:\n "+repr(occurence)))
+            print(("High flow durations:\n "+repr(duration)))
         # header for low flow
         header = "Occurence and duration of high above {}".format(hiflow)
         
@@ -186,7 +186,7 @@ def main(argv=None):
         # save hi/low flow data to CSV file
         header += "\noccurence (day): line 1; duration (days): line 2"
         header += "\nsource='{:s}',variable='{:s}',column={:d},resampled to daily averages".format(filepath,variable,varcol)
-        if lverbose: print("\nSaving hi/low flow occurences and durations to:\n '{:s}'".format(duration_out))
+        if lverbose: print(("\nSaving hi/low flow occurences and durations to:\n '{:s}'".format(duration_out)))
         np.savetxt(duration_out, np.vstack((occurence,duration)), fmt='%d',
                    delimiter=',', header=header, comments='#')
                 
@@ -198,9 +198,9 @@ if __name__ == "__main__":
   
     # some meta data
     program_name = os.path.basename(sys.argv[0])
-    program_version = "v%s" % __version__
+    program_version = "v{:s}".format(__version__)
     program_build_date = str(__updated__)
-    program_version_message = '%%(prog)s %s (%s)' % (program_version, program_build_date)
+    program_version_message = '%(prog)s {:s} ({:s})'.format(program_version, program_build_date)
     program_shortdesc = __import__('__main__').__doc__.split("\n")[1]
     program_license = '''{:s}
 
@@ -247,7 +247,7 @@ OPTIONS
         except KeyboardInterrupt:
             ### handle keyboard interrupt ###
             sys.exit(0)
-        except Exception, e:
+        except Exception as e:
             indent = len(program_name) * " "
             sys.stderr.write(program_name + ": " + repr(e) + "\n")
             sys.stderr.write(indent + "  for help use --help\n")

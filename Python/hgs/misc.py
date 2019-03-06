@@ -30,7 +30,7 @@ class ParserError(IOError):
 # a function to resolve a data
 def convertDate(date):
   ''' convert a data into a common format '''
-  if isinstance(date, basestring):
+  if isinstance(date, str):
     date = pd.to_datetime(date)
     year = date.year; month = date.month; day = date.day
   elif isinstance(date, (tuple,list)):
@@ -146,7 +146,7 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
     # validate variables (variables with time-dependence)
     if variables is None: 
         ve = lv # process all columns
-        variables = range(lv)
+        variables = list(range(lv))
     elif isinstance(variables, (list,tuple)):
         ve = len(variables)
     elif isinstance(variables, (int,np.integer)):
@@ -170,7 +170,7 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
     if len(line[0]) != 2 or len(line[1]) != 2: ParserError((line,filepath))
     if "zone" not in line[0][0]: raise ParserError((line,filepath))
     if "solutiontime" not in line[1][0] : raise ParserError((line,filepath))
-    nlay = i - 3; te = (ln-2)/(nlay+1)
+    nlay = i - 3; te = (ln-2)//(nlay+1)
     assert (nlay+1)*te == ln-2, (ln,nlay,te)
     # convert z_layers to layers based on layer elevation
     if z_layers:
@@ -181,7 +181,7 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
         i_max = np.fabs(z-z_max).argmin()
         if layers is None:
             if i_min == i_max: layers = [i_min]
-            else: layers = range(i_min,i_max+1)
+            else: layers = list(range(i_min,i_max+1))
     if lelev: 
         z_s = z_list[-1]
         # N.B.: need to do this independently, because the returned z-vector will be sliced,
@@ -202,7 +202,7 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
     const = np.zeros((ce,le)) # variables that are not time-dependent
     # walk through lines and pick values
     line_iter = lines.__iter__() # return an iterator over all lines
-    line_iter.next(); line_iter.next() # discard first two lines
+    next(line_iter); next(line_iter) # discard first two lines
     # initialize first time-step 
     n = -1; k = nlay; te1 = te-1
     if layers: 
@@ -211,7 +211,7 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
         llayers = True
     else: llayers = False
     while n < te1 or k < nlay:
-      line = line_iter.next() # should work flawlessly, if I got the indices right...
+      line = next(line_iter) # should work flawlessly, if I got the indices right...
       if k == nlay:
           line = [l.strip().split('=') for l in line.lower().split(',')]
           assert len(line[0]) == 2 and len(line[1]) == 2, line
@@ -243,7 +243,7 @@ def parseObsWells(filepath, variables=None, constants=None, layers=None, z_layer
           k += 1
     # make sure we read all lines/time steps
     try: 
-      print(line_iter.next()) # this should raise a StopIteration exception
+      print((next(line_iter))) # this should raise a StopIteration exception
       raise ValueError("It appears the file was not read completely...")
     except StopIteration: pass # exception is right here
     # return array 

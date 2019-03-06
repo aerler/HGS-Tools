@@ -33,7 +33,7 @@ varatts = dict(h = dict(name='head', units='m', atts=dict(long_name='Pressure He
                screen_depth  = dict(name='screen_depth', units='m', atts=dict(long_name='Screen Depth')), # screen level depth...                
                screen_top    = dict(name='screen_top', units='m', atts=dict(long_name='Screen Top Depth')), # ... from the surface
                screen_bottom = dict(name='screen_bottom', units='m', atts=dict(long_name='Screen Bottom Depth')), 
-               elva_groun = dict(name='zs', units='m', atts=dict(long_name='Surface Elevation (M.S.L.)')), # surface elevation
+               zs         = dict(name='zs', units='m', atts=dict(long_name='Surface Elevation (M.S.L.)')), # surface elevation
                z_t        = dict(name='z_t', units='m', atts=dict(long_name='Screen Top Elevation (M.S.L.)')), # screen level elevation
                z_b        = dict(name='z_b', units='m', atts=dict(long_name='Screen Bottom Elevation (M.S.L.)')), # screen level elevation
                z          = dict(name='z', units='m', atts=dict(long_name='Screen/Sampling Elevation (M.S.L.)')), # elevation where the measurement is taken
@@ -123,7 +123,7 @@ loadShapeClimatology = None
 def getWellName(name):
   ''' helper function to break down well names into ID and number '''
   well_no = 1 # default, unless specified
-  if isinstance(name,basestring):
+  if isinstance(name,str):
       well = name.upper()
       if '.' in well:
           well = well.split('.')
@@ -207,7 +207,7 @@ def loadMetadata(well, filename='metadata.dbf', wellname='W{WELL_ID:07d}-{WELL_N
   table = DBF(filepath)
   meta = None
   for record in table:
-      if llistWells: print(record['PGMN_WELL'])
+      if llistWells: print((record['PGMN_WELL']))
       if record['PGMN_WELL'] == well: 
           meta = record.copy()
   if meta is None: 
@@ -253,11 +253,11 @@ if __name__ == '__main__':
     dataset = loadPGMN(conservation_authority=conservation_authority, period=period)
     print(dataset)
     print('')
-    print(dataset.time)
-    print(dataset.time.coord)
+    print((dataset.time))
+    print((dataset.time.coord))
     print('')
-    print(dataset.well_name)
-    print(dataset.well_name[:])
+    print((dataset.well_name))
+    print((dataset.well_name[:]))
 
   if mode == 'test_timeseries':
     
@@ -266,8 +266,8 @@ if __name__ == '__main__':
     dataset = loadPGMN_TS(well='W178', conservation_authority=conservation_authority)
     print(dataset)
     print('')
-    print(dataset.time)
-    print(dataset.time.coord)
+    print((dataset.time))
+    print((dataset.time.coord))
 #     print('')
 #     print(dataset.well_name)
 #     print(dataset.well_name[:])
@@ -299,20 +299,23 @@ if __name__ == '__main__':
           else: atts = dict(name=key, units='')
           if atts['units']: data = np.asarray([wmd[key] for wmd in meta_dicts], dtype=np.float64)
           else: data = np.asarray([wmd[key] for wmd in meta_dicts])
-          dataset += Variable(data=data, axes=(well_ax,), **atts)
+          try: 
+            dataset += Variable(data=data, axes=(well_ax,), **atts)
+          except:
+            pass  
       # add names
       dataset += Variable(data=wells, axes=(well_ax,), name='well_name', units='', 
                           atts=dict(long_name='Short Well Name'))
       for varname in ('d_piezo','well_name','depth'):
           print('')
-          print(dataset[varname])
-          print(dataset[varname][:])      
+          print((dataset[varname]))
+          print((dataset[varname][:]))      
       # add well heads
       data = np.zeros((len(well_ax),len(time_ax),)) # allocate array
       # load data for wells...
       print('\nLoading Well Data:')
       for i,well_file in enumerate(well_files):
-          print('  '+wells[i])
+          print(('  '+wells[i]))
           df = loadXLS(filename=well_file, loutliers=True, sampling='M', period=period, ltrim=False)
           data[i,:] = df['head']
       # add head variable
