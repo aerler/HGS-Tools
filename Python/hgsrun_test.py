@@ -342,7 +342,7 @@ class HGSTest(GrokTest):
     logfile = '{}/log.hgs_run'.format(hgs.rundir)
     assert hgs.GrokOK is None, hgs.GrokOK
     # print environment variable for license file
-    print('\nHGSDIR: {}'.format(self.hgsdir))
+    print(('\nHGSDIR: {}'.format(self.hgsdir)))
     # attempt to run HGS
     if not os.path.isfile(exe): raise IOError(exe)
     # run setup
@@ -450,7 +450,7 @@ class EnsHGSTest(unittest.TestCase):
                     input_mode=['steady-state','periodic'], input_interval=self.input_interval, 
                     NP=self.NP, ic_files='{rundir}/restart/{A}-{B}-{C}.{FILETYPE}.0000', **rundir_args)
     assert len(enshgs) == 4, len(enshgs)
-    print(enshgs.ic_files)
+    print((enshgs.ic_files))
     # test expansion of folder arguments
     for As in rundir_args['A']:
       for Bs in rundir_args['B']:
@@ -485,7 +485,7 @@ class EnsHGSTest(unittest.TestCase):
     enshgs = self.enshgs
     assert all(not g for g in enshgs.HGSOK), enshgs.HGSOK
     # check license
-    print('\nHGSDIR: {}'.format(self.hgsdir))
+    print(('\nHGSDIR: {}'.format(self.hgsdir)))
     # setup run folders and run Grok
     enshgs.runSimulations(lsetup=True, lgrok=True, loverwrite=loverwrite, skip_grok=True, lparallel=True, NP=NP, 
                           runtime_override=120, ldryrun=not lbin) # set runtime to 2 minutes
@@ -550,7 +550,7 @@ if __name__ == "__main__":
     # construct dictionary of test classes defined above
     test_classes = dict()
     local_values = locals().copy()
-    for key,val in local_values.items():
+    for key,val in list(local_values.items()):
       if key[-4:] == 'Test':
         test_classes[key[:-4]] = val
 
@@ -573,12 +573,12 @@ if __name__ == "__main__":
       errs += e
       f = len(test.failures)
       fails += f
-      if e+ f != 0: print("\nErrors in '{:s}' Tests: {:s}".format(name,str(test)))
+      if e+ f != 0: print(("\nErrors in '{:s}' Tests: {:s}".format(name,str(test))))
     if errs + fails == 0:
-      print("\n   ***   All {:d} Test(s) successfull!!!   ***   \n".format(runs))
+      print(("\n   ***   All {:d} Test(s) successfull!!!   ***   \n".format(runs)))
     else:
-      print("\n   ###     Test Summary:      ###   \n" + 
+      print(("\n   ###     Test Summary:      ###   \n" + 
             "   ###     Ran {:2d} Test(s)     ###   \n".format(runs) + 
             "   ###      {:2d} Failure(s)     ###   \n".format(fails)+ 
-            "   ###      {:2d} Error(s)       ###   \n".format(errs))
+            "   ###      {:2d} Error(s)       ###   \n".format(errs)))
     

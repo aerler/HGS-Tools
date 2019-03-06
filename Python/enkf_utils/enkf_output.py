@@ -21,7 +21,7 @@ def loadHydro(filename='discharge_out.mpiio', folder=None, nreal=None, ntime=Non
     if not nreal and not ntime: 
       raise ArgumentError("Please specify number of realizations 'nreal' or number of time steps 'ntime'.")
     filepath = os.path.join(folder,filename)
-    if isinstance(dtype, basestring): dtype = getattr(np,dtype)
+    if isinstance(dtype, str): dtype = getattr(np,dtype)
     # load data
     data = np.fromfile(filepath, dtype=dtype)    
     # reshape (need to know number or realizations or time steps)
@@ -101,8 +101,8 @@ if __name__ == '__main__':
         data = loadHydro(folder=out_folder, nreal=90, ntime=31, dtype='float64')
         
 #         data = data[0,:].reshape((1,20))
-        print(data.mean(),data.std(axis=0).mean()) # mean and ensemble spread 
-        print(data.shape)
+        print((data.mean(),data.std(axis=0).mean())) # mean and ensemble spread 
+        print((data.shape))
   
     elif mode == 'test_load_obs':
       
@@ -113,7 +113,7 @@ if __name__ == '__main__':
             print(vardata)
         else:
             for varname,data in vardata.items():
-                print(varname, data.shape) 
+                print((varname, data.shape)) 
 
     elif mode == 'test_load_binary':
       

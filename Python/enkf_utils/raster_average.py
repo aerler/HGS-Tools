@@ -22,7 +22,7 @@ def averageRasters(filelist=None, projection=None, shape=None, lfeedback=True):
     data, geotransform = readRasterArray(file_pattern='{FILENAME}', lfeedback=lfeedback, lgeotransform=True, 
                                              lskipMissing=False, lna=False, 
                                              axes=('FILENAME',), FILENAME=filelist)
-    if lfeedback: print(data.shape,geotransform)
+    if lfeedback: print((data.shape,geotransform))
     # create GridDef to rasterize shape
     griddef = GridDefinition(name='raster', projection=projection, geotransform=geotransform, 
                              size=(data.shape[-1],data.shape[-2]), convention='proj4')
@@ -78,7 +78,7 @@ def writeTimeRaster(inc_file, date_range=None, filepattern=None, date_format='%Y
     model_time = ( datelist - begin ).astype('timedelta64[s]')
     # open file and write
     if lfeedback: 
-        print("Writing include file '{}':".format(inc_file))
+        print(("Writing include file '{}':".format(inc_file)))
     with open(inc_file, 'w') as f:
         # loop over dates
         for delta,date in zip(model_time,datelist):
@@ -90,7 +90,7 @@ def writeTimeRaster(inc_file, date_range=None, filepattern=None, date_format='%Y
             # assemble line
             line = '{:>20s}   {:s}\n'.format(str(delta), raster)
             f.write(line)
-            if lfeedback: print(line[:-2]) # omit linebreak
+            if lfeedback: print((line[:-2])) # omit linebreak
     # done...
 
 
@@ -105,14 +105,14 @@ def writeTimeTable(inc_file, date_range=None, lfeedback=False):
     model_time = ( datelist - begin ).astype('timedelta64[s]')
     # open file and write
     if lfeedback: 
-        print("Writing include file '{}':".format(inc_file))
+        print(("Writing include file '{}':".format(inc_file)))
     with open(inc_file, 'w') as f:
         # loop over dates
         for time in model_time:
             # assemble line
             line = '{:>20s}\n'.format(str(time))
             f.write(line)
-            if lfeedback: print(line[:-2]) # omit linebreak
+            if lfeedback: print((line[:-2])) # omit linebreak
     # done...
 
 
@@ -217,7 +217,7 @@ if __name__ == '__main__':
         # loop over include files
         for inc_file,new_inc_file in inc_files.items():
             
-            print("\nProcessing '{}':\n".format(inc_file))
+            print(("\nProcessing '{}':\n".format(inc_file)))
             # read inc file
             times, filelist = readTimeRaster(filepath=inc_file, folder=folder, lvalidate=True)
             print(times)

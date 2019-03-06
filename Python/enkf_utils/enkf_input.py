@@ -35,7 +35,7 @@ def variableScale(start, stop, nreal, NP):
     for i in range(NP):
         npp1 = npp+1 if i < npp_ else npp
         for n in range(npp1):
-            print(j,n*NP+i)
+            print((j,n*NP+i))
             var_scale[j] = pre_scale[n*NP+i]
             j += 1 # count up
     # check correctness
@@ -100,7 +100,7 @@ def readKister(filepath=None, period=None, resample='1D', missing=None, bias=Non
 
 def writeEnKFini(enkf_folder=None, prefix=None, input_folders=None, glob_pattern='????', lfeedback=True):
     ''' loop over PM and OLF files using some conventions to write IC files for EnKF '''
-    if isinstance(input_folders,basestring): input_folders = [input_folders]
+    if isinstance(input_folders,str): input_folders = [input_folders]
     if not os.path.exists(enkf_folder): raise IOError(enkf_folder)
     prefixo = prefix + 'o'
     # loop over OM and OLF
@@ -144,32 +144,32 @@ def writeEnKFini(enkf_folder=None, prefix=None, input_folders=None, glob_pattern
             neolf = len(reader.read_elements('olf'))
     # print number of elements
     if lfeedback:
-        print("Number of PM elements: {}".format(nepm))
-        print("Number of OLF elements: {}".format(neolf))
+        print(("Number of PM elements: {}".format(nepm)))
+        print(("Number of OLF elements: {}".format(neolf)))
         print('')
     # assemble data into arrays and transpose 
     # N.B.: in the EnKF IC file the rows are nodes and the columns are realisations
     pm_data = np.stack(pm_data).squeeze().transpose()
     assert pm_data.shape[0] == npm, pm_data.shape
-    if lfeedback: print("Number of PM nodes: {}".format(npm))
+    if lfeedback: print(("Number of PM nodes: {}".format(npm)))
     olf_data = np.stack(olf_data).squeeze().transpose()
     assert olf_data.shape[0] == nolf, olf_data.shape
-    if lfeedback: print("Number of OLF nodes: {}".format(nolf))
+    if lfeedback: print(("Number of OLF nodes: {}".format(nolf)))
     assert olf_data.shape[1] == pm_data.shape[1]
     nreal = pm_data.shape[1] 
-    if lfeedback: print("Number of realizations: {}".format(nreal))
+    if lfeedback: print(("Number of realizations: {}".format(nreal)))
     ## write output files
     fmt = [' %18.0f ']+[' %.18f ']*nreal # node number (first) should be read as integer!
     if lfeedback: print('')
     pm_table = np.concatenate([np.arange(1,npm+1).reshape((npm,1)),pm_data], axis=1)
     # N.B.: we have to add a columns with the node numbers
     np.savetxt(pm_file, pm_table, fmt=fmt)
-    if lfeedback: print("Wrote PM IC data to file:\n '{}'.".format(pm_file))
+    if lfeedback: print(("Wrote PM IC data to file:\n '{}'.".format(pm_file)))
     olf_table = np.concatenate([np.arange(1,nolf+1).reshape((nolf,1)),olf_data], axis=1)
     # N.B.: we have to add a columns with the node numbers
     # N.B.: log10-transform is only done for hydraulic conductivities
     np.savetxt(olf_file, olf_table, fmt=fmt)
-    if lfeedback: print("Wrote OLF IC data to file:\n '{}'.".format(olf_file))
+    if lfeedback: print(("Wrote OLF IC data to file:\n '{}'.".format(olf_file)))
     # return file names
     return pm_file, olf_file, nreal
   
@@ -199,9 +199,9 @@ def writeEnKFbdy(enkf_folder=None, bdy_files=None, filename='flux_bc.dat', mode=
     # write boundary file(s)
     header = [str(nbdy),] + bdy_files.keys() # assemble header 
     if lfeedback:
-        print("Number of flux boundary conditions: {}".format(nbdy))
+        print(("Number of flux boundary conditions: {}".format(nbdy)))
         for head in header[1:]: print(head)
-        print("Number of time steps: {}".format(ntime))
+        print(("Number of time steps: {}".format(ntime)))
     header = [line+'\n' for line in header] # add line breaks
     fmt = '  '.join(['{:18e}']*nbdy)+'\n' # line format
     # there are two modes: deterministic and stochastic
@@ -214,7 +214,7 @@ def writeEnKFbdy(enkf_folder=None, bdy_files=None, filename='flux_bc.dat', mode=
             # loop over actual values
             for i in range(ntime):
                 f.write(fmt.format(*bdy_data[i,:]))
-        if lfeedback: print("\nWrote flux boundary condition data to file:\n '{}'".format(filepath))
+        if lfeedback: print(("\nWrote flux boundary condition data to file:\n '{}'".format(filepath)))
         filelist = filepath
     elif mode.lower() == 'stochastic':
         # every ensemble member gets a different input
@@ -244,16 +244,16 @@ def writeEnKFbdy(enkf_folder=None, bdy_files=None, filename='flux_bc.dat', mode=
         # compute actual occurence
         actual_occurence = ( bdy_data > 0 ).sum(axis=0, dtype=bdy_data.dtype) / ntime
         if lfeedback:
-            print('Actual Occurence: {}'.format(actual_occurence))
+            print(('Actual Occurence: {}'.format(actual_occurence)))
         actual_occurence = actual_occurence.reshape((1,nbdy)).repeat(nreal, axis=0)
         # probability of no occurence, given actual occurence
         bdy_nooccurence = np.asarray(bdy_nooccurence).reshape((1,nbdy)).repeat(nreal, axis=0)
         if lfeedback:
-            print('No Occurence: {}'.format(bdy_nooccurence.mean(axis=0)))
+            print(('No Occurence: {}'.format(bdy_nooccurence.mean(axis=0))))
         # probability of occurence, given no actual occurence
         bdy_occurence = actual_occurence * bdy_nooccurence / ( 1. - actual_occurence )
         if lfeedback:
-            print('New Occurence: {}'.format(bdy_occurence.mean(axis=0)))          
+            print(('New Occurence: {}'.format(bdy_occurence.mean(axis=0))))          
         # parameters for random values        
         mean = bdy_data.mean(axis=0)
         std  = bdy_data.std(axis=0)
@@ -281,7 +281,7 @@ def writeEnKFbdy(enkf_folder=None, bdy_files=None, filename='flux_bc.dat', mode=
                 # loop over actual values
                 for j in range(nreal):
                     f.write(fmt.format(*rnd_data[j,:]))
-            if lfeedback: print(" '{}'".format(filepath))     
+            if lfeedback: print((" '{}'".format(filepath)))     
     else:
         raise ValueError(mode)
     # return filepath (or list of files)
@@ -296,7 +296,7 @@ def writeEnKFobs(enkf_folder=None, obs_wells=None, filename='obs_head.dat', lfee
     filepath = os.path.join(enkf_folder,filename) # assemble complete path or trunk
     # prepare header
     header = ''; nobs = len(obs_wells); ntime = 0
-    print("Number of boundary conditions: {}".format(nobs))
+    print(("Number of boundary conditions: {}".format(nobs)))
     for i,obs in enumerate(obs_wells):
         if 'error' in obs: error = obs['error']
         else: raise ValueError(obs)
@@ -306,12 +306,12 @@ def writeEnKFobs(enkf_folder=None, obs_wells=None, filename='obs_head.dat', lfee
     # assemble time series
     data = np.stack([obs['data'] for obs in obs_wells], axis=1)    
     assert data.shape == (ntime,nobs), data.shape
-    print("Number of time steps: {}".format(ntime))
+    print(("Number of time steps: {}".format(ntime)))
     # write to file
     with open(filepath, 'w') as f:
         f.write(header)
         np.savetxt(f, data, delimiter=' ', fmt=' %.18f ')
-    if lfeedback: print("\nWrote observation well data to file:\n '{}'".format(filepath))
+    if lfeedback: print(("\nWrote observation well data to file:\n '{}'".format(filepath)))
     # write obs meta data
     if lYAML:  
         # remove actual binary data from dictionary (only save meta data)
@@ -324,7 +324,7 @@ def writeEnKFobs(enkf_folder=None, obs_wells=None, filename='obs_head.dat', lfee
         yaml_path = os.path.join(enkf_folder,yaml_file)
         with open(yaml_path, 'w') as yf:
             yaml.dump(obs_meta, yf)
-        if lfeedback: print("Also wrote well meta data to YAML file:\n '{}'".format(yaml_path))
+        if lfeedback: print(("Also wrote well meta data to YAML file:\n '{}'".format(yaml_path)))
     # return filepath
     return filepath
 
@@ -480,9 +480,9 @@ if __name__ == '__main__':
       
         # query data
         for feed in datafeeds.values():
-            print('\nRetrieving datafeed {}...'.format(feed.name))
+            print(('\nRetrieving datafeed {}...'.format(feed.name)))
             r = queryKister(url=url, period=date_range[:2], output=feed.csv, ts_id=feed.ts_id)
-            print(" ('{}')".format(feed.csv))
+            print((" ('{}')".format(feed.csv)))
         
         print('\n===\n')
 
@@ -525,7 +525,7 @@ if __name__ == '__main__':
                 if lreal:
                     # load actual observation data
                     filepath = datafeeds[obs_well['name']].csv
-                    print("Reading well observations:\n '{}'".format(filepath))
+                    print(("Reading well observations:\n '{}'".format(filepath)))
                     obs_well['data'] = readKister(filepath=filepath, bias=obs_well['bias'],
                                                   period=date_range[:2], resample=date_range[2], 
                                                   missing=missing, lpad=True, lvalues=True,

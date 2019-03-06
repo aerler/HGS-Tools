@@ -78,20 +78,26 @@ if __name__ == '__main__':
     start = time()
 
     loverwrite = True
-    time_chunks = 16 # typically not much speed-up beyond 8
+    time_chunks = 8 # typically not much speed-up beyond 8
+    mode = 'raster2d'
     ## WRF grids
-    project = 'WRF'
-#     start_date = '2014-01-01'; end_date = '2015-01-01'
-    start_date = None; end_date = None
-    grid_name  = 'wc2_d02'    
+#     project = 'WRF'
+# #     start_date = '2014-01-01'; end_date = '2015-01-01'
+#     start_date = None; end_date = None
+#     grid_name  = 'wc2_d02'    
+#     project = 'CMB'
+# #     start_date = '2014-01-01'; end_date = '2014-02-01'
+#     start_date = None; end_date = None
+#     grid_name  = 'cmb1'    
+#     mode = 'NetCDF'
     ## generate a full SnoDAS raster
 #     project = 'SnoDAS'
 #     start_date = '2014-01-01'; end_date = '2014-01-05'
 #     grid_name  = 'snodas'
     ## fast test config
-#     project = 'SON'
-#     start_date = '2013-01-01'; end_date = '2013-01-31'
-#     grid_name  = 'son1'
+    project = 'SON'
+    start_date = '2013-01-01'; end_date = '2013-01-31'
+    grid_name  = 'son1'
     ## operational test config
 #     project = 'SON'
 #     start_date = '2010-11-01'; end_date = '2011-01-01'
@@ -106,7 +112,7 @@ if __name__ == '__main__':
 #     grid_name  = 'asb2'
 
     ## define target grid/projection
-    resampling = 'nearest'
+    resampling = 'cubic'
     # projection/UTM zone
     tgt_size = None; tgt_geotrans = None # valid for native grid
     if project == 'WRF':
@@ -121,6 +127,9 @@ if __name__ == '__main__':
     elif project.upper() == 'SON':
         # southern Ontario projection
         tgt_crs = genProj("+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
+    elif project.upper() == 'CMB':
+        # southern Ontario projection
+        tgt_crs = genProj("+proj=utm +zone=11 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
     elif project.upper() == 'ASB':
         # Assiniboin projection
         tgt_crs = genProj("+proj=utm +zone=14 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs", name=grid_name)
@@ -130,6 +139,9 @@ if __name__ == '__main__':
     elif grid_name == 'son1':
         tgt_size = (118,82) # lower resolution 5 km grid
         tgt_geotrans = (320920.,5.e3,0,4624073.,0,5.e3) # 5 km
+    elif grid_name == 'cmb1':
+        tgt_size = (640,826) # higher resolution 500 m grid
+        tgt_geotrans = (292557.,500,0,5872251.,0,-500.) # 500 m 
     elif grid_name == 'son2':
         tgt_size = (590,410) # higher resolution 1 km grid (~ 1 MB per day)
         tgt_geotrans = (320920.,1.e3,0,4624073.,0,1.e3) # 1 km 
@@ -150,7 +162,6 @@ if __name__ == '__main__':
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
     
     ## define export parameters
-    mode = 'NetCDF'
     raster_format = None; scalefactor = 1.; lexec = True
     # modes
     if mode.lower() == 'raster2d':
@@ -163,19 +174,19 @@ if __name__ == '__main__':
         raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
         filename_novar = raster_name.format(dataset=dataset.lower(), variable='{var:s}',
                                             grid=grid_name.lower(), date='{date:s}') # no date for now...
-        print("\n***   Exporting '{}' to raster format {}   ***\n".format(dataset,raster_format))
+        print(("\n***   Exporting '{}' to raster format {}   ***\n".format(dataset,raster_format)))
         # HGS include file only?
         lexec = True        
     elif mode.upper() == 'NETCDF':
         # NetCDF output using netCDF4
         #varlist = ['snow','liqwatflx']
         varlist = ds_mod.netcdf_varlist # all primary and secondary variables, excluding coordinate variables
-        target_folder = osp.join(ds_mod.daily_folder,grid_name)
+        target_folder = osp.join(ds_mod.daily_folder,grid_name,resampling)
         filename_novar = ds_mod.netcdf_filename.format('{:s}_{:s}'.format('{var:s}',grid_name))
-        print("\n***   Regridding '{}' to '{}' (NetCDF format)   ***".format(dataset,grid_name))
+        print(("\n***   Regridding '{}' to '{}' (NetCDF format)   ***".format(dataset,grid_name)))
     else:
         raise NotImplementedError
-    print("   Variable list: {}\n".format(str(varlist)))
+    print(("   Variable list: {}\n".format(str(varlist))))
     
     
     # lazily load dataset (assuming xarray)
@@ -227,13 +238,13 @@ if __name__ == '__main__':
         xvar = xds[varname]
         filename = filename_novar.format(var=varname.lower(),date='{:s}')
         
-        print("\n\n###   Processing Variable '{:s}'   ###".format(varname,start_date,end_date))
+        print(("\n\n###   Processing Variable '{:s}'   ###".format(varname,start_date,end_date)))
                 
         ## generate inc file
         if mode.lower() == 'raster2d':
             start_inc = time()
             inc_filepath = target_folder+varname.lower()+'.inc'
-            print("\nWriting HGS include file:\n '{:s}'".format(inc_filepath))
+            print(("\nWriting HGS include file:\n '{:s}'".format(inc_filepath)))
             writeIncFile(filepath=inc_filepath, time_coord=time_coord, 
                           filename_pattern=filename, date_fmt='%Y%m%d')
             end_inc = time()
@@ -243,11 +254,11 @@ if __name__ == '__main__':
                
         ## generate workload for lazy execution
         start_load = time()
-        print("\nConstructing Workload for '{:s}' from {:s} to {:s}.   ***".format(varname,start_date,end_date))
+        print(("\nConstructing Workload for '{:s}' from {:s} to {:s}.   ***".format(varname,start_date,end_date)))
         if mode.lower() == 'raster2d':
-            print("Output folder: '{:s}'\nRaster pattern: '{:s}'".format(target_folder,filename))
+            print(("Output folder: '{:s}'\nRaster pattern: '{:s}'".format(target_folder,filename)))
         elif mode.upper() == 'NETCDF':
-            print("NetCDF file: '{:s}'".format(osp.join(target_folder,filename)))        
+            print(("NetCDF file: '{:s}'".format(osp.join(target_folder,filename))))        
          
         # explicitly determine chunking to get complete 2D lat/lon slices
         xvar = rechunkTo2Dslices(xvar)    
@@ -276,8 +287,8 @@ if __name__ == '__main__':
         
         
         # execute delayed computation
-        print("\n***   Executing {:d} Workloads for '{:s}' using Dask   ***".format(n_loads,varname))
-        print("Chunks (time only): {}".format(xvar.chunks[0]))
+        print(("\n***   Executing {:d} Workloads for '{:s}' using Dask   ***".format(n_loads,varname)))
+        print(("Chunks (time only): {}".format(xvar.chunks[0])))
     
     #     with dask.set_options(scheduler='processes'):      
         with dask.config.set(pool=ThreadPool(2)):    
@@ -285,15 +296,15 @@ if __name__ == '__main__':
             
         #print("\nDummy output:")
         #print(dummy_output)
-        print("\nDummy Size in memory: {:f} MB".format(dummy_output.nbytes/1024./1024.))
+        print(("\nDummy Size in memory: {:f} MB".format(dummy_output.nbytes/1024./1024.)))
     
         if mode.upper() == 'NETCDF':
             dataset.close()
         
         end_var = time()
-        print("\n\n***   Completed '{:s}' in {:.2f} seconds   ***\n".format(varname,end_var-start_var))
+        print(("\n\n***   Completed '{:s}' in {:.2f} seconds   ***\n".format(varname,end_var-start_var)))
         
     end = time()
-    print("\n***   Overall Timing: {:.2f} seconds   ***\n".format(end-start))
+    print(("\n***   Overall Timing: {:.2f} seconds   ***\n".format(end-start)))
 
         

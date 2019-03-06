@@ -64,18 +64,18 @@ class MPROPlines():
         psfiles = glob.glob( '{}/{}o.p_s_table.*.dat'.format(self.grok_dirc, self.grok_name))
         if ldebug:
             print('')
-            print('{}/{}o.p_s_table.*.dat'.format(self.grok_dirc, self.grok_name))
+            print(('{}/{}o.p_s_table.*.dat'.format(self.grok_dirc, self.grok_name)))
             print(psfiles)
         
         if len(psfiles) == 0:
-            print("\nERROR: No p_s and Kr_s tables found in folder '{}'. Did you run Grok?".format(self.grok_dirc))
+            print(("\nERROR: No p_s and Kr_s tables found in folder '{}'. Did you run Grok?".format(self.grok_dirc)))
             return
         
         # file name of the combined table
         pksfiles = [w.replace('p_s_table', 'p_k_s_table') for w in psfiles]
         # path for the pks tables
         pksfiles = list(map(os.path.basename,pksfiles))
-        pksfiles = list(map(lambda x:os.path.join(self.grok_dirc, self.pks_folder,x),pksfiles))
+        pksfiles = list([os.path.join(self.grok_dirc, self.pks_folder,x) for x in pksfiles])
 
         #get list of files for the KrS table
         ksfile = [w.replace('p_s_table', 's_k_table') for w in psfiles]

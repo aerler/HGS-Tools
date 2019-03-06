@@ -202,7 +202,7 @@ def main(argv=None): # IGNORE:C0111
           print("\n   ###           All HGS Setups Failed!!!           ###\n")
         else:
           print("\n   ===           Some HGS Setups Failed!!!          ===\n")
-          print(  "         {} out of {} completed ".format(sum(g for g in enshgs.rundirOK), len(enshgs)))
+          print((  "         {} out of {} completed ".format(sum(g for g in enshgs.rundirOK), len(enshgs))))
       
     
     # run simulations
@@ -226,7 +226,7 @@ def main(argv=None): # IGNORE:C0111
             print("\n   ###           All HGS Simulations Failed!!!           ###\n")
           else:
             print("\n   ===           Some HGS Simulations Failed!!!          ===\n")
-            print(  "         {} out of {} completed ".format(sum(g for g in enshgs.HGSOK), len(enshgs)))
+            print((  "         {} out of {} completed ".format(sum(g for g in enshgs.HGSOK), len(enshgs))))
           print('') # one newline
     
     # return exit code of HGS ensemble

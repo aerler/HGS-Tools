@@ -32,9 +32,9 @@ def reportBack(result):
       N.B.: the callback function is passed a result from apply_method, which is a tuple '''
   member, ec = result
   if ec == 0: # simulation completed successfully
-    print("The simulation in folder '{:s}' completed successfully!".format(member.rundir))
+    print(("The simulation in folder '{:s}' completed successfully!".format(member.rundir)))
   else: # simulation failed
-    print("FAILURE: The simulation in folder '{:s}' terminated with exit code {:d}!".format(member.rundir,ec)) 
+    print(("FAILURE: The simulation in folder '{:s}' terminated with exit code {:d}!".format(member.rundir,ec))) 
 
 ## define ensemble wrapper class
 class EnsembleWrapper(object):
@@ -139,7 +139,7 @@ class EnsHGS(object):
       for folder_type in ('rundir','template_folder','input_folder','pet_folder','ic_files'):
           if folder_type in kwargs:
               folder = kwargs[folder_type]
-              if isinstance(folder,basestring):
+              if isinstance(folder,str):
                 # perform keyword substitution with all available arguments
                 if folder_type is 'ic_files':
                     # we need to preserve '{FILETYPE}' for later 
@@ -155,36 +155,36 @@ class EnsHGS(object):
       # figure out skipping      
       if os.path.exists(rundir):
         if self.loverwrite:
-          if self.lreport: print("Overwriting existing experiment folder '{:s}'.".format(rundir))
+          if self.lreport: print(("Overwriting existing experiment folder '{:s}'.".format(rundir)))
           lskip = False
         elif self.lindicator and os.path.exists('{}/SCHEDULED'.format(rundir)):
-          if self.lreport: print("Skipping experiment folder '{:s}' (scheduled).".format(rundir))
+          if self.lreport: print(("Skipping experiment folder '{:s}' (scheduled).".format(rundir)))
           lskip = True
         elif self.lindicator and os.path.exists('{}/IN_PROGRESS'.format(rundir)):
           if self.lrestart:
             shutil.move(os.path.join(rundir,'IN_PROGRESS'),os.path.join(rundir,'RESTARTED'))
-            if self.lreport: print("Restarting experiment in folder '{:s}' (was in progress).".format(rundir))
+            if self.lreport: print(("Restarting experiment in folder '{:s}' (was in progress).".format(rundir)))
             lskip = False
             kwargs['restart'] = True
           else:
-            if self.lreport: print("Skipping experiment folder '{:s}' (in progress).".format(rundir))
+            if self.lreport: print(("Skipping experiment folder '{:s}' (in progress).".format(rundir)))
             lskip = True
         elif self.lindicator and os.path.exists('{}/COMPLETED'.format(rundir)):
-          if self.lreport: print("Skipping experiment folder '{:s}' (completed).".format(rundir))
+          if self.lreport: print(("Skipping experiment folder '{:s}' (completed).".format(rundir)))
           lskip = True
         elif self.lindicator and os.path.exists('{}/FAILED'.format(rundir)):
           # this should be the last option, so as to prevent overwriting data
           if self.lrunfailed:            
-            if self.lreport: print("Overwriting failed experiment folder '{:s}'.".format(rundir))
+            if self.lreport: print(("Overwriting failed experiment folder '{:s}'.".format(rundir)))
             lskip = False # rundir will be deleted
           else: 
-            if self.lreport: print("Skipping experiment folder '{:s}' (failed).".format(rundir))
+            if self.lreport: print(("Skipping experiment folder '{:s}' (failed).".format(rundir)))
             lskip = True
         else: # no/unknown indicator file
-          if self.lreport: print("Overwriting existing experiment folder '{:s}'.".format(rundir))
+          if self.lreport: print(("Overwriting existing experiment folder '{:s}'.".format(rundir)))
           lskip = False # rundir will be deleted
       else:
-        if self.lreport: print("Creating new experiment folder '{:s}'.".format(rundir))
+        if self.lreport: print(("Creating new experiment folder '{:s}'.".format(rundir)))
         lskip = False
       if not lskip:
         self.rundirs.append(rundir)

@@ -23,7 +23,7 @@ class MonthlyIter(object):
   def __init__(self, length, start=0, l365=True, units='seconds', lctr=True):
     ''' initialize with number of month (length) and start month (start) '''
     # interprete first month
-    if isinstance(start,basestring):
+    if isinstance(start,str):
       try: start = abbr_of_month.index(start[:3].lower())
       except ValueError: raise ValueError("Invalid name of month: {}".format(start))
     # figure out units and data convention (l365 means no leap days)
@@ -44,7 +44,7 @@ class MonthlyIter(object):
     ''' make iterator iterable'''
     return self
   
-  def next(self):
+  def __next__(self):
     ''' return cumulative elapsed time for this month '''
     if self._i > self._len:
       raise StopIteration
@@ -82,7 +82,7 @@ class DailyIter(object):
     ''' make iterator iterable'''
     return self
   
-  def next(self):
+  def __next__(self):
     ''' return cumulative elapsed time for this month '''
     if self._i > self._len:
       raise StopIteration
@@ -96,7 +96,7 @@ class DailyIter(object):
 def resolveInterval(length=None, end_time=None, interval=None):
   ''' determine length or end_time based on interval and the other variable '''
   if length and end_time: raise ArgumentError
-  if isinstance(interval,basestring):
+  if isinstance(interval,str):
     # interval is a string
     if interval[:5].lower() == 'month': 
       if length: # determing end_time from length and interval
@@ -126,7 +126,7 @@ def resolvePeriod(period=None, interval=None, units=None, l365=False):
     elif units[:5].lower() == 'month': period = 12
     else: raise NotImplementedError("Unknown units: '{:s}.".format(units))
     # period length as multiples of interval
-    if isinstance(interval,basestring):
+    if isinstance(interval,str):
       if interval[:5].lower() == 'month': idxprd = 12 # one year for monthly input
       elif interval.lower() in ('day','daily'): idxprd = 365. if l365 else 365.2425
       else: raise NotImplementedError("Unknown interval: '{:s}.".format(interval))
@@ -220,12 +220,13 @@ if __name__ == '__main__':
 #     grid = 'asb1'; project = 'ASB'; length = 432
 #     grid = 'grw2'; project = 'GRW'; length = 360
 #     grid = 'snw1'; project = 'SNW'; length = 360
-    grid = 'son1'; project = 'SON'; length = 120
-#     varname = 'liqwatlfx'; testfile = 'precip.inc';
-#     varname = 'liqwatlfx_CMC'; testfile = 'precip_CMC.inc'; 
-    varname = 'pet'; testfile = 'pet.inc'      
+#     grid = 'son1'; project = 'SON'; length = 120
+    grid = 'arb2'; project = 'ARB'; length = 180
+    varname = 'liqwatflx'; testfile = 'precip.inc';
+#     varname = 'liqwatflx_CMC'; testfile = 'precip_CMC.inc'; 
+#     varname = 'pet'; testfile = 'pet.inc'      
 #     varname = 'pet_wrf'; testfile = 'pet_wrf.inc'      
-    inputfolder = '../climate_forcing/'
+    inputfolder = ''
     testpattern = '{:s}_{:s}_iTime'.format(grid,varname)
     testfolder = 'D:/Data/HGS/{PRJ}/{GRD}/'.format(PRJ=project,GRD=grid)
       
@@ -258,6 +259,6 @@ if __name__ == '__main__':
     openfile = open(testfilepath, 'r')
     for line in openfile: print(line)
     openfile.close()
-    print('\nFilepath: \'{:s}\''.format(testfilepath))
+    print(('\nFilepath: \'{:s}\''.format(testfilepath)))
     
       

@@ -23,7 +23,7 @@ There are two modes:
 import os, sys
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 # class module
-from mprop import MPROPlines
+from pks_curve.mprop import MPROPlines
 
 def read_mprops(grok_dirc, grok_name, mprop_dirc, mprop_name, 
                 lgentab = False, linctab = False, lnotabs = False, ldebug = False,
@@ -40,13 +40,13 @@ def read_mprops(grok_dirc, grok_name, mprop_dirc, mprop_name,
   ## begin execution based on command option
 
   if lgentab:
-      print("\nModifying mprops file '{}' to output van Genuchten tables. Run Grok to generate table files.".format(mprop_name)) 
+      print(("\nModifying mprops file '{}' to output van Genuchten tables. Run Grok to generate table files.".format(mprop_name))) 
       mp.walk_mprop(lgentab=True, ldebug=ldebug)
   elif linctab: 
-      print("\nModifying mprops file '{}' to use tabulated values for van Genuchten function.".format(mprop_name)) 
+      print(("\nModifying mprops file '{}' to use tabulated values for van Genuchten function.".format(mprop_name))) 
       mp.walk_mprop(lgentab=False, ldebug=ldebug)
       if not lnotabs:
-          print("\nAssembling van Genuchten table files in folder '{}'.".format(mp.pks_path))
+          print(("\nAssembling van Genuchten table files in folder '{}'.".format(mp.pks_path)))
           mp.combine_pkstable(ldebug=ldebug)
   else: 
       print("\nTo modify the mprops file, specify either the --generate or --include command option - exiting.")
@@ -154,7 +154,7 @@ if __name__ == "__main__":
       if os.path.exists(batchpfx):
           with open(batchpfx) as bf:
               grok_name = bf.readline().strip()
-          print("\nUsing problem name/prefix from file '{}': {}".format(batchpfx,grok_name))
+          print(("\nUsing problem name/prefix from file '{}': {}".format(batchpfx,grok_name)))
       else:
           raise IOError("No problem name/prefix specified and no 'batch.pfx' file found in root folder.")
 

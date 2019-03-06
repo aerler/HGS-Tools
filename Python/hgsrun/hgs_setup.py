@@ -156,7 +156,7 @@ class Grok(object):
         numpy data type to which the value string is cast; a list can be inferred if values of the 
         proper type follow in consecutive lines and are terminated by and 'end' '''
     if after is not None: start = self._lines.index(after, start) # search offset for primary paramerter
-    if isinstance(dtype,basestring): dtype = getattr(np,dtype) # convert to given numpy dtype
+    if isinstance(dtype,str): dtype = getattr(np,dtype) # convert to given numpy dtype
     elif dtype is None: dtype = str # read as string data type as default
     # lists of strings cannot be detected properly
     if llist is None and ( np.issubdtype(dtype,np.string_) or np.issubdtype(dtype,np.unicode_) ): llist = False
@@ -208,7 +208,7 @@ class Grok(object):
   def setParams(self, **params):
     ''' edit a bunch of parameters, which are defined as key/values pairs using self.editParam;
         note that there is no validation and 'format' is only supported for single edits '''
-    for param,value in params.iteritems():
+    for param,value in list(params.items()):
       self.setParam(param, value)
       
   def remParam(self, param, llist=False, after=None, start=0, lerror=True, lall=False):
@@ -257,7 +257,7 @@ class Grok(object):
     ''' change the initial condition files in Grok using either .hen/restart or head/output files'''
     os.chdir(self.rundir)
     # check which type of restart file we are dealing with
-    if not isinstance(ic_pattern,basestring): 
+    if not isinstance(ic_pattern,str): 
         raise TypeError(ic_pattern)
     lhenf = ic_pattern.endswith('.hen')
     lheadf = '{FILETYPE}' in ic_pattern
@@ -324,7 +324,7 @@ class Grok(object):
   def resolveOutput(self, output_interval):
     ''' method to check and determine default output intervals '''
     # detect output interval based on length and input_interval
-    if isinstance(output_interval, basestring):
+    if isinstance(output_interval, str):
       if output_interval.lower() == 'default':
         # monthly for the last year and yearly otherwise
         if self.input_interval == 'monthly':
@@ -371,7 +371,7 @@ class Grok(object):
           if nout < 1: raise ValueError("An 'output_interval' of {} < 1 is illegal!".format(nout))
           timedelta = self.runtime - outinit
           if nout == 1: tmp = [outinit + timedelta] 
-          else: tmp = [ outinit + ( timedelta * float(r) / float(nout) ) for r in xrange(1,nout)]
+          else: tmp = [ outinit + ( timedelta * float(r) / float(nout) ) for r in range(1,nout)]
           outtimes.extend(tmp) # append new/refined list
           outinit = tmp[-1] # use last value as starting point for next refinement interval
       outtimes.append(self.runtime) # append final time for output
@@ -417,7 +417,7 @@ class Grok(object):
     input_folder = self.input_folder if input_folder is None else input_folder
     pet_folder = self.pet_folder if pet_folder is None else pet_folder
     # generate default input vars
-    if isinstance(input_vars,basestring):
+    if isinstance(input_vars,str):
       if input_vars.upper() == 'PET': # liquid water + snowmelt & PET as input
         input_vars = dict(precip=('rainfall','rain','liqwatflx'),  
                           pet=('pet','potential evapotranspiration','pet'))
@@ -432,7 +432,7 @@ class Grok(object):
     elif not isinstance(input_vars, dict): raise TypeError(input_vars)
     # iterate over variables and generate corresponding input lists
     ec = 0 # cumulative exit code
-    for varname,val in input_vars.iteritems():
+    for varname,val in list(input_vars.items()):
       grokname,vartype,wrfvar = val
       filename = '{}.inc'.format(varname)
       if self.getParam('name', after=vartype, llist=False).lower() != grokname:

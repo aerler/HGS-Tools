@@ -2,7 +2,7 @@
 # sys.path.append('D:\git\Andre\HGS-Tools\Python\pks_curve')
 # import read_mprops
 
-import read_mprops
+from pks_curve import read_mprops
 
 param={"grok_dirc":r"./test_data",
 		"grok_name":"abdul",

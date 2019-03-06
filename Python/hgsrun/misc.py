@@ -114,7 +114,7 @@ def binaryFiles(prefix, folder=None, nidx=4, ldict=True, ignore_list=None):
     if ldict:
         # split head files and store in dictionary
         binary_files = dict(); head_dict= dict()
-        for tag,pattern in head_files.items():
+        for tag,pattern in list(head_files.items()):
             head_tag = 'head_{}'.format(tag)
             binary_files[head_tag] = []
             head_dict[head_tag] = out_files.format(PROBLEM=prefix,FILETYPE=pattern,IDX='')
@@ -122,7 +122,7 @@ def binaryFiles(prefix, folder=None, nidx=4, ldict=True, ignore_list=None):
         # typically binary_files will contain the following lists: head_pm, head_olf, head_chan, others 
         for filename in filenames:
             lmatch = False
-            for head_tag,head_file in head_dict.items():
+            for head_tag,head_file in list(head_dict.items()):
                 if filename.startswith(head_file): 
                   binary_files[head_tag].append(filename); lmatch = True; break
             if not lmatch and not filename in ignore_list: 
@@ -166,7 +166,7 @@ def timeseriesFiles(prefix, folder=None, ldict=True, llogs=True, lcheck=True):
     # reorganize
     if not ldict:
         flat_list = []
-        for files in ts_dict.values(): flat_list.extend(files)
+        for files in list(ts_dict.values()): flat_list.extend(files)
         return flat_list
     else:
         return ts_dict
@@ -229,14 +229,14 @@ if __name__ == '__main__':
         # list binary files
         print('\n  Binary Files')
         files = binaryFiles(prefix=prefix, folder=folder, nidx=4, ldict=True)
-        for key,val in files.items():
-            print('{}: {}'.format(key,len(val)))
+        for key,val in list(files.items()):
+            print(('{}: {}'.format(key,len(val))))
             print(val)
         
         # list time-series files
         print('\n  Time-series Files')
         files = timeseriesFiles(prefix=prefix, folder=folder, llogs=True, lcheck=True, ldict=True)
-        for key,val in files.items():
-            print('{}: {}'.format(key,len(val)))
+        for key,val in list(files.items()):
+            print(('{}: {}'.format(key,len(val))))
             print(val)
         
