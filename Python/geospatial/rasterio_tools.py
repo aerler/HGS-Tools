@@ -61,7 +61,7 @@ def genProj(*args,**kwargs):
 
 
 def constructCoords(geotrans, size, dtype='float32'):
-    ''' construct coordinate arrays from geotransform and size; coordiantes are centered w.r.t. pixels '''
+    ''' construct coordinate arrays from geotransform and size; coordinates are centered w.r.t. pixels '''
     
     # use GDAL conventions
     if isinstance(geotrans,rio.transform.Affine):

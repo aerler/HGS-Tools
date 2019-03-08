@@ -16,7 +16,8 @@ There are two modes:
 
 @contact:    aerler@aquanty.com
 
-@deffield    updated: 24/06/2017
+@deffield    created: 23/05/2017
+@deffield    updated: 06/03/2019
 """
 
 # external imports
@@ -55,9 +56,9 @@ def read_mprops(grok_dirc, grok_name, mprop_dirc, mprop_name,
 if __name__ == "__main__":
   # meta data
   __all__ = []
-  __version__ = 0.9
+  __version__ = 0.10
   __date__ = '2017-05-23'
-  __updated__ = '2017-06-24'
+  __updated__ = '2019-03-06'
 
   program_name = os.path.basename(sys.argv[0])
   program_version = "v{:}".format(__version__)

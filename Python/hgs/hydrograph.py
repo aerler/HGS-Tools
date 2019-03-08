@@ -13,7 +13,7 @@ CSV files.
 @license:    GPL v3
 
 @contact:    aerler@aquanty.com
-@deffield    updated: 09/11/2018
+@deffield    updated: 06/03/2019
 '''
 
 import sys, os
@@ -26,9 +26,9 @@ from argparse import RawDescriptionHelpFormatter
 from hgs.misc import interpolateIrregular, ArgumentError
 
 __all__ = []
-__version__ = '0.2'
+__version__ = '0.3'
 __date__ = '2018-11-09'
-__updated__ = '2018-11-10'
+__updated__ = '2019-03-06'
 
 DEBUG = 0
 TEST  = 0

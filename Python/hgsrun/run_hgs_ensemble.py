@@ -11,7 +11,7 @@ HGSrun is capable of running single simulations or entire ensembles of simulatio
 @license:    GPL v3
 
 @contact:    aerler@aquanty.com
-@deffield    updated: 18/04/2017
+@deffield    updated: 06/03/2019
 '''
 
 # external imports
@@ -23,9 +23,9 @@ from hgsrun.hgs_ensemble import EnsHGS
 
 # meta data
 __all__ = []
-__version__ = 0.9
+__version__ = 0.10
 __date__ = '2016-08-16'
-__updated__ = '2017-04-18'
+__updated__ = '2019-03-06'
 
 DEBUG = 0
 TESTRUN = 0

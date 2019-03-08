@@ -11,14 +11,17 @@ import xarray as xr
 
 
 # names of valid geographic/projected coordinates
-x_coords = dict(geo=('lon','long','longitude',), proj=('x','easting') )
-y_coords = dict(geo=('lat','latitude',),         proj=('y','northing'))
+default_x_coords = dict(geo=('lon','long','longitude',), proj=('x','easting') )
+default_y_coords = dict(geo=('lat','latitude',),         proj=('y','northing'))
 
 
 ## functions to interface with rasterio
 
-def getGeoCoords(xvar, x_coords=x_coords, y_coords=y_coords, lraise=True):
+def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True):
     '''  helper function to extract geographic/projected coordinates from xarray'''
+    
+    if x_coords is None: x_coords = default_x_coords
+    if y_coords is None: y_coords = default_y_coords
     
     if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
         if lraise: # optionally check input
@@ -45,10 +48,13 @@ def getGeoCoords(xvar, x_coords=x_coords, y_coords=y_coords, lraise=True):
     return xlon,ylat
 
   
-def isGeoVar(xvar, x_coords=x_coords, y_coords=y_coords, lraise=True):
+def isGeoVar(xvar, x_coords=None, y_coords=None, lraise=True):
     ''' helper function to identify variables that have geographic or projected coordinates,
         based on xarray dimension names '''
     
+    if x_coords is None: x_coords = default_x_coords
+    if y_coords is None: y_coords = default_y_coords
+
     if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
         if lraise: # optionally check input
             raise TypeError("Can only infer coordinate system from xarray - not from {}".format(xvar.__class__))
@@ -71,9 +77,12 @@ def isGeoVar(xvar, x_coords=x_coords, y_coords=y_coords, lraise=True):
     return ( xlon and ylat )
 
   
-def isGeoCRS(xvar, lat_coords=y_coords['geo'], lon_coords=x_coords['geo'], lraise=True):
+def isGeoCRS(xvar, lat_coords=None, lon_coords=None, lraise=True):
     ''' helper function to determine if we have a simple geographic lat/lon CRS (based on xarray dimension names) '''
     lat,lon = False,False
+    
+    if lon_coords is None: lon_coords = default_x_coords['geo']
+    if lat_coords is None: lat_coords = default_y_coords['geo']
     
     if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
         if lraise:
@@ -154,6 +163,22 @@ def getProj(xvar, lraise=True):
     
     # return a GDAL/rasterio CRS instance
     return proj
+
+
+def addGeoReference(xds, proj4_string=None, x_coords=None, y_coords=None):
+    ''' helper function to add GDAL/rasterio-style georeferencing to an xarray dataset '''
+    xds.attrs['proj4'] = proj4_string
+    xlon,ylat = getGeoCoords(xds, x_coords=x_coords, y_coords=y_coords)
+    xds.attrs['xlon'] = xlon.name
+    xds.attrs['ylat'] = ylat.name
+    for xvar in list(xds.data_vars.values()): 
+        if isGeoVar(xvar):
+            xvar.attrs['proj4'] = proj4_string
+            xvar.attrs['xlon'] = xlon.name
+            xvar.attrs['ylat'] = ylat.name
+            xvar.attrs['dim_order'] = int( xvar.dims[-2:] == (ylat.name, xlon.name) )
+            # N.B.: the NetCDF-4 backend does not like Python bools
+    return xds
 
 
 def rechunkTo2Dslices(xvar):
