@@ -139,6 +139,8 @@ def add_var(dst, name, dims, data=None, shape=None, atts=None, dtype=None, zlib=
     if dtype is None: raise NCDataError("Cannot construct a NetCDF Variable without a data array or an abstract data type.")
     dtype = np.dtype(dtype) # use numpy types
     if dtype is np.dtype('bool_'): dtype = np.dtype('i1') # cast numpy bools as 8-bit integers
+    if dtype.kind == 'S': dtype = np.dtype(str)
+    # N.B.: the dtype 'S' causes a TypeError, because NetCDF4 only allows 'S1', but Python str can be used instead
     
     # check/create dimensions
     if shape is None: shape = [None,]*len(dims)
