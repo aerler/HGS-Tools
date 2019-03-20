@@ -79,7 +79,7 @@ if __name__ == '__main__':
 
     loverwrite = True
     time_chunks = 8 # typically not much speed-up beyond 8
-    mode = 'raster2d'
+    mode = 'NetCDF'
     ## WRF grids
 #     project = 'WRF'
 # #     start_date = '2014-01-01'; end_date = '2015-01-01'
@@ -95,13 +95,13 @@ if __name__ == '__main__':
 #     start_date = '2014-01-01'; end_date = '2014-01-05'
 #     grid_name  = 'snodas'
     ## fast test config
-    project = 'SON'
-    start_date = '2013-01-01'; end_date = '2013-01-31'
-    grid_name  = 'son1'
-    ## operational test config
 #     project = 'SON'
-#     start_date = '2010-11-01'; end_date = '2011-01-01'
-#     grid_name  = 'son2'
+#     start_date = '2013-01-01'; end_date = '2013-01-31'
+#     grid_name  = 'son1'
+    ## operational test config
+    project = 'SON'
+    start_date = '2011-01-01'; end_date = '2018-12-31'
+    grid_name  = 'grw1'
     ## operational config for SON2
 #     project = 'SON'
 #     start_date = '2011-01-01'; end_date = None
@@ -112,7 +112,7 @@ if __name__ == '__main__':
 #     grid_name  = 'asb2'
 
     ## define target grid/projection
-    resampling = 'cubic'
+    resampling = 'nearest'
     # projection/UTM zone
     tgt_size = None; tgt_geotrans = None # valid for native grid
     if project == 'WRF':
@@ -139,12 +139,15 @@ if __name__ == '__main__':
     elif grid_name == 'son1':
         tgt_size = (118,82) # lower resolution 5 km grid
         tgt_geotrans = (320920.,5.e3,0,4624073.,0,5.e3) # 5 km
-    elif grid_name == 'cmb1':
-        tgt_size = (640,826) # higher resolution 500 m grid
-        tgt_geotrans = (292557.,500,0,5872251.,0,-500.) # 500 m 
     elif grid_name == 'son2':
         tgt_size = (590,410) # higher resolution 1 km grid (~ 1 MB per day)
         tgt_geotrans = (320920.,1.e3,0,4624073.,0,1.e3) # 1 km 
+    elif grid_name == 'grw1':
+        tgt_size = (132,162) # smaller, higher resolution 1 km grid for GRW
+        tgt_geotrans = (500.e3,1.e3,0,4740.e3,0,1.e3) # 1 km 
+    elif grid_name == 'cmb1':
+        tgt_size = (640,826) # higher resolution 500 m grid
+        tgt_geotrans = (292557.,500,0,5872251.,0,-500.) # 500 m 
     elif grid_name == 'asb2':
         tgt_size = (955,675) # higher resolution 1 km grid (> 1 MB per day)
         tgt_geotrans = (-159.e3, 1.e3, 0., 5202.e3, 0., 1.e3) # 1 km 
@@ -299,6 +302,7 @@ if __name__ == '__main__':
         print(("\nDummy Size in memory: {:f} MB".format(dummy_output.nbytes/1024./1024.)))
     
         if mode.upper() == 'NETCDF':
+            dataset.attrs['resampling'] = resampling
             dataset.close()
         
         end_var = time()

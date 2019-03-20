@@ -65,6 +65,7 @@ hgs_testcase = 'test' # name of test project (for file names)
 hgs_template = data_root+'/Test/Templates/PRC-test/' 
 test_prefix  = 'snw1' # pefix for climate input
 clim_data    = data_root+'/Test/snw1/test-run/clim/climate_forcing/'
+pet_data    = data_root+'/Test/snw1/test-run/clim/pet_forcing/'
 ts_data      = data_root+'/Test/snw1/test-run/timeseries/climate_forcing/'
 
 # # use new hires GRW model for testing
@@ -389,6 +390,7 @@ class EnsHGSTest(unittest.TestCase):
   hgs_template = hgs_template 
   hgs_testcase = hgs_testcase
   clim_data    = clim_data
+  pet_data     = pet_data
   ts_data      = ts_data
   test_prefix  = test_prefix
   rundir       = '{}/enshgs_test/'.format(workdir,) # test folder
@@ -414,10 +416,10 @@ class EnsHGSTest(unittest.TestCase):
     # data sources
     if self.input_mode == 'periodic':
         input_folder = self.clim_data
-        pet_folder   = self.clim_data
+        pet_folder   = self.pet_data
     elif self.input_mode == 'quasi-transient': 
         input_folder = self.ts_data
-        pet_folder   = self.clim_data
+        pet_folder   = self.pet_data
     elif self.input_mode == 'transient': 
         input_folder = self.ts_data
         pet_folder   = self.ts_data
@@ -536,15 +538,15 @@ if __name__ == "__main__":
 #     specific_tests += ['SetTime']
 #     specific_tests += ['Setup']
 #     specific_tests += ['SetupExp']
-#     specific_tests += ['SetupRundir']
+    specific_tests += ['SetupRundir']
 #     specific_tests += ['Write']
 
 
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-    tests += ['Grok']
-    tests += ['HGS']    
+#     tests += ['Grok']
+#     tests += ['HGS']    
     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above

@@ -438,19 +438,20 @@ class Grok(object):
       if self.getParam('name', after=vartype, llist=False).lower() != grokname:
             raise GrokError("No entry for boundary condition type '{}'/'{}' found in grok file!".format(vartype,grokname))
       self.setParam('time raster table', 'include {}'.format(filename), after=vartype)      
-      # special handlign for quasi-transient forcing based on variable
+      # special handling for quasi-transient forcing based on variable
       if self.input_mode == 'quasi-transient':
           input_mode = 'periodic' if varname == 'pet' else 'transient' 
-          actual_input_folder = pet_folder if varname == 'pet' else input_folder
       else: 
-          input_mode = self.input_mode; actual_input_folder = input_folder
+          input_mode = self.input_mode
+      actual_input_folder = pet_folder if pet_folder and varname == 'pet' else input_folder
+      print(actual_input_folder)
       # select interval and output format
       if self.input_interval == 'monthly':
         if input_mode == 'steady-state': input_pattern = 'iTime_{IDX:d}' # IDX will be substituted
         elif input_mode == 'periodic': input_pattern = 'iTime_{IDX:02d}' # IDX will be substituted
         elif input_mode == 'transient': input_pattern = 'iTime_{IDX:03d}' # IDX will be substituted
         else: raise GrokError(self.input_mode)
-        # N.B.: this is a very ugly hack - I don'e have a better idea at the moment, since
+        # N.B.: this is a very ugly hack - I don't have a better idea at the moment, since
         #       we don't know the original length of the time series
       else:
         length = self.length + 1 if lFortran else self.length
