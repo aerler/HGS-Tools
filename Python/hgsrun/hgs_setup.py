@@ -448,10 +448,11 @@ class Grok(object):
       if self.input_interval == 'monthly':
         if input_mode == 'steady-state': input_pattern = 'iTime_{IDX:d}' # IDX will be substituted
         elif input_mode == 'periodic': input_pattern = 'iTime_{IDX:02d}' # IDX will be substituted
-        elif input_mode == 'transient': input_pattern = 'iTime_{IDX:03d}' # IDX will be substituted
+        elif input_mode == 'transient': 
+            log_length = int(np.ceil(np.log10(self.runtime*12./(365.*86400.))))
+            input_pattern = 'iTime_{{IDX:0{:d}d}}'.format(log_length) # IDX will be substituted
         else: raise GrokError(self.input_mode)
-        # N.B.: this is a very ugly hack - I don't have a better idea at the moment, since
-        #       we don't know the original length of the time series
+        # N.B.: we estimate the length of the timeseries based on runtime and interval
       else:
         length = self.length + 1 if lFortran else self.length
         input_pattern = '{0:s}_{{IDX:0{1:d}d}}'.format(axis, int(np.ceil(np.log10(length)))) # number of digits
