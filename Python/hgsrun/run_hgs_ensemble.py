@@ -177,6 +177,7 @@ def main(argv=None): # IGNORE:C0111
     if ldryrun: batch_config['ldryrun'] = True
     if NP is not None: batch_config['NP'] = NP
     if lserial or NP == 1: batch_config['lparallel'] = False
+    elif NP is None: pass
     elif NP > 1: batch_config['lparallel'] = True
     if runtime is not None: batch_config['runtime_override'] = runtime
     
