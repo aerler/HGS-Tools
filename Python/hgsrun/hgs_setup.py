@@ -462,7 +462,7 @@ class Grok(object):
         else:
             input_mode = self.input_mode
         actual_input_folder = pet_folder if pet_folder and varname == 'pet' else input_folder
-        print(actual_input_folder)
+        #print(actual_input_folder)
         # select interval and output format
         if self.input_interval == 'monthly':
           if input_mode == 'steady-state': input_pattern = 'iTime_{IDX:d}' # IDX will be substituted
