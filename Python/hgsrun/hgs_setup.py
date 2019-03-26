@@ -399,7 +399,7 @@ class Grok(object):
     # set input interval
     input_interval = input_interval.lower()
     if input_interval[:5].lower() == 'month': input_interval = 'monthly'
-    elif input_interval[:3].lower() == 'day': input_interval = 'daily'
+    elif input_interval.lower() in ('day','daily'): input_interval = 'daily'
     else: raise NotImplementedError(input_interval)
     self.input_interval = input_interval
     # set other variables
@@ -460,12 +460,16 @@ class Grok(object):
         # special handling for quasi-transient forcing based on variable
         if self.input_mode == 'quasi-transient':
             input_mode = 'periodic' if varname == 'pet' else 'transient' 
+            input_interval = 'monthly' if varname == 'pet' else self.input_interval
+            # N.B.: currently only monthly climatologies are allowed for PET in
+            #       quasi-transient input mode
         else:
             input_mode = self.input_mode
+            input_interval = self.input_interval
         actual_input_folder = pet_folder if pet_folder and varname == 'pet' else input_folder
         #print(actual_input_folder)
         # select interval and output format
-        if self.input_interval == 'monthly':
+        if input_interval == 'monthly':
           if input_mode == 'steady-state': input_pattern = 'iTime_{IDX:d}' # IDX will be substituted
           elif input_mode == 'periodic': input_pattern = 'iTime_{IDX:02d}' # IDX will be substituted
           elif input_mode == 'transient': 
@@ -481,7 +485,7 @@ class Grok(object):
         # write file list
         lec = generateInputFilelist(filename=filename, folder=self.rundir, input_folder=actual_input_folder, 
                                     input_pattern=input_pattern, lcenter=lcenter, lvalidate=lvalidate, 
-                                    units='seconds', l365=l365, lFortran=lFortran, interval=self.input_interval, 
+                                    units='seconds', l365=l365, lFortran=lFortran, interval=input_interval, 
                                     end_time=self.runtime, mode=input_mode)
       ec += 0 if lec else 1          
     # return exit code
@@ -548,7 +552,7 @@ class HGS(Grok):
   ic_files  = None # pattern for initial condition files (path can be expanded)
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, output_interval='default',
-               input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, pet_folder=None,
+               input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, pet_folder=None, precip_inc=None, pet_inc=None, 
                input_folder='../climate_forcing', template_folder=None, linked_folders=None, NP=1, lindicator=True,
                grok_bin='grok.exe', hgs_bin='phgs.exe', lrestart=False, ic_files=None):
     ''' initialize HGS instance with a few more parameters: number of processors... also ic_files, which is
@@ -557,7 +561,7 @@ class HGS(Grok):
     # call parent constructor (Grok)
     super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
                              output_interval=output_interval, input_vars=input_vars, input_prefix=input_prefix,
-                             input_mode=input_mode, input_interval=input_interval, pet_folder=pet_folder,
+                             input_mode=input_mode, input_interval=input_interval, pet_folder=pet_folder,precip_inc=precip_inc, pet_inc=pet_inc, 
                              input_folder=input_folder, length=length, lcheckdir=False, grok_bin=grok_bin,)
     self.hgs_bin = hgs_bin # HGS executable: first try local folder, then $HGSDIR
     self.template_folder = template_folder # where to get the templates
