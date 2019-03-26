@@ -219,8 +219,9 @@ def rewriteInputFilelist(inc_file=None, inc_folder=None, rundir=None, lvalidate=
                 #print(new_line)
                 new_inc.write(new_line)    
     # return file status
+    lec = os.path.isfile(inc_file) 
     os.chdir(old_dir)
-    return os.path.isfile(inc_file) 
+    return lec 
     
 # helper function to figure out path of inc-file
 def getIncFolderFile(inc_path=None, rundir=None, default_name=None, lvalidate=True):
