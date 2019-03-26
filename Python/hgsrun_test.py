@@ -549,8 +549,8 @@ if __name__ == "__main__":
     tests = [] 
     # list of variable tests
 #     tests += ['Grok']
-    tests += ['HGS']    
-#     tests += ['EnsHGS']
+#     tests += ['HGS']    
+    tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()

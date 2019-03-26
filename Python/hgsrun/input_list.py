@@ -9,7 +9,9 @@ A Python module to generate the input file list that contains the atmospheric fo
 import numpy as np
 import os
 from geodata.misc import days_per_month, days_per_month_365, seconds_per_month, seconds_per_month_365, abbr_of_month, ArgumentError
-list_format = '{T:15.0f}     {F:s}'
+
+# format for inc-file entries
+list_format = '{T:15.0f}     {F:s}\n' # need *two* end of line character
 
 
 # iterator for monthly intervals
@@ -164,8 +166,7 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
                               units=units, lctr=lcenter)
     else:
       raise NotImplementedError(interval)
-  # write time/filepath list based on iterators
-  listformat = listformat+'\n' # need *two* end of line character
+  # write time/filepath list based on iterators  
   if os.path.exists(filename): os.remove(filename) # remove old file
   with open(filename, 'w') as openfile: # open file list
     list_time = 0 # in case there is no iteration (needed below)
@@ -192,14 +193,63 @@ def generateInputFilelist(filename=None, folder=None, input_folder=None, input_p
   # check results and return file status
   return os.path.isfile(filename)
     
+# function to read an include file and update the file path' relative to the rundir
+def rewriteInputFilelist(inc_file=None, inc_folder=None, rundir=None, lvalidate=True):
+    ''' read an include file from a remote directory, change file path to relative to rundir,
+        validate the file list, and write to a new file '''
+    # change directory to rundir
+    os.chdir(rundir)
+    # open inc file/folder from here
+    with open(os.path.join(inc_folder,inc_file)) as old_inc:
+        with open(inc_file, 'w') as new_inc:            
+            # parse file list, validate and write into new file in rundir
+            for line in old_inc.readlines():
+                line = line.split()
+                time_stamp = float(line[0]); filepath = line[1]
+                # change relative directory
+                if os.path.isabs(filepath): abs_path = filepath
+                else: abs_path = os.path.abspath( os.path.join(inc_folder,filepath) )
+                new_path = os.path.relpath(abs_path, rundir) # turn into directory relative to rundir
+                # validate
+                if lvalidate and not os.path.exists(new_path):
+                    raise IOError("The input file '{:s}' does not exist.\n (run folder: '{:s}')".format(new_path,rundir))
+                # write to new file
+                new_line = list_format.format(T=time_stamp,F=filepath)
+                #print(new_line)
+                new_inc.write(new_line)    
+    # return file status
+    return os.path.isfile(inc_file) 
+    
+# helper function to figure out path of inc-file
+def getIncFolderFile(inc_path=None, rundir=None, default_name=None, lvalidate=True):
+    ''' a function to complete and validate an include file path '''
+    old_dir = os.getcwd()
+    os.chdir(rundir)
+    if os.path.isdir(inc_path):
+        inc_folder = inc_path
+        inc_file = default_name
+    else:
+        inc_folder = os.path.dirname(inc_path)
+        inc_file = os.path.basename(inc_path)
+        if not inc_file:
+            raise IOError("The include folder '{}' was not found.\n (rundir: '{}')".format(inc_folder,rundir))
+    # check
+    inc_path = os.path.join(inc_folder,inc_file)
+    if lvalidate and not os.path.exists(inc_path):
+        raise IOError("The include file '{}' was not found.\n (rundir: '{}')".format(inc_path,rundir))
+    # return
+    os.chdir(old_dir)
+    return inc_folder, inc_file 
+    
     
 # abuse for testing
 if __name__ == '__main__':
     
     # test cases
 #     test_case = 'simple_mean'
-    test_case = 'climatology'
+#     test_case = 'climatology'
 #     test_case = 'time-series'
+    test_case = 'existing_inc_file'
     
     ## file settings
     # work directory settings ("global" variable)
@@ -253,12 +303,26 @@ if __name__ == '__main__':
                             length=length, mode='time-series', lvalidate=False)
 #                             length=10, interval='daily', mode='time-series', lvalidate=False)
 
+    elif test_case == 'existing_inc_file':
+      # generate a test file
+      test_inc = 'some_subfolder'
+      testfolder = 'D:/Data/HGS/{PRJ}/{GRD}/'.format(PRJ=project,GRD=grid)
+      os.makedirs(os.path.join(testfolder,test_inc), exist_ok=True)
+      inc_folder,testfile = getIncFolderFile(inc_path=test_inc, rundir=testfolder, default_name='test.inc', lvalidate=False)
+      #print(inc_folder,testfile)
+      generateInputFilelist(filename=testfile, folder=os.path.join(testfolder,inc_folder),
+                            input_folder=inputfolder, input_pattern=testpattern+'_{IDX:03d}.asc', 
+                            length=length, mode='time-series', lvalidate=False)
+      # now rewrite the inc-file from a different path
+      inc_folder,testfile = getIncFolderFile(inc_path=test_inc, rundir=testfolder, default_name='test.inc', lvalidate=True)
+      lec = rewriteInputFilelist(inc_file=testfile, inc_folder=inc_folder, rundir=testfolder, lvalidate=False)
+      assert lec, testfolder
+      
 
     ## read and print test file
     testfilepath = testfolder+testfile
-    openfile = open(testfilepath, 'r')
-    for line in openfile: print(line)
-    openfile.close()
+    with open(testfilepath, 'r') as openfile:
+        for line in openfile.readlines(): print(line)
     print(('\nFilepath: \'{:s}\''.format(testfilepath)))
     
       

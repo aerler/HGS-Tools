@@ -79,7 +79,8 @@ if __name__ == '__main__':
 
     loverwrite = True
     time_chunks = 8 # typically not much speed-up beyond 8
-    mode = 'NetCDF'
+    mode = 'raster2d'
+    lexec = False # actually write rasters or just include file
     ## WRF grids
 #     project = 'WRF'
 # #     start_date = '2014-01-01'; end_date = '2015-01-01'
@@ -99,7 +100,7 @@ if __name__ == '__main__':
 #     start_date = '2013-01-01'; end_date = '2013-01-31'
 #     grid_name  = 'son1'
     ## operational test config
-    project = 'SON'
+    project = 'GRW'
     start_date = '2011-01-01'; end_date = '2018-12-31'
     grid_name  = 'grw1'
     ## operational config for SON2
@@ -124,7 +125,7 @@ if __name__ == '__main__':
         tgt_geotrans = griddef.geotransform; tgt_size = griddef.size
     elif project == 'SnoDAS':
         tgt_crs = None # native grid
-    elif project.upper() == 'SON':
+    elif project.upper() in ('SON','GRW'):
         # southern Ontario projection
         tgt_crs = genProj("+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
     elif project.upper() == 'CMB':
@@ -165,21 +166,19 @@ if __name__ == '__main__':
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
     
     ## define export parameters
-    raster_format = None; scalefactor = 1.; lexec = True
+    raster_format = None; scalefactor = 1.
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
-        #varname = 'liqwatflx'; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
-        varlist = ['liqwatflx','precip']
-        target_folder = '{root:s}/{proj:s}/{grid:s}/{name:s}/'.format(root=os.getenv('HGS_ROOT'),
-                                                                      proj=project,grid=grid_name,name=dataset)
+        varlist = ['liqwatflx']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
+        #target_folder = '{root:s}/{proj:s}/{grid:s}/{name:s}/'.format(root=os.getenv('HGS_ROOT'),
+        #                                                              proj=project,grid=grid_name,name=dataset)
+        target_folder = 'F:/Data/HGS/{proj:s}/{grid:s}/{name:s}/transient_daily/'.format(proj=project,grid=grid_name,name=dataset)
         raster_format = 'AAIGrid'
         raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
         filename_novar = raster_name.format(dataset=dataset.lower(), variable='{var:s}',
                                             grid=grid_name.lower(), date='{date:s}') # no date for now...
         print(("\n***   Exporting '{}' to raster format {}   ***\n".format(dataset,raster_format)))
-        # HGS include file only?
-        lexec = True        
     elif mode.upper() == 'NETCDF':
         # NetCDF output using netCDF4
         #varlist = ['snow','liqwatflx']

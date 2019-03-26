@@ -13,7 +13,7 @@ import os, shutil
 import subprocess # launching external programs
 import bisect
 # internal imports
-from hgsrun.input_list import generateInputFilelist, resolveInterval
+from hgsrun.input_list import generateInputFilelist, resolveInterval, rewriteInputFilelist, getIncFolderFile
 from hgsrun.misc import lWin, symlink_ms, GrokError, HGSError, timeseriesFiles,\
   binaryFiles, well_files, hydro_files, water_file, newton_file, out_files,\
   head_files, restart_file, grok_file
@@ -445,14 +445,15 @@ class Grok(object):
       grokname,vartype,wrfvar = val
       if self.getParam('name', after=vartype, llist=False).lower() != grokname:
             raise GrokError("No entry for boundary condition type '{}'/'{}' found in grok file!".format(vartype,grokname))
-      if varname == 'precip' and precip_inc:        
-        if not os.path.exists(os.path.join(self.rundir,precip_inc)):
-            raise IOError("Include file for Precip forcing '{}' not found.\n (rundir: '{}')".format(precip_inc,self.rundir))
-        self.setParam('time raster table', 'include {}'.format(precip_inc), after=vartype)              
-      elif varname == 'pet' and pet_inc:
-        if not os.path.exists(os.path.join(self.rundir,pet_inc)):
-            raise IOError("Include file for PET forcing '{}' not found.\n (rundir: '{}')".format(pet_inc,self.rundir))
-        self.setParam('time raster table', 'include {}'.format(pet_inc), after=vartype)              
+      if ( varname == 'precip' and precip_inc ) or ( varname == 'pet' and pet_inc ):
+        # variable parameters
+        inc_file = pet_inc if varname == 'pet' else precip_inc
+        # rewrite and validate file list
+        inc_folder,inc_file = getIncFolderFile(inc_path=inc_file, rundir=self.rundir, 
+                                               default_name=varname+'.inc', lvalidate=True)
+        lec = rewriteInputFilelist(inc_file=inc_file, inc_folder=inc_folder, rundir=self.rundir, lvalidate=lvalidate)              
+        # set include file in Grok file
+        self.setParam('time raster table', 'include {}'.format(inc_file), after=vartype)
       else:
         filename = '{}.inc'.format(varname)
         self.setParam('time raster table', 'include {}'.format(filename), after=vartype)      
@@ -482,7 +483,7 @@ class Grok(object):
                                     input_pattern=input_pattern, lcenter=lcenter, lvalidate=lvalidate, 
                                     units='seconds', l365=l365, lFortran=lFortran, interval=self.input_interval, 
                                     end_time=self.runtime, mode=input_mode)
-        ec += 0 if lec else 1          
+      ec += 0 if lec else 1          
     # return exit code
     return ec
   
