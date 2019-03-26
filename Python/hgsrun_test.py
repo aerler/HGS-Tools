@@ -193,7 +193,10 @@ class HGSTest(GrokTest):
   rundir       = '{}/hgs_test/'.format(workdir,) # test folder
   hgsdir       = os.getenv('HGSDIR',) # HGS license file
   # some grok settings
-  runtime = 5*365*24*60*60 # five years in seconds
+  runtime = 10*365*24*60*60 # ten years in seconds
+  # N.B.: this runtime is actually necessary, otherwise the naming convention for input files 
+  #       will break: since the files are from a 30-year run, they have three digits, so we need 
+  #       a runtime that will result in a 3-digit number of month in the filename
   input_interval = 'monthly'
 #   input_mode = 'periodic'
   input_mode = 'quasi-transient'
@@ -538,16 +541,16 @@ if __name__ == "__main__":
 #     specific_tests += ['SetTime']
 #     specific_tests += ['Setup']
 #     specific_tests += ['SetupExp']
-    specific_tests += ['SetupRundir']
+#     specific_tests += ['SetupRundir']
 #     specific_tests += ['Write']
 
 
     # list of tests to be performed
     tests = [] 
     # list of variable tests
-#     tests += ['Grok']
+    tests += ['Grok']
 #     tests += ['HGS']    
-    tests += ['EnsHGS']
+#     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()

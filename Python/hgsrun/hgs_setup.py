@@ -58,6 +58,9 @@ class Grok(object):
   input_vars = 'PET' # input variable configuration
   input_prefix = None # prefix for input files
   input_folder = '../climate_forcing' # default folder for input data
+  pet_folder = None # an alternative folder for PET input (usually for climatology)
+  precip_inc = None # a pre-written include file for liquid water forcing (skip auto-generation)
+  pet_inc = None  # a pre-written include file for PET forcing to be used (skip auto-generation)
   output_interval = None # how many evenly spaced restart files to write (supports multiple nested intervals)
   starttime = 0 # model time at initialization
   runtime = None # run time for the simulations (in seconds)
@@ -68,8 +71,8 @@ class Grok(object):
   
   def __init__(self, rundir=None, project=None, problem=None, starttime=0, runtime=None, length=None, 
                output_interval='default', input_mode=None, input_interval=None, input_vars='PET', 
-               input_prefix=None, input_folder='../climate_forcing', pet_folder=None, lcheckdir=True,
-               grok_bin='grok.exe'):
+               input_prefix=None, input_folder='../climate_forcing', precip_inc=None, pet_inc=None, 
+               pet_folder=None, lcheckdir=True, grok_bin='grok.exe'):
     ''' initialize a Grok configuration object with some settings '''
     if lcheckdir and not os.path.isdir(rundir): raise IOError(rundir)
     # determine end time in seconds (begin == 0) or number of intervals (length)
@@ -95,8 +98,8 @@ class Grok(object):
     self.well_file = self.well_file.format(PROBLEM=self.problem, TAG='{TAG:s}')
     # input configuration
     self.setInputMode(input_mode=input_mode, input_interval=input_interval,
-                      input_vars=input_vars, input_prefix=input_prefix,
-                      input_folder=input_folder, pet_folder=pet_folder)
+                      input_vars=input_vars, input_prefix=input_prefix, input_folder=input_folder, 
+                      precip_inc=precip_inc, pet_inc=pet_inc, pet_folder=pet_folder)
     # output configuration
     self.resolveOutput(output_interval=output_interval)
   
@@ -384,7 +387,7 @@ class Grok(object):
   
   
   def setInputMode(self, input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, 
-                   input_folder='../climate_forcing', pet_folder=None):
+                   precip_inc=None, pet_inc=None, input_folder='../climate_forcing', pet_folder=None):
     ''' set the type of the simulation: mean/steady-state, climatology/periodic, time-series/transient '''
     # resolve type of input data 
     input_mode = input_mode.lower()
@@ -408,14 +411,20 @@ class Grok(object):
     self.input_prefix = input_prefix
     self.input_folder = input_folder
     self.pet_folder = input_folder if pet_folder is None else pet_folder
+    self.precip_inc = precip_inc
+    self.pet_int = pet_inc
   
   def generateInputLists(self, input_vars=None, input_prefix=None, input_folder=None, pet_folder=None,
-                         lvalidate=True, axis='iTime', lcenter=True, l365=True, lFortran=True):
+                         precip_inc=None, pet_inc=None, lvalidate=True, axis='iTime', lcenter=True, 
+                         l365=True, lFortran=True):
     ''' generate and validate lists of input files and write to appropriate files '''
     input_vars = self.input_vars if input_vars is None else input_vars
     input_prefix = self.input_prefix if input_prefix is None else input_prefix
     input_folder = self.input_folder if input_folder is None else input_folder
-    pet_folder = self.pet_folder if pet_folder is None else pet_folder
+    pet_folder = self.pet_folder if pet_folder is None else pet_folder 
+    precip_inc = self.precip_inc if precip_inc is None else precip_inc
+    pet_inc = self.pet_inc if pet_inc is None else pet_inc
+    
     # generate default input vars
     if isinstance(input_vars,str):
       if input_vars.upper() == 'PET': # liquid water + snowmelt & PET as input
@@ -432,39 +441,48 @@ class Grok(object):
     elif not isinstance(input_vars, dict): raise TypeError(input_vars)
     # iterate over variables and generate corresponding input lists
     ec = 0 # cumulative exit code
-    for varname,val in list(input_vars.items()):
+    for varname,val in input_vars.items():
       grokname,vartype,wrfvar = val
-      filename = '{}.inc'.format(varname)
       if self.getParam('name', after=vartype, llist=False).lower() != grokname:
             raise GrokError("No entry for boundary condition type '{}'/'{}' found in grok file!".format(vartype,grokname))
-      self.setParam('time raster table', 'include {}'.format(filename), after=vartype)      
-      # special handling for quasi-transient forcing based on variable
-      if self.input_mode == 'quasi-transient':
-          input_mode = 'periodic' if varname == 'pet' else 'transient' 
-      else: 
-          input_mode = self.input_mode
-      actual_input_folder = pet_folder if pet_folder and varname == 'pet' else input_folder
-      print(actual_input_folder)
-      # select interval and output format
-      if self.input_interval == 'monthly':
-        if input_mode == 'steady-state': input_pattern = 'iTime_{IDX:d}' # IDX will be substituted
-        elif input_mode == 'periodic': input_pattern = 'iTime_{IDX:02d}' # IDX will be substituted
-        elif input_mode == 'transient': 
-            log_length = int(np.ceil(np.log10(self.runtime*12./(365.*86400.))))
-            input_pattern = 'iTime_{{IDX:0{:d}d}}'.format(log_length) # IDX will be substituted
-        else: raise GrokError(self.input_mode)
-        # N.B.: we estimate the length of the timeseries based on runtime and interval
+      if varname == 'precip' and precip_inc:        
+        if not os.path.exists(os.path.join(self.rundir,precip_inc)):
+            raise IOError("Include file for Precip forcing '{}' not found.\n (rundir: '{}')".format(precip_inc,self.rundir))
+        self.setParam('time raster table', 'include {}'.format(precip_inc), after=vartype)              
+      elif varname == 'pet' and pet_inc:
+        if not os.path.exists(os.path.join(self.rundir,pet_inc)):
+            raise IOError("Include file for PET forcing '{}' not found.\n (rundir: '{}')".format(pet_inc,self.rundir))
+        self.setParam('time raster table', 'include {}'.format(pet_inc), after=vartype)              
       else:
-        length = self.length + 1 if lFortran else self.length
-        input_pattern = '{0:s}_{{IDX:0{1:d}d}}'.format(axis, int(np.ceil(np.log10(length)))) # number of digits
-      input_pattern = '{0}_{1}.asc'.format(wrfvar,input_pattern)
-      if input_prefix is not None: input_pattern = '{0}_{1}'.format(input_prefix,input_pattern)
-      # write file list
-      lec = generateInputFilelist(filename=filename, folder=self.rundir, input_folder=actual_input_folder, 
-                                  input_pattern=input_pattern, lcenter=lcenter, lvalidate=lvalidate, 
-                                  units='seconds', l365=l365, lFortran=lFortran, interval=self.input_interval, 
-                                  end_time=self.runtime, mode=input_mode)
-      ec += 0 if lec else 1          
+        filename = '{}.inc'.format(varname)
+        self.setParam('time raster table', 'include {}'.format(filename), after=vartype)      
+        # special handling for quasi-transient forcing based on variable
+        if self.input_mode == 'quasi-transient':
+            input_mode = 'periodic' if varname == 'pet' else 'transient' 
+        else:
+            input_mode = self.input_mode
+        actual_input_folder = pet_folder if pet_folder and varname == 'pet' else input_folder
+        print(actual_input_folder)
+        # select interval and output format
+        if self.input_interval == 'monthly':
+          if input_mode == 'steady-state': input_pattern = 'iTime_{IDX:d}' # IDX will be substituted
+          elif input_mode == 'periodic': input_pattern = 'iTime_{IDX:02d}' # IDX will be substituted
+          elif input_mode == 'transient': 
+              log_length = int(np.ceil(np.log10(self.runtime*12./(365.*86400.))))
+              input_pattern = 'iTime_{{IDX:0{:d}d}}'.format(log_length) # IDX will be substituted
+          else: raise GrokError(self.input_mode)
+          # N.B.: we estimate the length of the timeseries based on runtime and interval
+        else:
+          length = self.length + 1 if lFortran else self.length
+          input_pattern = '{0:s}_{{IDX:0{1:d}d}}'.format(axis, int(np.ceil(np.log10(length)))) # number of digits
+        input_pattern = '{0}_{1}.asc'.format(wrfvar,input_pattern)
+        if input_prefix is not None: input_pattern = '{0}_{1}'.format(input_prefix,input_pattern)
+        # write file list
+        lec = generateInputFilelist(filename=filename, folder=self.rundir, input_folder=actual_input_folder, 
+                                    input_pattern=input_pattern, lcenter=lcenter, lvalidate=lvalidate, 
+                                    units='seconds', l365=l365, lFortran=lFortran, interval=self.input_interval, 
+                                    end_time=self.runtime, mode=input_mode)
+        ec += 0 if lec else 1          
     # return exit code
     return ec
   
