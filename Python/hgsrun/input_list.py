@@ -198,6 +198,7 @@ def rewriteInputFilelist(inc_file=None, inc_folder=None, rundir=None, lvalidate=
     ''' read an include file from a remote directory, change file path to relative to rundir,
         validate the file list, and write to a new file '''
     # change directory to rundir
+    old_dir = os.getcwd()
     os.chdir(rundir)
     # open inc file/folder from here
     with open(os.path.join(inc_folder,inc_file)) as old_inc:
@@ -214,10 +215,11 @@ def rewriteInputFilelist(inc_file=None, inc_folder=None, rundir=None, lvalidate=
                 if lvalidate and not os.path.exists(new_path):
                     raise IOError("The input file '{:s}' does not exist.\n (run folder: '{:s}')".format(new_path,rundir))
                 # write to new file
-                new_line = list_format.format(T=time_stamp,F=filepath)
+                new_line = list_format.format(T=time_stamp,F=new_path)
                 #print(new_line)
                 new_inc.write(new_line)    
     # return file status
+    os.chdir(old_dir)
     return os.path.isfile(inc_file) 
     
 # helper function to figure out path of inc-file
