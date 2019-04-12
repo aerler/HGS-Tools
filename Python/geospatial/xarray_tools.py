@@ -128,7 +128,7 @@ def getTransform(xvar=None, x=None, y=None, lcheck=True):
         raise ValueError("Y-axis is not regular. {} - {}".format(dy, diff_y.max()))
     
     # generate transform
-    return Affine.from_gdal(x[0],dx,0.,y[0],0.,dy), (len(x),len(y))
+    return Affine.from_gdal(x[0]-dx/2.,dx,0.,y[0]-dy/2.,0.,dy), (len(x),len(y))
 
 
 def getProj(xvar, lraise=True):

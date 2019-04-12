@@ -78,9 +78,10 @@ if __name__ == '__main__':
     start = time()
 
     loverwrite = True
+    source_grid = None
     time_chunks = 8 # typically not much speed-up beyond 8
-    mode = 'raster2d'
-    lexec = False # actually write rasters or just include file
+    resampling = 'nearest'
+    lexec = True # actually write rasters or just include file
     ## WRF grids
 #     project = 'WRF'
 # #     start_date = '2014-01-01'; end_date = '2015-01-01'
@@ -94,15 +95,19 @@ if __name__ == '__main__':
     ## generate a full SnoDAS raster
 #     project = 'SnoDAS'
 #     start_date = '2014-01-01'; end_date = '2014-01-05'
-#     grid_name  = 'snodas'
+#     grid_name  = 'native'
     ## fast test config
 #     project = 'SON'
 #     start_date = '2013-01-01'; end_date = '2013-01-31'
 #     grid_name  = 'son1'
-    ## operational test config
+    ## operational config for GRW
     project = 'GRW'
     start_date = '2011-01-01'; end_date = '2018-12-31'
     grid_name  = 'grw1'
+    ## test config for GRW
+#     project = 'GRW'
+#     start_date = '2011-01-01'; end_date = '2011-12-31'
+#     grid_name  = 'grw2'; resampling = 'nearest'; #source_grid = 'grw1'
     ## operational config for SON2
 #     project = 'SON'
 #     start_date = '2011-01-01'; end_date = None
@@ -113,7 +118,6 @@ if __name__ == '__main__':
 #     grid_name  = 'asb2'
 
     ## define target grid/projection
-    resampling = 'nearest'
     # projection/UTM zone
     tgt_size = None; tgt_geotrans = None # valid for native grid
     if project == 'WRF':
@@ -146,15 +150,20 @@ if __name__ == '__main__':
     elif grid_name == 'grw1':
         tgt_size = (132,162) # smaller, higher resolution 1 km grid for GRW
         tgt_geotrans = (500.e3,1.e3,0,4740.e3,0,1.e3) # 1 km 
+    elif grid_name == 'grw2':
+        tgt_size = (27,33) # smaller, lower resolution 5 km grid for GRW
+        tgt_geotrans = (500.e3,5.e3,0,4740.e3,0,5.e3) # 5 km 
     elif grid_name == 'cmb1':
         tgt_size = (640,826) # higher resolution 500 m grid
         tgt_geotrans = (292557.,500,0,5872251.,0,-500.) # 500 m 
     elif grid_name == 'asb2':
         tgt_size = (955,675) # higher resolution 1 km grid (> 1 MB per day)
         tgt_geotrans = (-159.e3, 1.e3, 0., 5202.e3, 0., 1.e3) # 1 km 
-    elif grid_name == 'snodas': # original SnoDAS grid
-        time_chunks = 1 # this is pretty big!
+    elif grid_name == 'native': # original grid
+        time_chunks = 1 # this can be pretty big!
         tgt_size = None; tgt_geotrans = None # native grid
+    else:
+        raise NotImplementedError(grid_name)
     # cast geotransform into an Affine object
     if tgt_geotrans is not None:
         tgt_geotrans = rio.transform.Affine.from_gdal(*tgt_geotrans)
@@ -165,15 +174,33 @@ if __name__ == '__main__':
     dataset = 'SnoDAS'
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
     
+    ## bias correction
+#     bias_correction = None
+    bias_correction = 'SMBC'
+    bc_tag = bias_correction+'_' if bias_correction else ''
+    bc_varmap = dict(liqprec='liqwatflx') # just for testing...
+    if bias_correction:
+        import pickle, gzip
+        from processing.bc_methods import findPicklePath
+        # get pickle path (autodetect gzip)
+        picklepath = findPicklePath(method=bias_correction, obs_name='NRCan', gridstr=grid_name,
+                                    domain=None, folder=ds_mod.avgfolder)
+        # load pickle from file
+        op = gzip.open if picklepath.endswith('.gz') else open
+        with op(picklepath, 'rb') as filehandle:
+            bias_correction = pickle.load(filehandle) 
+        
     ## define export parameters
+#     mode = 'NetCDF'
+    mode = 'raster2d'; source_grid = grid_name
     raster_format = None; scalefactor = 1.
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
         varlist = ['liqwatflx']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
-        #target_folder = '{root:s}/{proj:s}/{grid:s}/{name:s}/'.format(root=os.getenv('HGS_ROOT'),
-        #                                                              proj=project,grid=grid_name,name=dataset)
-        target_folder = 'F:/Data/HGS/{proj:s}/{grid:s}/{name:s}/transient_daily/'.format(proj=project,grid=grid_name,name=dataset)
+        gridstr = dataset.lower() if grid_name.lower() == 'native' else grid_name.lower()
+        target_folder = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_daily/climate_forcing/'.format(
+                          root=os.getenv('HGS_ROOT'), proj=project, grid=gridstr, name=dataset, bc=bc_tag)          
         raster_format = 'AAIGrid'
         raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
         filename_novar = raster_name.format(dataset=dataset.lower(), variable='{var:s}',
@@ -181,10 +208,12 @@ if __name__ == '__main__':
         print(("\n***   Exporting '{}' to raster format {}   ***\n".format(dataset,raster_format)))
     elif mode.upper() == 'NETCDF':
         # NetCDF output using netCDF4
-        #varlist = ['snow','liqwatflx']
-        varlist = ds_mod.netcdf_varlist # all primary and secondary variables, excluding coordinate variables
+#         varlist = ds_mod.netcdf_varlist # all primary and secondary variables, excluding coordinate variables
+#         varlist = ds_mod.binary_varlist
+        varlist = ['liqwatflx']
+        gridstr = '' if grid_name.lower() == 'native' else '_'+grid_name.lower()
         target_folder = osp.join(ds_mod.daily_folder,grid_name,resampling)
-        filename_novar = ds_mod.netcdf_filename.format('{:s}_{:s}'.format('{var:s}',grid_name))
+        filename_novar = ds_mod.netcdf_filename.format(bc_tag+'{var:s}'+gridstr)
         print(("\n***   Regridding '{}' to '{}' (NetCDF format)   ***".format(dataset,grid_name)))
     else:
         raise NotImplementedError
@@ -192,7 +221,7 @@ if __name__ == '__main__':
     
     
     # lazily load dataset (assuming xarray)
-    xds = ds_mod.loadDailyTimeSeries(varlist=varlist, time_chunks=time_chunks)
+    xds = ds_mod.loadDailyTimeSeries(varlist=varlist, time_chunks=time_chunks, grid=source_grid)
     
     # get georeference
     src_crs = getProj(xds)
@@ -252,7 +281,9 @@ if __name__ == '__main__':
             end_inc = time()
             #print("\nTiming to write include file: {} seconds".format(end_inc-start_inc))
             
-        if not lexec: exit()
+        if not lexec: 
+            print("\nNot executing workload --- set 'lexec' to 'True' to execute workload")
+            exit()
                
         ## generate workload for lazy execution
         start_load = time()
@@ -277,6 +308,7 @@ if __name__ == '__main__':
                                                     tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
                                                     mode=mode, resampling=resampling, 
                                                     folder=target_folder, filename=filename, driver=raster_format,
+                                                    bias_correction=bias_correction, bc_varname=bc_varmap.get(varname,varname),
                                                     lecho=True, loverwrite=loverwrite,)
                   
         # now map regridding operation to blocks
@@ -301,7 +333,7 @@ if __name__ == '__main__':
         print(("\nDummy Size in memory: {:f} MB".format(dummy_output.nbytes/1024./1024.)))
     
         if mode.upper() == 'NETCDF':
-            dataset.attrs['resampling'] = resampling
+            dataset.setncattr('resampling',resampling)
             dataset.close()
         
         end_var = time()

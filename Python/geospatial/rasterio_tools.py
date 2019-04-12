@@ -229,14 +229,14 @@ dummy_array = np.zeros((1,1,1), dtype=np.int8)
 def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_geotrans=None, src_size=None, 
                       tgt_crs=None, tgt_geotrans=None, tgt_size=None, mode='raster2D', resampling='bilinear',
                       filepath=None, time_coord=None, driver='AAIGrid',missing_value=0., missing_flag=-9999.,
-                      ncvar=None,
+                      ncvar=None, bias_correction=None, bc_varname=None,
                       lecho=True, loverwrite=True, return_dummy=dummy_array):
     ''' a function for use with Dask lazy execution that regrids an array and exports/writes the results 
         to either NetCDF or any GDAL/rasterio raster format; the array has to be chunked in a way that  
         full 2D horizontal surfaces are processed, otherwise regridding does not work '''
     
     # regrid array
-    if tgt_crs != src_crs:
+    if tgt_crs != src_crs or tgt_geotrans != src_geotrans or tgt_size != src_size:
         # reproject data
         data = regrid_array(data, tgt_crs=tgt_crs, tgt_transform=tgt_geotrans, tgt_size=tgt_size, 
                             src_crs=src_crs, src_transform=src_geotrans, src_size=src_size, 
@@ -244,10 +244,19 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
 
     # figure out time coordinates/dates
     ts = time_chunks[block_id[0]]; te = ts + data.shape[0] 
-
+    
+    # bias correction
+    if bias_correction:
+        time_chunk = time_coord[ts:te] # chunk of time axis that corresponds to this chunk
+        # N.B.: bias_correction is assumed to be an object that is similar to the BiasCorrection class,
+        #       which is defined in the bc_methods module and exposes a 'correctArray' method; the bc_varname
+        #       variabel indicates, which correction array from bias_correction should be used
+        data = bias_correction.correctArray(data, varname=bc_varname, time=time_chunk, ldt=True, time_idx=0)
+        
     if mode.lower() == 'raster2d':    
         # write raster files, one per time step
-        time_chunk = time_coord[ts:te] # chunk of time axis that corresponds to this chunk 
+        if not bias_correction:
+            time_chunk = time_coord[ts:te] # chunk of time axis that corresponds to this chunk 
         #print(time_chunk)
         write_time_rasters(filepath, data, time_coord=time_chunk, driver=driver, crs=tgt_crs, 
                            transform=tgt_geotrans, missing_value=missing_value, missing_flag=missing_flag, 
@@ -265,6 +274,7 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
 def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=None, filename=None,
                                tgt_crs=None, tgt_geotrans=None, tgt_size=None, resampling='bilinear', 
                                driver='AAIGrid', missing_value=0., missing_flag=-9999., 
+                               bias_correction=None, bc_varname=None, 
                                lecho=True, loverwrite=True,):
     ''' a function that returns another function, which is suitable for regridding and direct export to disk 
         using Dask lazy execution; some parameters can be inferred from xarray attributes '''
@@ -330,7 +340,8 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
                                  src_crs=src_crs, src_geotrans=src_geotrans, src_size=src_size, 
                                  tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
                                  mode=mode, filepath=filepath, time_coord=time_coord, ncvar=ncvar,
-                                 driver=driver,missing_value=missing_value, missing_flag=missing_flag,                                 
+                                 driver=driver,missing_value=missing_value, missing_flag=missing_flag, 
+                                 bias_correction=bias_correction, bc_varname=bc_varname,                                
                                  lecho=lecho, loverwrite=loverwrite, return_dummy=dummy_array)
     
     # return function with dummy array (for measure)
