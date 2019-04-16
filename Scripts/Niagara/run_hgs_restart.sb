@@ -34,11 +34,19 @@ export SETTINGS=${SETTINGS:-"$HOME/hgs_settings.sh"} # source this file to load 
 #       from the $SETTINGS file; the values defined below are just default values (that should work for most users);
 #       e.g. to source settings from a file and skip runnign Grok, use this: 
 #               sbatch --export=SETTINGS='path/to/settings.sh',RUNGROK=FALSE ./run_hgs_restart.sb
-# source settings
-if [ -n "$SETTINGS" ] && [ -e "$SETTINGS" ]; then 
+# source settings, first from current working directory, then from user's $HOME directory
+cd "$SLURM_SUBMIT_DIR"
+if [ -n "$SETTINGS" ]; then
+  if [ -e "$SETTINGS" ]; then 
     echo "Loading settings from file: ${SETTINGS}"
-    source "$SETTINGS"; 
-    echo
+    source "$SETTINGS" 
+  elif [ -e "$HOME/$SETTINGS" ]; then 
+    echo "Loading settings from file: $HOME/${SETTINGS}"
+    source "$HOME/$SETTINGS" 
+  else
+    echo "No settings file '$SETTINGS' found - using default values."
+  fi
+  echo
 fi
 INIDIR=${INIDIR:-"$SLURM_SUBMIT_DIR"}
 # restart options
