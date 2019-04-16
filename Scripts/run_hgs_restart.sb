@@ -11,7 +11,7 @@
 #SBATCH --mail-user="$EMAIL"
 #SBATCH --mail-type=FAIL
 # allocation/account
-#SBATCH -A rrg-sudicky-ab
+# #SBATCH -A rrg-sudicky-ab
 # job name
 #SBATCH -J HGS_restart_run
 
@@ -66,7 +66,7 @@ export HSPLOT=${HSPLOG:-'hsplot.log'} # HSplot log file
 cd "$INIDIR"
 
 # automatically figure out restart mode
-if [ $RESTART -eq 'AUTO' ]; then
+if [[ $RESTART == 'AUTO' ]]; then
     if [ -e "$RSTINFO" ]; then 
         echo "Detected restart info file '${RSTINFO}' - assuming restart."
         RESTART='RESTART'
@@ -78,7 +78,7 @@ if [ $RESTART -eq 'AUTO' ]; then
 fi # if AUTO
 
 # check restart option, and run Grok, if necessary
-if [ $RESTART -eq 'RESTART' ]; then
+if [[ $RESTART == 'RESTART' ]]; then
     # check if restart info file is present
     if [ -e "$RSTINFO" ]; then 
         echo "Restart info file '$RSTINFO' found; restarting simulation."
@@ -88,7 +88,7 @@ if [ $RESTART -eq 'RESTART' ]; then
     fi # RSTFILE
     # check if restart info file is present
     if [ -z "$RSTFILE" ]; then 
-        # pass
+        echo  # pass
     elif [ -e "$RSTFILE" ]; then 
         echo "Binary restart file '$RSTFILE' also found."
     else
@@ -104,7 +104,7 @@ else
         echo "$GROKEXE &> $GROKLOG"
         time -p "$GROKEXE" &> "$GROKLOG"
         echo
-        if [ $( tail -n 10 $GROKLOG | grep -c '---- Normal exit ----' ) -gt 0 ]; then
+        if [ $( tail -n 10 $GROKLOG | grep -ci 'Normal exit' ) -gt 0 ]; then
             echo "ERROR: Grok execution failed; see log file: ${GROKLOG} - aborting!"
             exit 1
         else
@@ -134,7 +134,7 @@ if [ $NEWRST -gt $OLDRST ]; then
 	sbatch --export=RESTART='RESTART' -J "${SLURM_JOB_NAME}" "$0" # submit same script again, in restart mode with same name
 else
 	# no new restart info, so either we are done or HGS crashed
-	if [ $( tail -n 10 $HGSLOG | grep -c '---- Normal exit ----' ) -eq 0 ]; then
+	if [ $( tail -n 10 $HGSLOG | grep -ci 'Normal exit' ) -eq 0 ]; then
 		echo "ERROR: HGS execution failed; see log file: ${HGSLOG} - aborting!"
 		exit 1
 	else
@@ -146,7 +146,7 @@ else
 			echo "$HSPEXE &> $HSPLOG"
 			time -p "$HSPEXE" &> "$HSPLOG"
 			echo
-			if [ $( tail -n 10 $HSPLOG | grep -c '---- Normal exit ----' ) -gt 0 ]; then
+			if [ $( tail -n 10 $HSPLOG | grep -ci 'Normal exit' ) -gt 0 ]; then
 				# N.B.: I'm not actually sure if this is what HSplot prints, since I don't use it...
 				echo "ERROR: HSplot execution failed; see log file: ${HSPLOG} - aborting!"
 				exit 1
