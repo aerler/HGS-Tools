@@ -95,24 +95,27 @@ if [[ $RESTART == 'RESTART' ]]; then
         echo "Binary restart file '$RSTFILE' not found; cannot restart - aborting!"
         exit 1        
     fi # RSTINFO
-    # record modification time of restart info file
-    OLDRST=$( stat -c %Y "$RSTINFO" ) 
 else
     # if this is the first start of the job, we need to run Grok
-    if [ "$RUNGROK" -eq 'RUNGROK' ]; then
+    if [[ "$RUNGROK" == 'RUNGROK' ]]; then
         echo "Launching Grok executable:"
         echo "$GROKEXE &> $GROKLOG"
         time -p "$GROKEXE" &> "$GROKLOG"
         echo
-        if [ $( tail -n 10 $GROKLOG | grep -ci 'Normal exit' ) -gt 0 ]; then
+        if [ $( tail -n 10 $GROKLOG | grep -ci 'Normal exit' ) -eq 0 ]; then
             echo "ERROR: Grok execution failed; see log file: ${GROKLOG} - aborting!"
             exit 1
         else
             echo "Grok completed successfully."
         fi # Grok 
     fi # RUNGROK
-    OLDRST=0 # no previous modification
 fi # RESTART
+# record modification time of restart info file
+if [ -e "$RSTINFO" ]; then 
+    OLDRST=$( stat -c %Y "$RSTINFO" ) 
+else
+    OLDRST=0
+fi # OLDRST
 
 
 ## launch HGS
@@ -146,7 +149,7 @@ else
 			echo "$HSPEXE &> $HSPLOG"
 			time -p "$HSPEXE" &> "$HSPLOG"
 			echo
-			if [ $( tail -n 10 $HSPLOG | grep -ci 'Normal exit' ) -gt 0 ]; then
+			if [ $( tail -n 10 $HSPLOG | grep -ci 'Normal exit' ) -eq 0 ]; then
 				# N.B.: I'm not actually sure if this is what HSplot prints, since I don't use it...
 				echo "ERROR: HSplot execution failed; see log file: ${HSPLOG} - aborting!"
 				exit 1
