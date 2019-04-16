@@ -5,8 +5,6 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=80
 #SBATCH --time=24:00:00
-# direct stdout and stderr go into the same file
-#SBATCH --output=cycling_WRF.%j.out
 # send email if job fails
 #SBATCH --mail-user="$EMAIL"
 #SBATCH --mail-type=FAIL
@@ -14,11 +12,13 @@
 # #SBATCH -A rrg-sudicky-ab
 # job name
 #SBATCH -J HGS_restart_run
-
+# direct stdout and stderr go into the same file
+#SBATCH --output=hgs_restart.%j.out
 
 ## machine settings
 # load modules for HGS
 date
+hostname
 echo
 module purge
 module load intel/2017.7
@@ -28,38 +28,38 @@ ulimit -s unlimited
 echo
 
 ## settings
-export SETTINGS=${SETTINGS:-'hgs_settings.sh'} # source this file to load settings
+export JOBSCRIPT=${JOBSCRIPT:-'run_hgs_restart.sb'} # the name of this script - needed for resubmission
+export SETTINGS=${SETTINGS:-"$HOME/hgs_settings.sh"} # source this file to load settings
 # N.B.: all of the variables below can be set by the caller using the sbatch --export flag or can be sourced (loaded)
 #       from the $SETTINGS file; the values defined below are just default values (that should work for most users);
 #       e.g. to source settings from a file and skip runnign Grok, use this: 
 #               sbatch --export=SETTINGS='path/to/settings.sh',RUNGROK=FALSE ./run_hgs_restart.sb
 # source settings
-if [ -e "$SETTINGS" ]; then 
+if [ -n "$SETTINGS" ] && [ -e "$SETTINGS" ]; then 
     echo "Loading settings from file: ${SETTINGS}"
     source "$SETTINGS"; 
     echo
 fi
-export INIDIR=${INIDIR:-"$SLURM_SUBMIT_DIR"}
+INIDIR=${INIDIR:-"$SLURM_SUBMIT_DIR"}
 # restart options
-export RESTART=${RESTART:-'AUTO'} # indicate if we are restarting a previous run
+RESTART=${RESTART:-'AUTO'} # indicate if we are restarting a previous run
 # valid values: 'AUTO', 'RESTART', and 'FALSE'
-export RSTINFO=${RSTINFO:-'RESTART_FILE_INFO.dat'} # the restart info file
-export RSTFILE=${RSTFILE:-''} # the actual restart file (just to check if it is there)
+RSTINFO=${RSTINFO:-'RESTART_FILE_INFO.dat'} # the restart info file
+RSTFILE=${RSTFILE:-''} # the actual restart file (just to check if it is there)
 # pre-processing options (for the first start only)
-export RUNGROK=${RUNGROK:-'RUNGROK'} # to run Grok or not to run Grok (only for non-restarts)
+RUNGROK=${RUNGROK:-'RUNGROK'} # to run Grok or not to run Grok (only for non-restarts)
 # valid values: 'RUNGROK' and 'FALSE'
-export GROKEXE=${GROKEXE:-'./grok.x'} # Grok execution command
-export GROKLOG=${GROKLOG:-'grok.log'} # Grok log file
+GROKEXE=${GROKEXE:-'./grok.x'} # Grok execution command
+GROKLOG=${GROKLOG:-'grok.log'} # Grok log file
 # HGS run time options
-export HGSEXE=${HGSEXE:-'./hgs.x'} # HGS execution command
-export HGSLOG=${HGSLOG:-'hgs.log'} # HGS log file
-export OMP_NUM_THREADS=${OMP_NUM_THREADS:-$SLURM_CPUS_PER_TASK}
+HGSEXE=${HGSEXE:-'./hgs.x'} # HGS execution command
+HGSLOG=${HGSLOG:-'hgs.log'} # HGS log file
+OMP_NUM_THREADS=${OMP_NUM_THREADS:-$SLURM_CPUS_PER_TASK}
 # post-processing options (only after completion)
-export RUNHSPLOT=${RUNHSPLOT:-'RUNHSPLOT'} # run HS plot or not (only after completion)
+RUNHSPLOT=${RUNHSPLOT:-'RUNHSPLOT'} # run HS plot or not (only after completion)
 # valid values: 'RUNHSPLOT' and 'FALSE'
-export HSPEXE=${HSPEXE:-'./hsplot.x'} # HSplot execution command
-export HSPLOT=${HSPLOG:-'hsplot.log'} # HSplot log file
-# N.B.: we need the export modifier, so that variables are inherited by the next restart job
+HSPEXE=${HSPEXE:-'./hsplot.x'} # HSplot execution command
+HSPLOG=${HSPLOG:-'hsplot.log'} # HSplot log file
 
 ## prepare HGS execution
 # go to execution directory
@@ -111,14 +111,12 @@ else
     fi # RUNGROK
 fi # RESTART
 # record modification time of restart info file
-if [ -e "$RSTINFO" ]; then 
-    OLDRST=$( stat -c %Y "$RSTINFO" ) 
-else
-    OLDRST=0
-fi # OLDRST
+if [ -e "$RSTINFO" ]; then OLDRST=$( stat -c %Y "$RSTINFO" ) 
+else OLDRST=0; fi # OLDRST
 
 
 ## launch HGS
+export OMP_NUM_THREADS # need the export, so that variable is visible to the HGS instance 
 echo
 echo "Launching HGS executable:"
 echo "$HGSEXE &> $HGSLOG"
@@ -131,10 +129,25 @@ if [ -e "$RSTINFO" ]; then NEWRST=$( stat -c %Y "$RSTINFO" )
 else NEWRST=0; fi
 if [ $NEWRST -gt $OLDRST ]; then 
 	# a new restart info file was created, so we are not done and need to restart
-	cd "$INIDIR" # probably not necessary
 	echo "A new restart info file was written - submitting another job to restart simulation."
-	echo "sbatch --export=RESTART='RESTART' -J ${SLURM_JOB_NAME} $0"
-	sbatch --export=RESTART='RESTART' -J "${SLURM_JOB_NAME}" "$0" # submit same script again, in restart mode with same name
+  ## submit same script again, in restart mode with same name and environment
+  # jobs have to be submitted from a login node using ssh and environment varibles have to be passed explicitly
+  set -x # echo ssh command to inspect environment variable
+	ssh nia-login07 "cd '${INIDIR}'; sbatch --export=\
+SETTINGS='',\
+RESTART='RESTART',\
+RSTINFO='${RSTINFO}',\
+RSTFILE='${RSTFILE}',\
+HGSEXE='${HGSEXE}',\
+HGSLOG='${HGSLOG}',\
+OMP_NUM_THREADS='${OMP_NUM_THREADS}',\
+RUNHSPLOT='${RUNHSPLOT}',\
+HSPEXE='${HSPEXE}',\
+HSPLOG='${HSPLOG}',\
+                                          -J '${SLURM_JOB_NAME}' '${JOBSCRIPT}'" 
+  set +x
+  # N.B.: since env vars are passed explicitly, the settings file will not be sourced again
+
 else
 	# no new restart info, so either we are done or HGS crashed
 	if [ $( tail -n 10 $HGSLOG | grep -ci 'Normal exit' ) -eq 0 ]; then
@@ -144,14 +157,14 @@ else
 		echo "HGS completed successfully."
 		echo 
 		# after HGS completed successfully, we can run HSplot
-		if [ "$RUNHSPLOT" -eq 'RUNHSPLOT' ]; then
-			echo "Launching Grok executable:"
+		if [[ "$RUNHSPLOT" == 'RUNHSPLOT' ]]; then
+			echo "Launching HSplot executable:"
 			echo "$HSPEXE &> $HSPLOG"
 			time -p "$HSPEXE" &> "$HSPLOG"
 			echo
 			if [ $( tail -n 10 $HSPLOG | grep -ci 'Normal exit' ) -eq 0 ]; then
 				# N.B.: I'm not actually sure if this is what HSplot prints, since I don't use it...
-				echo "ERROR: HSplot execution failed; see log file: ${HSPLOG} - aborting!"
+				echo "ERROR: HSplot execution failed; see log file: ${HSPLOG}!"
 				exit 1
 			else
 				echo "HSplot completed successfully."
@@ -163,3 +176,4 @@ fi # $NEWRST -gt $OLDRST
 
 echo 
 date
+exit 0
