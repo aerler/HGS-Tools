@@ -1,0 +1,162 @@
+#!/bin/bash
+# SLURM submission script for SciNet Niagara
+
+## queue/SLURM settings
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=80
+#SBATCH --time=24:00:00
+# direct stdout and stderr go into the same file
+#SBATCH --output=cycling_WRF.%j.out
+# send email if job fails
+#SBATCH --mail-user="$EMAIL"
+#SBATCH --mail-type=FAIL
+# allocation/account
+#SBATCH -A rrg-sudicky-ab
+# job name
+#SBATCH -J HGS_restart_run
+
+
+## machine settings
+# load modules for HGS
+date
+echo
+module purge
+module load intel/2017.7
+module list
+# Intel compiler settings
+ulimit -s unlimited
+echo
+
+## settings
+export SETTINGS=${SETTINGS:-'hgs_settings.sh'} # source this file to load settings
+# N.B.: all of the variables below can be set by the caller using the sbatch --export flag or can be sourced (loaded)
+#       from the $SETTINGS file; the values defined below are just default values (that should work for most users);
+#       e.g. to source settings from a file and skip runnign Grok, use this: 
+#               sbatch --export=SETTINGS='path/to/settings.sh',RUNGROK=FALSE ./run_hgs_restart.sb
+# source settings
+if [ -e "$SETTINGS" ]; then 
+    echo "Loading settings from file: ${SETTINGS}"
+    source "$SETTINGS"; 
+    echo
+fi
+export INIDIR=${INIDIR:-"$SLURM_SUBMIT_DIR"}
+# restart options
+export RESTART=${RESTART:-'AUTO'} # indicate if we are restarting a previous run
+# valid values: 'AUTO', 'RESTART', and 'FALSE'
+export RSTINFO=${RSTINFO:-'RESTART_FILE_INFO.dat'} # the restart info file
+export RSTFILE=${RSTFILE:-''} # the actual restart file (just to check if it is there)
+# pre-processing options (for the first start only)
+export RUNGROK=${RUNGROK:-'RUNGROK'} # to run Grok or not to run Grok (only for non-restarts)
+# valid values: 'RUNGROK' and 'FALSE'
+export GROKEXE=${GROKEXE:-'./grok.x'} # Grok execution command
+export GROKLOG=${GROKLOG:-'grok.log'} # Grok log file
+# HGS run time options
+export HGSEXE=${HGSEXE:-'./hgs.x'} # HGS execution command
+export HGSLOG=${HGSLOG:-'hgs.log'} # HGS log file
+export OMP_NUM_THREADS=${OMP_NUM_THREADS:-$SLURM_CPUS_PER_TASK}
+# post-processing options (only after completion)
+export RUNHSPLOT=${RUNHSPLOT:-'RUNHSPLOT'} # run HS plot or not (only after completion)
+# valid values: 'RUNHSPLOT' and 'FALSE'
+export HSPEXE=${HSPEXE:-'./hsplot.x'} # HSplot execution command
+export HSPLOT=${HSPLOG:-'hsplot.log'} # HSplot log file
+# N.B.: we need the export modifier, so that variables are inherited by the next restart job
+
+## prepare HGS execution
+# go to execution directory
+cd "$INIDIR"
+
+# automatically figure out restart mode
+if [ $RESTART -eq 'AUTO' ]; then
+    if [ -e "$RSTINFO" ]; then 
+        echo "Detected restart info file '${RSTINFO}' - assuming restart."
+        RESTART='RESTART'
+    else 
+        RESTART='FALSE'
+        echo "No restart info file '${RSTINFO}' detected - assuming first start."
+    fi # -e RSTINFO
+    echo
+fi # if AUTO
+
+# check restart option, and run Grok, if necessary
+if [ $RESTART -eq 'RESTART' ]; then
+    # check if restart info file is present
+    if [ -e "$RSTINFO" ]; then 
+        echo "Restart info file '$RSTINFO' found; restarting simulation."
+    else
+        echo "Restart info file '$RSTINFO' not found; cannot restart - aborting!"
+        exit 1        
+    fi # RSTFILE
+    # check if restart info file is present
+    if [ -z "$RSTFILE" ]; then 
+        # pass
+    elif [ -e "$RSTFILE" ]; then 
+        echo "Binary restart file '$RSTFILE' also found."
+    else
+        echo "Binary restart file '$RSTFILE' not found; cannot restart - aborting!"
+        exit 1        
+    fi # RSTINFO
+    # record modification time of restart info file
+    OLDRST=$( stat -c %Y "$RSTINFO" ) 
+else
+    # if this is the first start of the job, we need to run Grok
+    if [ "$RUNGROK" -eq 'RUNGROK' ]; then
+        echo "Launching Grok executable:"
+        echo "$GROKEXE &> $GROKLOG"
+        time -p "$GROKEXE" &> "$GROKLOG"
+        echo
+        if [ $( tail -n 10 $GROKLOG | grep -c '---- Normal exit ----' ) -gt 0 ]; then
+            echo "ERROR: Grok execution failed; see log file: ${GROKLOG} - aborting!"
+            exit 1
+        else
+            echo "Grok completed successfully."
+        fi # Grok 
+    fi # RUNGROK
+    OLDRST=0 # no previous modification
+fi # RESTART
+
+
+## launch HGS
+echo
+echo "Launching HGS executable:"
+echo "$HGSEXE &> $HGSLOG"
+time -p "$HGSEXE" &> "$HGSLOG"
+echo
+
+## figure out how HGS exited and submit restart job or run HSplot
+# check restart info file
+if [ -e "$RSTINFO" ]; then NEWRST=$( stat -c %Y "$RSTINFO" )
+else NEWRST=0; fi
+if [ $NEWRST -gt $OLDRST ]; then 
+	# a new restart info file was created, so we are not done and need to restart
+	cd "$INIDIR" # probably not necessary
+	echo "A new restart info file was written - submitting another job to restart simulation."
+	echo "sbatch --export=RESTART='RESTART' -J ${SLURM_JOB_NAME} $0"
+	sbatch --export=RESTART='RESTART' -J "${SLURM_JOB_NAME}" "$0" # submit same script again, in restart mode with same name
+else
+	# no new restart info, so either we are done or HGS crashed
+	if [ $( tail -n 10 $HGSLOG | grep -c '---- Normal exit ----' ) -eq 0 ]; then
+		echo "ERROR: HGS execution failed; see log file: ${HGSLOG} - aborting!"
+		exit 1
+	else
+		echo "HGS completed successfully."
+		echo 
+		# after HGS completed successfully, we can run HSplot
+		if [ "$RUNHSPLOT" -eq 'RUNHSPLOT' ]; then
+			echo "Launching Grok executable:"
+			echo "$HSPEXE &> $HSPLOG"
+			time -p "$HSPEXE" &> "$HSPLOG"
+			echo
+			if [ $( tail -n 10 $HSPLOG | grep -c '---- Normal exit ----' ) -gt 0 ]; then
+				# N.B.: I'm not actually sure if this is what HSplot prints, since I don't use it...
+				echo "ERROR: HSplot execution failed; see log file: ${HSPLOG} - aborting!"
+				exit 1
+			else
+				echo "HSplot completed successfully."
+			fi # HSplot
+			echo
+		fi # RUNHSPLOT		
+	fi # HGS exit
+fi # $NEWRST -gt $OLDRST
+
+echo 
+date
