@@ -36,7 +36,7 @@ export SETTINGS=${SETTINGS:-"$HOME/hgs_settings.sh"} # source this file to load 
 #               sbatch --export=SETTINGS='path/to/settings.sh',RUNGROK=FALSE ./run_hgs_restart.sb
 # source settings, first from current working directory, then from user's $HOME directory
 cd "$SLURM_SUBMIT_DIR"
-if [ -n "$SETTINGS" ]; then
+if [ -n "$SETTINGS" ] && [[ "$SETTINGS" != 'NONE' ]]; then
   if [ -e "$SETTINGS" ]; then 
     echo "Loading settings from file: ${SETTINGS}"
     source "$SETTINGS" 
@@ -135,14 +135,33 @@ echo
 # check restart info file
 if [ -e "$RSTINFO" ]; then NEWRST=$( stat -c %Y "$RSTINFO" )
 else NEWRST=0; fi
-if [ $NEWRST -gt $OLDRST ]; then 
+# first see if HGS fiished, before checking restart file
+if [ $( tail -n 10 $HGSLOG | grep -ci 'Normal exit' ) -gt 0 ]; then
+	echo "HGS completed successfully."
+	echo 
+	# after HGS completed successfully, we can run HSplot
+	if [[ "$RUNHSPLOT" == 'RUNHSPLOT' ]]; then
+		echo "Launching HSplot executable:"
+		echo "$HSPEXE &> $HSPLOG"
+		time -p "$HSPEXE" &> "$HSPLOG"
+		echo
+		if [ $( tail -n 10 $HSPLOG | grep -ci 'Normal exit' ) -eq 0 ]; then
+			# N.B.: I'm not actually sure if this is what HSplot prints, since I don't use it...
+			echo "ERROR: HSplot execution failed; see log file: ${HSPLOG}!"
+			exit 1
+		else
+			echo "HSplot completed successfully."
+		fi # HSplot
+		echo
+	fi # RUNHSPLOT		
+elif [ $NEWRST -gt $OLDRST ]; then 
 	# a new restart info file was created, so we are not done and need to restart
 	echo "A new restart info file was written - submitting another job to restart simulation."
   ## submit same script again, in restart mode with same name and environment
   # jobs have to be submitted from a login node using ssh and environment varibles have to be passed explicitly
   set -x # echo ssh command to inspect environment variable
 	ssh nia-login07 "cd '${INIDIR}'; sbatch --export=\
-SETTINGS='',\
+SETTINGS='NONE',\
 RESTART='RESTART',\
 RSTINFO='${RSTINFO}',\
 RSTFILE='${RSTFILE}',\
@@ -155,32 +174,11 @@ HSPLOG='${HSPLOG}',\
                                           -J '${SLURM_JOB_NAME}' '${JOBSCRIPT}'" 
   set +x
   # N.B.: since env vars are passed explicitly, the settings file will not be sourced again
-
 else
-	# no new restart info, so either we are done or HGS crashed
-	if [ $( tail -n 10 $HGSLOG | grep -ci 'Normal exit' ) -eq 0 ]; then
-		echo "ERROR: HGS execution failed; see log file: ${HGSLOG} - aborting!"
-		exit 1
-	else
-		echo "HGS completed successfully."
-		echo 
-		# after HGS completed successfully, we can run HSplot
-		if [[ "$RUNHSPLOT" == 'RUNHSPLOT' ]]; then
-			echo "Launching HSplot executable:"
-			echo "$HSPEXE &> $HSPLOG"
-			time -p "$HSPEXE" &> "$HSPLOG"
-			echo
-			if [ $( tail -n 10 $HSPLOG | grep -ci 'Normal exit' ) -eq 0 ]; then
-				# N.B.: I'm not actually sure if this is what HSplot prints, since I don't use it...
-				echo "ERROR: HSplot execution failed; see log file: ${HSPLOG}!"
-				exit 1
-			else
-				echo "HSplot completed successfully."
-			fi # HSplot
-			echo
-		fi # RUNHSPLOT		
-	fi # HGS exit
-fi # $NEWRST -gt $OLDRST
+	echo "ERROR: HGS execution failed; see log file: ${HGSLOG} - aborting!"
+  date
+	exit 1
+fi # HGS exit and $NEWRST -gt $OLDRST
 
 echo 
 date
