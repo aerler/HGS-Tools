@@ -1,0 +1,305 @@
+#!/bin/bash
+# SLURM submission script for SciNet Niagara
+
+## queue/SLURM settings
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=40
+#SBATCH --time=24:00:00
+# send email if job fails
+#SBATCH --mail-user="$EMAIL"
+#SBATCH --mail-type=FAIL
+# allocation/account
+#SBATCH -A "$HGS_ALLOC"
+# job name
+#SBATCH -J HGS_restart_run
+# direct stdout and stderr go into the same file
+#SBATCH --output=hgs_restart.%j.out
+
+## machine settings
+# load modules for HGS
+date
+hostname
+echo
+module purge
+module load intel/2017.7
+module list
+# Intel compiler settings
+ulimit -s unlimited
+
+## settings
+export JOBSCRIPT=${JOBSCRIPT:-'run_hgs_restart.sb'} # the name of this script - needed for resubmission
+export SETTINGS=${SETTINGS:-"hgs_settings.sh"} # source this file to load settings
+# N.B.: all of the variables below can be set by the caller using the sbatch --export flag or can be sourced (loaded)
+#       from the $SETTINGS file; the values defined below are just default values (that should work for most users);
+#       e.g. to source settings from a file and skip runnign Grok, use this: 
+#               sbatch --export=SETTINGS='path/to/settings.sh',RUNGROK=FALSE ./run_hgs_restart.sb
+# source settings, first from current working directory, then from user's $HOME directory
+cd "$SLURM_SUBMIT_DIR"
+if [ -n "$SETTINGS" ] && [[ "$SETTINGS" != 'NONE' ]]; then
+  if [ -e "$SETTINGS" ]; then 
+    echo "Loading settings from file: ${SETTINGS}"
+    source "$SETTINGS" 
+  elif [ -e "$HOME/$SETTINGS" ]; then 
+    echo "Loading settings from file: $HOME/${SETTINGS}"
+    source "$HOME/$SETTINGS" 
+  else
+    echo "No settings file '$SETTINGS' found - using default values."
+  fi
+  echo
+fi
+INIDIR=${INIDIR:-"$SLURM_SUBMIT_DIR"}
+# restart options
+RESTART=${RESTART:-'AUTO'} # indicate if we are restarting a previous run
+# valid modes: 'AUTO', 'RESTART', and 'RESET'
+RSTINFO=${RSTINFO:-'RESTART_FILE_INFO.dat'} # the restart info file
+RSTFILE=${RSTFILE:-''} # the actual restart file (just to check if it is there)
+# pre-processing options (for the first start only)
+RUNGROK=${RUNGROK:-'RUNGROK'} # to run Grok or not to run Grok (only for non-restarts)
+# valid values: 'RUNGROK' and 'FALSE'
+GROKEXE=${GROKEXE:-'./grok.x'} # Grok execution command
+GROKLOG=${GROKLOG:-'grok.log'} # Grok log file
+# HGS run time options
+RUNHGS=${RUNHGS:-'RUNHGS'} # run HGS or not
+# valid values: 'RUNHGS' and 'FALSE'
+HGSEXE=${HGSEXE:-'./hgs.x'} # HGS execution command
+HGSLOG=${HGSLOG:-'hgs.log'} # HGS log file
+OMP_NUM_THREADS=${OMP_NUM_THREADS:-$SLURM_CPUS_PER_TASK}
+# post-processing options (only after completion)
+RUNHSPLOT=${RUNHSPLOT:-'RUNHSPLOT'} # run HS Plot or not (only after completion)
+# valid values: 'RUNHSPLOT' and 'FALSE'
+HSPEXE=${HSPEXE:-'./hsplot.x'} # HSplot execution command
+HSPLOG=${HSPLOG:-'hsplot.log'} # HSplot log file
+
+
+## function definitions
+
+# helper to check if program finished
+function IS_NORMAL_EXIT {
+    if [ $( tail -n 10 "$1" | grep -ci 'Normal exit' ) -eq 0 ]; then return 1 # means failure/false
+    else return 0; fi # 0 exit code means success or true
+} # IS_NORMAL_EXIT
+
+
+# Grok function
+function RUN_GROK {
+    # check restart option, and run Grok, if necessary
+    if [[ "$RUNGROK" == 'RUNGROK' ]]; then
+        if [ -e GROK_COMPLETED ]; then
+            echo "Grok already completed successfully - not rerunning."
+        else
+            # if this is the first start of the job, we need to run Grok
+            echo "Launching Grok pre-processing:"
+            echo "$GROKEXE &> $GROKLOG"
+            rm -f GROK_COMPLETED GROK_ERROR GROK_IN_PROGRESS "$GROKLOG" # clean
+            touch GROK_IN_PROGRESS # place indicator
+            time -p "$GROKEXE" &> "$GROKLOG" 
+            echo
+            if IS_NORMAL_EXIT "$GROKLOG" ; then
+                echo "Grok completed successfully."
+                rm GROK_IN_PROGRESS; touch GROK_COMPLETED
+            else
+                echo "ERROR: Grok execution failed; see log file: ${GROKLOG} - aborting!"
+                rm GROK_IN_PROGRESS; touch GROK_ERROR
+            fi # Grok result
+        fi # GROK_COMPLETED
+    fi # RUNGROK
+} # RUN_GROK
+
+
+# HGS execution function
+function RUN_HGS {
+    # check restart option and files
+    local RUN='RUN'
+    echo
+    if [ -e HGS_COMPLETED ] ; then
+        echo "HGS already completed successfully; not restarting."
+        RUN='FALSE'
+    elif [ -e HGS_RESTART ] ; then
+        echo "Restarting existing HGS simulation:"
+        # check if restart info file is present
+        if [ -e "$RSTINFO" ]; then 
+            echo "Restart info file '$RSTINFO' found."
+        else
+            echo "ERROR: Restart info file '$RSTINFO' not found; cannot restart - aborting!"
+            RUN='FALSE'
+        fi # RSTINFO
+        # check if binary restart file is present
+        if [ -z "$RSTFILE" ]; then 
+            echo  # pass
+        elif [ -e "$RSTFILE" ]; then 
+            echo "Binary restart file '$RSTFILE' also found."
+        else
+            echo "ERROR: Binary restart file '$RSTFILE' not found; cannot restart - aborting!"
+            RUN='FALSE'
+        fi # RSTFILE
+    else
+        echo "Launching new HGS simulation:"
+    fi # to run or not to run HGS
+    # run HGS if indicated
+    if [[ "$RUN" == 'RUN' ]]; then
+        echo "$HGSEXE &> $HGSLOG"
+        rm -f HGS_COMPLETED HGS_ERROR HGS_IN_PROGRESS HGS_RESTART "$HGSLOG" # clean
+        touch HGS_IN_PROGRESS # place indicator        
+        time -p "$HGSEXE" &> "$HGSLOG"
+        echo
+        if IS_NORMAL_EXIT "$HGSLOG" ; then
+            echo "HGS completed successfully."
+            rm HGS_IN_PROGRESS; touch HGS_COMPLETED
+        elif [ "$RSTINFO" -nt HGS_IN_PROGRESS ]; then
+            echo "HGS not completed yet - requiring restart."
+            rm HGS_IN_PROGRESS; touch HGS_RESTART
+        else
+            echo "ERROR: HGS execution failed; see log file: ${HGSLOG}!"
+            rm HGS_IN_PROGRESS; touch HGS_ERROR
+        fi # HGS
+    fi # RUN
+} # RUN_HGS
+
+
+# HS Plot execution function
+function RUN_HSPLOT {
+    if [[ "$RUNHSPLOT" == 'RUNHSPLOT' ]]; then
+      if [ -e HGS_COMPLETED ]; then
+        echo "Launching HS Plot post-processing:"
+        echo "$HSPEXE &> $HSPLOG"
+        rm -f HSPLOT_COMPLETED HSPLOT_ERROR HSPLOT_IN_PROGRESS "$HSPLOG" # clean
+        touch HSPLOT_IN_PROGRESS # place indicator
+        time -p "$HSPEXE" &> "$HSPLOG"
+        echo
+        if IS_NORMAL_EXIT "$HSPLOG" ; then
+          echo "HS Plot completed successfully."
+          rm HSPLOT_IN_PROGRESS; touch HSPLOT_COMPLETED
+        else
+          # N.B.: I'm not actually sure if this is what HSplot prints, since I don't use it...
+          echo "ERROR: HS Plot execution failed; see log file: ${HSPLOG}!"
+          rm HSPLOT_IN_PROGRESS; touch HSPLOT_ERROR
+        fi # HSplot
+        echo
+      else
+        echo "ERROR: HGS does not appear to have completed yet - cannot run HS Plot!"
+      fi # HGS_COMPLETED
+    fi # RUNHSPLOT    
+} # RUN_HSPLOT
+
+
+## prepare HGS execution
+# go to execution directory
+cd "$INIDIR"
+
+# automatically figure out restart mode
+if [[ "$RESTART" == 'AUTO' ]]; then
+    echo
+    if [ -e HGS_COMPLETED ]; then 
+        echo "Detected 'HGS_COMPLETED' indicator - not restarting."
+    elif [ -e HGS_RESTART ]; then 
+        echo "Detected 'HGS_RESTART' indicator - restarting simulation."
+    elif [ -e "$RSTINFO" ]; then 
+        echo "Detected restart info file '${RSTINFO}' - assuming restart."
+        touch HGS_RESTART
+    else 
+        echo "No restart info or indicator detected - assuming first start."
+    fi # -e RSTINFO
+elif [[ "$RESTART" == 'RESET' ]]; then
+    echo
+    if [[ "$RUNGROK" == 'RUNGROK' ]]; then
+       echo 'Removing Grok indicator files and logs.'
+       rm -f GROK_COMPLETED GROK_ERROR GROK_IN_PROGRESS "$GROKLOG" # clean
+    fi # Grok
+    if [[ "$RUNHGS" == 'RUNHGS' ]]; then
+        echo 'Removing HGS indicator files and logs.'
+        rm -f HGS_COMPLETED HGS_ERROR HGS_IN_PROGRESS HGS_RESTART "$HGSLOG" # clean
+        echo "Moving $RSTINFO and $RSTFILE to backup (*.backup)."
+        mv "$RSTINFO" "${RSTINFO}.backup" 
+        mv "$RSTFILE" "${RSTFILE}.backup" 
+    fi #HGS
+    if [[ "$RUNHSPLOT" == 'RUNHSPLOT' ]]; then
+        echo 'Removing HS Plot indicator files and logs.'
+        rm -f HSPLOT_COMPLETED HSPLOT_ERROR HSPLOT_IN_PROGRESS "$HSPLOG" # clean
+    fi # HS Plot
+fi # if AUTO  
+
+    
+# run Grok
+if [[ "$RESTART" != 'RESTART' ]]; then
+    # run Grok, if this is not a restart
+    RUN_GROK & # spawn new process; function defined above
+    # wait for Grok process(es) to finish
+    wait
+fi # don't run Grok for explicit restarts
+
+## launch HGS
+RUN_HGS & # spawn new process; function defined above
+# wait for HGS process(es) to finish
+wait
+
+## check simulation results and do post-processing
+COMPLETE_LIST='' # list of completed simulations
+CC=0 # counter for completed simulations
+RESTART_LIST='' # list of simulations that need restart
+RC=0 # counter for required restarts
+ERROR_LIST='' # list of simulations that failed
+EC=0 # error counter for exit code
+
+# create sumamry of simulation results
+echo
+if [ -e HGS_COMPLETED ]; then
+	COMPLETE_LIST="$COMPLETE_LIST $PWD"
+	CC=$(( $CC +1 ))
+  # after HGS completed successfully, we can run HSplot
+	RUN_HSPLOT &
+elif [ -e HGS_RESTART ]; then
+  RESTART_LIST="$RESTART_LIST $PWD"
+  RC=$(( $RC +1 ))
+elif [ -e HGS_ERROR ]; then
+  ERROR_LIST="$ERROR_LIST $PWD"
+  EC=$(( $EC +1 ))
+fi # HGS exit	
+
+## do restart, if any simulation requires a restart
+echo
+if [ -n "$RESTART_LIST" ]; then 
+	# a new restart info file was created, so we are not done and need to restart
+	echo "The following $RC simulations are not complete yet:"
+	echo "    $RESTART_LIST"
+	echo "Submitting another job to restart simulations."
+	echo
+  ## submit same script again, in restart mode with same name and environment
+  # jobs have to be submitted from a login node using ssh and environment varibles have to be passed explicitly
+  set -x # echo ssh command to inspect environment variable
+	ssh nia-login07 "cd '${INIDIR}'; sbatch --export=\
+SETTINGS='NONE',\
+RESTART='RESTART',\
+RSTINFO='${RSTINFO}',\
+RSTFILE='${RSTFILE}',\
+HGSEXE='${HGSEXE}',\
+HGSLOG='${HGSLOG}',\
+OMP_NUM_THREADS='${OMP_NUM_THREADS}',\
+RUNHSPLOT='${RUNHSPLOT}',\
+HSPEXE='${HSPEXE}',\
+HSPLOG='${HSPLOG}',\
+                                          -J '${SLURM_JOB_NAME}' '${JOBSCRIPT}'" 
+  set +x
+  # N.B.: since env vars are passed explicitly, the settings file will not be sourced again
+else
+  echo "All simulations finished - no restart!"
+fi # if RESTART
+echo
+
+## report summary and exit
+if [ $CC -gt 0 ]; then
+  echo
+  echo "The following $CC simulation(s) have been completed:"
+  echo "    $COMPLETE_LIST"
+fi # EC
+if [ $EC -gt 0 ]; then
+  echo
+  echo "ERROR: There were $EC error(s)! The following simulations failed:"
+  echo "    $ERROR_LIST"
+fi # EC
+echo
+echo "$RC simulation(s) are being restarted, $CC simulation(s) have been completed, " 
+echo "and $EC error(s) occurred."
+echo 
+date
+echo
+exit $EC
