@@ -51,11 +51,11 @@ if [ -e "$EXPFILE" ]; then
     XC=0 # experiment count
     EXPLIST=''
     for E in $( cat "$EXPFILE" ); do 
-        EXPLIST="$EXPLIST  $E" # space-separated list
+        EXPLIST="$EXPLIST   $E" # space-separated list
         XC=$(( $XC + 1 ))
     done
     echo "Loading $XC experiments from file '$EXPFILE': "
-    echo "    $EXPFILE"
+    echo "    $EXPLIST"
 else
     echo "Experiment file '$EXPFILE' not found - aborting!"
     exit 1 # mission-critical
@@ -63,7 +63,11 @@ fi # EXPFILE
 echo
 
 INIDIR=${INIDIR:-"$SLURM_SUBMIT_DIR"}
-VERBOSITY=${VERBOSITY:-1} # increase to see more output
+DEBUG=${DEBUG:-1} # increase to see more output
+# core distribution
+DISTCORES=${DISTCORES:-'DISTCORES'} # whether or not to override core numbers
+# valid values: 'DISTCORES', 'FALSE'
+PARIDX=${PARIDX:-'parallelindx.dat'} # parallel index file
 # restart options
 RESTART=${RESTART:-'AUTO'} # indicate if we are restarting a previous run
 # valid modes: 'AUTO', 'RESTART', and 'RESET'
@@ -95,24 +99,39 @@ function IS_NORMAL_EXIT {
 } # IS_NORMAL_EXIT
 
 
+function PARALLEL_INDEX {
+    if [[ "$DISTCORES" == 'DISTCORES' ]]; then
+        NUM_CORES=$(( $SLURM_NTASKS / $XC )) # cores per simulations; integer division by default
+        # loop over entries in parallel_index file and rewrite
+        if [ ! -e "${PARIDX}.orig" ]; then mv "${PARIDX}" "${PARIDX}.orig"; fi # make sure backup exists
+        for L in $( cat "${PARIDX}.orig" ); do # iterate over lines of file
+            if [ $OVERRIDE -gt 0 ]; then echo "  $NUM_CORES" >> "$PARIDX"
+            else echo "$L" >> "$PARIDX"; fi; 
+            if [[ "$L" == '__Number_of_CPU' ]] || [[ "$L" == '__Num_Domain_Partitiong' ]]; then OVERRIDE=1; 
+            else OVERRIDE=0; fi; 
+          done
+    fi # $DISTCORES
+} # PARALLEL_INDEX
+
+
 # Grok function
 function RUN_GROK {
     local X="$1" # experiment folder/name
     # check restart option, and run Grok, if necessary
     if [[ "$RUNGROK" == 'RUNGROK' ]]; then
         if [ -e GROK_COMPLETED ]; then
-            [ $VERBOSITY -gt 1 ] && echo "${X}: Grok already completed successfully - not rerunning."
+            [ $DEBUG -gt 1 ] && echo "${X}: Grok already completed successfully - not rerunning."
         else
             # if this is the first start of the job, we need to run Grok
             echo "${X}: Launching Grok pre-processing..."
-            [ $VERBOSITY -gt 1 ] && echo "$GROKEXE &> $X/$GROKLOG"
+            [ $DEBUG -gt 1 ] && echo "$GROKEXE &> $X/$GROKLOG"
             rm -f GROK_COMPLETED GROK_ERROR GROK_IN_PROGRESS "$GROKLOG" # clean
             touch GROK_IN_PROGRESS # place indicator
-            if [ $VERBOSITY -gt 1 ]; then time -p "$GROKEXE" &> "$GROKLOG" 
+            if [ $DEBUG -gt 1 ]; then time -p "$GROKEXE" &> "$GROKLOG" 
             else "$GROKEXE" &> "$GROKLOG"; fi
             echo
             if IS_NORMAL_EXIT "$GROKLOG" ; then
-                [ $VERBOSITY -gt 0 ] && echo "${X}: Grok completed successfully."
+                [ $DEBUG -gt 0 ] && echo "${X}: Grok completed successfully."
                 rm GROK_IN_PROGRESS; touch GROK_COMPLETED
             else
                 echo "${X}: ERROR: Grok execution failed; see log file: ${GROKLOG} - aborting!"
@@ -130,24 +149,24 @@ function RUN_HGS {
     local RUN='RUN'
     echo
     if [ -e HGS_COMPLETED ] ; then
-        [ $VERBOSITY -gt 1 ] && echo "${X}: HGS already completed successfully; not restarting."
+        [ $DEBUG -gt 1 ] && echo "${X}: HGS already completed successfully; not restarting."
         RUN='FALSE'
     elif [ -e HGS_RESTART ] ; then
         echo "${X}: Restarting existing HGS simulation..."
         # check if restart info file is present
         if [ -e "$RSTINFO" ]; then 
-            [ $VERBOSITY -gt 1 ] && echo "${X}: Restart info file '$RSTINFO' found."
+            [ $DEBUG -gt 1 ] && echo "${X}: Restart info file '$RSTINFO' found."
         else
-            [ $VERBOSITY -gt 0 ] && echo "${X}: ERROR: Restart info file '$RSTINFO' not found; cannot restart - aborting!"
+            [ $DEBUG -gt 0 ] && echo "${X}: ERROR: Restart info file '$RSTINFO' not found; cannot restart - aborting!"
             RUN='FALSE'
         fi # RSTINFO
         # check if binary restart file is present
         if [ -z "$RSTFILE" ]; then 
             echo  # pass
         elif [ -e "$RSTFILE" ]; then 
-            [ $VERBOSITY -gt 1 ] && echo "${X}: Binary restart file '$RSTFILE' also found."
+            [ $DEBUG -gt 1 ] && echo "${X}: Binary restart file '$RSTFILE' also found."
         else
-            [ $VERBOSITY -gt 0 ] && echo "${X}: ERROR: Binary restart file '$RSTFILE' not found; cannot restart - aborting!"
+            [ $DEBUG -gt 0 ] && echo "${X}: ERROR: Binary restart file '$RSTFILE' not found; cannot restart - aborting!"
             RUN='FALSE'
         fi # RSTFILE
     else
@@ -155,17 +174,17 @@ function RUN_HGS {
     fi # to run or not to run HGS
     # run HGS if indicated
     if [[ "$RUN" == 'RUN' ]]; then
-        [ $VERBOSITY -gt 0 ] && echo "${X}: $HGSEXE &> $X/$HGSLOG"
+        [ $DEBUG -gt 0 ] && echo "${X}: $HGSEXE &> $X/$HGSLOG"
         rm -f HGS_COMPLETED HGS_ERROR HGS_IN_PROGRESS HGS_RESTART "$HGSLOG" # clean
         touch HGS_IN_PROGRESS # place indicator        
-        if [ $VERBOSITY -gt 1 ]; then time -p "$HGSEXE" &> "$HGSLOG"
+        if [ $DEBUG -gt 1 ]; then time -p "$HGSEXE" &> "$HGSLOG"
         else "$HGSEXE" &> "$HGSLOG"; fi
         echo
         if IS_NORMAL_EXIT "$HGSLOG" ; then
-            [ $VERBOSITY -gt 0 ] && echo "${X}: HGS completed successfully."
+            [ $DEBUG -gt 0 ] && echo "${X}: HGS completed successfully."
             rm HGS_IN_PROGRESS; touch HGS_COMPLETED
         elif [ "$RSTINFO" -nt HGS_IN_PROGRESS ]; then
-            [ $VERBOSITY -gt 0 ] && echo "${X}: HGS not completed yet - requiring restart."
+            [ $DEBUG -gt 0 ] && echo "${X}: HGS not completed yet - requiring restart."
             rm HGS_IN_PROGRESS; touch HGS_RESTART
         else
             echo "${X}: ERROR: HGS execution failed; see log file: $X/${HGSLOG}!"
@@ -181,14 +200,14 @@ function RUN_HSPLOT {
     if [[ "$RUNHSPLOT" == 'RUNHSPLOT' ]]; then
         if [ -e HGS_COMPLETED ]; then
             echo "${X}: Launching HS Plot post-processing..."
-            [ $VERBOSITY -gt 0 ] && echo "${X}: $HSPEXE &> $X/$HSPLOG"
+            [ $DEBUG -gt 0 ] && echo "${X}: $HSPEXE &> $X/$HSPLOG"
             rm -f HSPLOT_COMPLETED HSPLOT_ERROR HSPLOT_IN_PROGRESS "$HSPLOG" # clean
             touch HSPLOT_IN_PROGRESS # place indicator
-            if [ $VERBOSITY -gt 1 ]; then time -p "$HSPEXE" &> "$HSPLOG"
+            if [ $DEBUG -gt 1 ]; then time -p "$HSPEXE" &> "$HSPLOG"
             else "$HSPEXE" &> "$HSPLOG"; fi
             echo
             if IS_NORMAL_EXIT "$HSPLOG" ; then
-                [ $VERBOSITY -gt 0 ] && echo "${X}: HS Plot completed successfully."
+                [ $DEBUG -gt 0 ] && echo "${X}: HS Plot completed successfully."
                 rm HSPLOT_IN_PROGRESS; touch HSPLOT_COMPLETED
             else
                 # N.B.: I'm not actually sure if this is what HSplot prints, since I don't use it...
@@ -225,28 +244,29 @@ for EXP in $EXPLIST; do
         fi # -e RSTINFO
         echo
     elif [[ "$RESTART" == 'RESET' ]]; then
-        if [ $VERBOSITY -le 1 ]; then 
+        if [ $DEBUG -le 1 ]; then 
             echo "Resetting '$EXP': removing indicator files and logs; moving restart files."
         else echo "${EXP}: resetting experiment"; fi
         if [[ "$RUNGROK" == 'RUNGROK' ]]; then
-           [ $VERBOSITY -gt 1 ] && echo 'Removing Grok indicator files and logs.'
+           [ $DEBUG -gt 1 ] && echo 'Removing Grok indicator files and logs.'
            rm -f GROK_COMPLETED GROK_ERROR GROK_IN_PROGRESS "$GROKLOG" # clean
         fi # Grok
         if [[ "$RUNHGS" == 'RUNHGS' ]]; then
-            [ $VERBOSITY -gt 1 ] && echo 'Removing HGS indicator files and logs.'
+            [ $DEBUG -gt 1 ] && echo 'Removing HGS indicator files and logs.'
             rm -f HGS_COMPLETED HGS_ERROR HGS_IN_PROGRESS HGS_RESTART "$HGSLOG" # clean
-            [ $VERBOSITY -gt 1 ] && echo "Moving $RSTINFO and $RSTFILE to backup (*.backup)."
+            [ $DEBUG -gt 1 ] && echo "Moving $RSTINFO and $RSTFILE to backup (*.backup)."
             mv "$RSTINFO" "${RSTINFO}.backup" 
             mv "$RSTFILE" "${RSTFILE}.backup" 
         fi #HGS
         if [[ "$RUNHSPLOT" == 'RUNHSPLOT' ]]; then
-            [ $VERBOSITY -gt 1 ] && echo 'Removing HS Plot indicator files and logs.'
+            [ $DEBUG -gt 1 ] && echo 'Removing HS Plot indicator files and logs.'
             rm -f HSPLOT_COMPLETED HSPLOT_ERROR HSPLOT_IN_PROGRESS "$HSPLOG" # clean
         fi # HS Plot
-        echo
+        [ $DEBUG -gt 1 ] && echo
     fi # if AUTO  
     cd "$INIDIR"
 done # for EXPLIST
+
     
 # run Grok
 if [[ "$RESTART" != 'RESTART' ]]; then
@@ -288,19 +308,19 @@ echo
 for EXP in $EXPLIST; do
     cd "$INIDIR/$EXP"
     if [ -e HGS_COMPLETED ]; then
-      	COMPLETE_LIST="$COMPLETE_LIST $EXP"
+      	COMPLETE_LIST="$COMPLETE_LIST   $EXP"
       	CC=$(( $CC +1 ))
-      	[ $VERBOSITY -gt 1 ] && echo "Simulation '$EXP' completed successfully; running HS Plot."
+      	[ $DEBUG -gt 1 ] && echo "Simulation '$EXP' completed successfully; running HS Plot."
         # after HGS completed successfully, we can run HSplot
       	RUN_HSPLOT "$EXP" &
     elif [ -e HGS_RESTART ]; then
-        RESTART_LIST="$RESTART_LIST $EXP"
+        RESTART_LIST="$RESTART_LIST   $EXP"
         RC=$(( $RC +1 ))
-        [ $VERBOSITY -gt 1 ] && echo "Simulation '$EXP' not complete - will be restarted."
+        [ $DEBUG -gt 1 ] && echo "Simulation '$EXP' not complete - will be restarted."
     elif [ -e HGS_ERROR ]; then
-        ERROR_LIST="$ERROR_LIST $EXP"
+        ERROR_LIST="$ERROR_LIST   $EXP"
         EC=$(( $EC +1 ))
-        [ $VERBOSITY -gt 1 ] && echo "Simulation '$EXP' failed; inspect log file '$EXP/$HGSLOG'."
+        [ $DEBUG -gt 1 ] && echo "Simulation '$EXP' failed; inspect log file '$EXP/$HGSLOG'."
     fi # HGS exit	
     cd "$INIDIR"
 done # for EXPLIST
@@ -309,7 +329,7 @@ done # for EXPLIST
 echo
 if [ -n "$RESTART_LIST" ]; then 
 	# a new restart info file was created, so we are not done and need to restart
-	if [ $VERBOSITY -gt 0 ]; then
+	if [ $DEBUG -gt 0 ]; then
     	echo "The following $RC simulations are not complete yet:"
     	echo "    $RESTART_LIST"
     	echo "Submitting another job to restart simulations."
@@ -317,11 +337,12 @@ if [ -n "$RESTART_LIST" ]; then
   else echo "Submitting another job to restart $RC simulations."; fi
   ## submit same script again, in restart mode with same name and environment
   # jobs have to be submitted from a login node using ssh and environment varibles have to be passed explicitly
-  [ $VERBOSITY -gt 0 ] && set -x # echo ssh command to inspect environment variable
+  [ $DEBUG -gt 0 ] && set -x # echo ssh command to inspect environment variable
 	ssh nia-login07 "cd '${INIDIR}'; sbatch --export=\
 SETTINGS='NONE',\
 RESTART='RESTART',\
 EXPFILE='${EXPFILE}',\
+DEBUG='${DEBUG}',\
 RSTINFO='${RSTINFO}',\
 RSTFILE='${RSTFILE}',\
 HGSEXE='${HGSEXE}',\
@@ -330,8 +351,7 @@ RUNHSPLOT='${RUNHSPLOT}',\
 HSPEXE='${HSPEXE}',\
 HSPLOG='${HSPLOG}',\
   -J '${SLURM_JOB_NAME}' -A '${SLURM_JOB_ACCOUNT}'  '${JOBSCRIPT}'" 
-  [ $VERBOSITY -gt 0 ] && set +x
-  echo "TIMELIMIT: ${SLURM_TIMELIMIT} ${SLURM_TIME}"
+  [ $DEBUG -gt 0 ] && set +x
   # N.B.: since env vars are passed explicitly, the settings file will not be sourced again
 else
   echo "All $XC simulations finished - no restart!"
@@ -339,12 +359,12 @@ fi # if RESTART
 echo
 
 ## report summary and exit
-if [ $VERBOSITY -gt 0 ] && [ $CC -gt 0 ]; then
+if [ $DEBUG -gt 0 ] && [ $CC -gt 0 ]; then
   echo
   echo "The following $CC simulation(s) have been completed:"
   echo "    $COMPLETE_LIST"
 fi # EC
-if [ $VERBOSITY -gt 0 ] && [ $EC -gt 0 ]; then
+if [ $DEBUG -gt 0 ] && [ $EC -gt 0 ]; then
   echo
   echo "ERROR: There were $EC error(s)! The following simulations failed:"
   echo "    $ERROR_LIST"
