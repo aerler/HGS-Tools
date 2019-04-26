@@ -103,6 +103,9 @@ function PARALLEL_INDEX {
     if [[ "$DISTCORES" == 'DISTCORES' ]]; then
         NUM_CORES=$(( $SLURM_NTASKS / $XC )) # cores per simulations; integer division by default
         # loop over entries in parallel_index file and rewrite
+        [ $DEBUG -gt 0 ] && echo "Setting number of cores for all $XC simulations to ${NUM_CORES}."
+        [ $DEBUG -gt 1 ] && echo "  (Saving parallel index file '$PARIDX' to '${PARIDX}.orig'.)"
+        [ $DEBUG -gt 0 ] && echo 
         if [ ! -e "${PARIDX}.orig" ]; then mv "${PARIDX}" "${PARIDX}.orig"; fi # make sure backup exists
         for L in $( cat "${PARIDX}.orig" ); do # iterate over lines of file
             if [ $OVERRIDE -gt 0 ]; then echo "  $NUM_CORES" >> "$PARIDX"
@@ -229,6 +232,8 @@ cd "$INIDIR"
 # loop over experiment folders
 for EXP in $EXPLIST; do
     cd "$INIDIR/$EXP"
+    # set number of cores in parallelindex.dat file
+    PARALLEL_INDEX # set number of cores
     # automatically figure out restart mode
     if [[ "$RESTART" == 'AUTO' ]]; then
         echo "${EXP}: setting restart mode"
