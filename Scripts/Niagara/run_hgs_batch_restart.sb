@@ -375,6 +375,11 @@ if [ $DEBUG -gt 0 ] && [ $EC -gt 0 ]; then
   echo "    $ERROR_LIST"
 fi # EC
 echo
+
+# wait for HS PLot to complete
+wait
+
+echo
 echo "$RC simulation(s) are being restarted, $CC simulation(s) have been completed, " 
 echo "and $EC error(s) occurred (total experiment count: $XC)."
 echo 
