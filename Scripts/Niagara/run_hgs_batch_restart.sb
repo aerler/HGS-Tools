@@ -50,9 +50,11 @@ if [ -n "$SETTINGS" ] && [[ "$SETTINGS" != 'NONE' ]]; then
 fi
 # load experiment list into variable
 if [ -e "$EXPFILE" ]; then
+    XC=0 # experiment count
     EXPLIST=''
     for E in $( cat "$EXPFILE" ); do 
-      EXPLIST="$EXPLIST  $E" # space-separated list
+        EXPLIST="$EXPLIST  $E" # space-separated list
+        XC=$(( $XC + 1 ))
     done
 else
     echo "Experiment file '$EXPFILE' not found - aborting!"
@@ -220,7 +222,7 @@ for EXP in $EXPLIST; do
         fi # -e RSTINFO
     elif [[ "$RESTART" == 'RESET' ]]; then
         echo
-        if [ $VERBOSITY -le 1 ] then 
+        if [ $VERBOSITY -le 1 ]; then 
             echo "Resetting '$EXP': removing indicator files and logs; moving restart files."
         else echo "${EXP}: resetting experiment"; fi
         if [[ "$RUNGROK" == 'RUNGROK' ]]; then
@@ -282,17 +284,17 @@ echo
 for EXP in $EXPLIST; do
     cd "$INIDIR/$EXP"
     if [ -e HGS_COMPLETED ]; then
-      	COMPLETE_LIST="$COMPLETE_LIST $PWD"
+      	COMPLETE_LIST="$COMPLETE_LIST $EXP"
       	CC=$(( $CC +1 ))
       	[ $VERBOSITY -gt 1 ] && echo "Simulation '$EXP' completed successfully; running HS Plot."
         # after HGS completed successfully, we can run HSplot
       	RUN_HSPLOT "$EXP" &
     elif [ -e HGS_RESTART ]; then
-        RESTART_LIST="$RESTART_LIST $PWD"
+        RESTART_LIST="$RESTART_LIST $EXP"
         RC=$(( $RC +1 ))
         [ $VERBOSITY -gt 1 ] && echo "Simulation '$EXP' not complete - will be restarted."
     elif [ -e HGS_ERROR ]; then
-        ERROR_LIST="$ERROR_LIST $PWD"
+        ERROR_LIST="$ERROR_LIST $EXP"
         EC=$(( $EC +1 ))
         [ $VERBOSITY -gt 1 ] && echo "Simulation '$EXP' failed; inspect log file '$EXP/$HGSLOG'."
     fi # HGS exit	
@@ -327,7 +329,7 @@ HSPLOG='${HSPLOG}',\
   [ $VERBOSITY -gt 0 ] && set +x
   # N.B.: since env vars are passed explicitly, the settings file will not be sourced again
 else
-  echo "All simulations finished - no restart!"
+  echo "All simulations $XC finished - no restart!"
 fi # if RESTART
 echo
 
@@ -344,7 +346,7 @@ if [ $VERBOSITY -gt 0 ] && [ $EC -gt 0 ]; then
 fi # EC
 echo
 echo "$RC simulation(s) are being restarted, $CC simulation(s) have been completed, " 
-echo "and $EC error(s) occurred."
+echo "and $EC error(s) occurred (total experiment count: $XC)."
 echo 
 date
 echo
