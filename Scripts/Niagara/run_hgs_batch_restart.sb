@@ -9,7 +9,7 @@
 #SBATCH --mail-user="$EMAIL"
 #SBATCH --mail-type=FAIL
 # allocation/account
-#SBATCH -A "$HGS_ALLOC"
+#SBATCH --account="$HGS_ALLOC"
 # job name
 #SBATCH -J HGS_restart_run
 # direct stdout and stderr go into the same file
@@ -20,7 +20,7 @@
 date
 hostname
 echo
-module purge
+module purge &> /dev/null # prints annoying warning
 module load intel/2017.7
 module list
 # Intel compiler settings
@@ -56,10 +56,13 @@ if [ -e "$EXPFILE" ]; then
         EXPLIST="$EXPLIST  $E" # space-separated list
         XC=$(( $XC + 1 ))
     done
+    echo "Loading $XC experiments from file '$EXPFILE': "
+    echo "    $EXPFILE"
 else
     echo "Experiment file '$EXPFILE' not found - aborting!"
     exit 1 # mission-critical
 fi # EXPFILE
+echo
 
 INIDIR=${INIDIR:-"$SLURM_SUBMIT_DIR"}
 VERBOSITY=${VERBOSITY:-1} # increase to see more output
@@ -329,7 +332,7 @@ HSPLOG='${HSPLOG}',\
   [ $VERBOSITY -gt 0 ] && set +x
   # N.B.: since env vars are passed explicitly, the settings file will not be sourced again
 else
-  echo "All simulations $XC finished - no restart!"
+  echo "All $XC simulations finished - no restart!"
 fi # if RESTART
 echo
 
