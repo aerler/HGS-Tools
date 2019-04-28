@@ -72,7 +72,7 @@ PARIDX=${PARIDX:-'parallelindx.dat'} # parallel index file
 RESTART=${RESTART:-'AUTO'} # indicate if we are restarting a previous run
 # valid modes: 'AUTO', 'RESTART', and 'RESET'
 RSTINFO=${RSTINFO:-'RESTART_FILE_INFO.dat'} # the restart info file
-RSTFILE=${RSTFILE:-''} # the actual restart file (just to check if it is there)
+RSTFILE=${RSTFILE:-'*.hen'} # the actual restart file (this can be a regex, since we don't know the prefix)
 # pre-processing options (for the first start only)
 RUNGROK=${RUNGROK:-'RUNGROK'} # to run Grok or not to run Grok (only for non-restarts)
 # valid values: 'RUNGROK' and 'FALSE'
@@ -94,9 +94,17 @@ HSPLOG=${HSPLOG:-'hsplot.log'} # HSplot log file
 
 # helper to check if program finished
 function IS_NORMAL_EXIT {
-    if [ $( tail -n 10 "$1" | grep -ci 'Normal exit' ) -eq 0 ]; then return 1 # means failure/false
+    if [ $( tail -n 3 "$1" | grep -ci 'NORMAL EXIT' ) -eq 0 ]; then return 1 # means failure/false
     else return 0; fi # 0 exit code means success or true
+    # N.B.: we need 'tail -n 3', because 'NORMAL EXIT' is also printed when the simulation requires a restart
 } # IS_NORMAL_EXIT
+
+# helper to check if HGS needs to be restarted
+function IS_RESTART_EXIT {
+    if [ $( tail -n 3 "$1" | grep -ci 'NOTE : PARTIAL SIMULATION' ) -eq 0 ]; then return 1 # means failure/false
+    else return 0; fi # 0 exit code means success or true
+    # N.B.: we need 'tail -n 3', because 'NORMAL EXIT' is also printed when the simulation requires a restart
+} # IS_RESTART_EXIT
 
 
 function PARALLEL_INDEX {
@@ -134,7 +142,6 @@ function RUN_GROK {
             touch GROK_IN_PROGRESS # place indicator
             if [ $DEBUG -gt 1 ]; then time -p "$GROKEXE" &> "$GROKLOG" 
             else "$GROKEXE" &> "$GROKLOG"; fi
-            echo
             if IS_NORMAL_EXIT "$GROKLOG" ; then
                 [ $DEBUG -gt 0 ] && echo "${X}: Grok completed successfully."
                 rm GROK_IN_PROGRESS; touch GROK_COMPLETED
@@ -167,9 +174,10 @@ function RUN_HGS {
         fi # RSTINFO
         # check if binary restart file is present
         if [ -z "$RSTFILE" ]; then 
-            echo  # pass
-        elif [ -e "$RSTFILE" ]; then 
-            [ $DEBUG -gt 1 ] && echo "${X}: Binary restart file '$RSTFILE' also found."
+            [ $DEBUG -gt 0 ] && echo  # pass
+        elif [ -e $RSTFILE ]; then 
+            # N.B.: this test can screw up, when multiple *.hen files are present
+            [ $DEBUG -gt 1 ] && echo "${X}: Binary restart file '$(ls $RSTFILE)' also found."
         else
             [ $DEBUG -gt 0 ] && echo "${X}: ERROR: Binary restart file '$RSTFILE' not found; cannot restart - aborting!"
             RUN='FALSE'
@@ -184,13 +192,22 @@ function RUN_HGS {
         touch HGS_IN_PROGRESS # place indicator        
         if [ $DEBUG -gt 1 ]; then time -p "$HGSEXE" &> "$HGSLOG"
         else "$HGSEXE" &> "$HGSLOG"; fi
-        echo
-        if IS_NORMAL_EXIT "$HGSLOG" ; then
-            [ $DEBUG -gt 0 ] && echo "${X}: HGS completed successfully."
-            rm HGS_IN_PROGRESS; touch HGS_COMPLETED
-        elif [ "$RSTINFO" -nt HGS_IN_PROGRESS ]; then
+        [ $DEBUG -gt 0 ] &&echo
+        if IS_RESTART_EXIT "$HGSLOG" ; then
             [ $DEBUG -gt 0 ] && echo "${X}: HGS not completed yet - requiring restart."
             rm HGS_IN_PROGRESS; touch HGS_RESTART
+            if [ "$RSTINFO" -ot HGS_IN_PROGRESS ]; then 
+                echo "${X}: ERROR: HGS output indicates a restart, but no new '$RSTINFO' file was detected!"
+                rm -f HGS_IN_PROGRESS; touch HGS_ERROR
+            fi # check that restart info file is there
+            if [ -z "$RSTFILE" ] && [ $RSTFILE -ot HGS_IN_PROGRESS ]; then 
+                # N.B.: this test can screw up, when multiple *.hen files are present
+                echo "${X}: ERROR: HGS output indicates a restart, but no new '$RSTFILE' file was detected!"
+                rm -f HGS_IN_PROGRESS; touch HGS_ERROR
+            fi # check that restart binary file is there
+        elif IS_NORMAL_EXIT "$HGSLOG" ; then
+            [ $DEBUG -gt 0 ] && echo "${X}: HGS completed successfully."
+            rm HGS_IN_PROGRESS; touch HGS_COMPLETED
         else
             echo "${X}: ERROR: HGS execution failed; see log file: $X/${HGSLOG}!"
             rm HGS_IN_PROGRESS; touch HGS_ERROR
@@ -210,7 +227,7 @@ function RUN_HSPLOT {
             touch HSPLOT_IN_PROGRESS # place indicator
             if [ $DEBUG -gt 1 ]; then time -p "$HSPEXE" &> "$HSPLOG"
             else "$HSPEXE" &> "$HSPLOG"; fi
-            echo
+            [ $DEBUG -gt 1 ] && echo
             if IS_NORMAL_EXIT "$HSPLOG" ; then
                 [ $DEBUG -gt 0 ] && echo "${X}: HS Plot completed successfully."
                 rm HSPLOT_IN_PROGRESS; touch HSPLOT_COMPLETED
@@ -219,7 +236,6 @@ function RUN_HSPLOT {
                 echo "${X}: ERROR: HS Plot execution failed; see log file: $X/${HSPLOG}!"
                 rm HSPLOT_IN_PROGRESS; touch HSPLOT_ERROR
             fi # HSplot
-            echo
         else
             echo "${X}: ERROR: HGS does not appear to have completed yet - cannot run HS Plot!"
         fi # HGS_COMPLETED
@@ -263,7 +279,8 @@ for EXP in $EXPLIST; do
             rm -f HGS_COMPLETED HGS_ERROR HGS_IN_PROGRESS HGS_RESTART "$HGSLOG" # clean
             [ $DEBUG -gt 1 ] && echo "Moving $RSTINFO and $RSTFILE to backup (*.backup)."
             mv "$RSTINFO" "${RSTINFO}.backup" 
-            mv "$RSTFILE" "${RSTFILE}.backup" 
+            mv $RSTFILE $(ls ${RSTFILE}).backup # allow for expansion of regex 
+            # N.B.: this operation can fail, if multiple *.hen files are present
         fi #HGS
         if [[ "$RUNHSPLOT" == 'RUNHSPLOT' ]]; then
             [ $DEBUG -gt 1 ] && echo 'Removing HS Plot indicator files and logs.'
@@ -285,7 +302,9 @@ if [[ "$RESTART" != 'RESTART' ]]; then
         cd "$INIDIR"
     done # for EXPLIST
     # wait for Grok process(es) to finish
+    [ $DEBUG -gt 0 ] && echo
     wait
+    echo
 fi # don't run Grok for explicit restarts
 
 
@@ -298,7 +317,9 @@ if [[ "$RUNHGS" == 'RUNHGS' ]]; then
         cd "$INIDIR"
     done # for EXPLIST
     # wait for HGS process(es) to finish
+    [ $DEBUG -gt 0 ] && echo
     wait
+    echo
 fi # run HGS
 
 ## check simulation results and do post-processing
@@ -310,7 +331,7 @@ ERROR_LIST='' # list of simulations that failed
 EC=0 # error counter for exit code
 
 # create sumamry of simulation results
-echo
+[ $DEBUG -gt 0 ] &&echo
 # loop over experiment folders
 for EXP in $EXPLIST; do
     cd "$INIDIR/$EXP"
@@ -380,7 +401,9 @@ fi # EC
 echo
 
 # wait for HS PLot to complete
+[ $DEBUG -gt 0 ] && echo
 wait
+echo
 
 echo
 echo "$RC simulation(s) are being restarted, $CC simulation(s) have been completed, " 
