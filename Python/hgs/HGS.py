@@ -542,7 +542,7 @@ def loadHGS_StnEns(ensemble=None, station=None, well=None, varlist='default', la
 
 ## function to interpolate nodal/elemental datasets to a regular grid
 def gridDataset(dataset, griddef=None, basin=None, subbasin=None, shape_file=None,  
-                basin_list=None, grid_folder=None, **kwargs):
+                basin_list=None, grid_folder=None, laddMask=True, **kwargs):
   ''' interpolate nodal/elemental datasets to a regular grid, add GDAL, and mask to basin outlines '''
   if isinstance(griddef,str): 
       if grid_folder is None: grid_folder = common_grid_folder  
@@ -566,7 +566,7 @@ def gridDataset(dataset, griddef=None, basin=None, subbasin=None, shape_file=Non
   dataset = addGDALtoDataset(dataset=dataset, griddef=griddef, )
   # mask basin shape
   if shape_file and dataset.gdal:
-      dataset.maskShape(name=basin, filename=shape_file, invert=True)
+      dataset.maskShape(name=basin, filename=shape_file, invert=True, laddMask=laddMask)
   # return gridded and masked dataset
   return dataset
 
