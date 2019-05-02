@@ -129,6 +129,7 @@ class GrokTest(unittest.TestCase):
     grok = self.grok  
     # write lists for fictional scenario
     grok.generateInputLists(input_vars='WRFPET', input_prefix=self.test_prefix, pet_folder=self.clim_data,
+                            precip_scale=.8, pet_scale=1.3, # testing scaling factors
                             input_folder=self.clim_data, lvalidate=self.lvalidate,)
     # convert config file list into string and verify
     output = ''.join(grok._lines) # don't need newlines 
@@ -232,6 +233,7 @@ class HGSTest(GrokTest):
     self.hgs = HGS(rundir=self.rundir, project=self.hgs_testcase, runtime=self.runtime,
                    input_mode=self.input_mode, input_interval=self.input_interval, 
                    input_prefix=self.test_prefix, input_folder=input_folder, pet_folder=pet_folder,
+                   precip_scale=1.2, pet_scale=0.7,
                    template_folder=self.hgs_template, NP=self.NP)
     self.grok = self.hgs
     # load a config file from template
@@ -252,7 +254,7 @@ class HGSTest(GrokTest):
     ''' test writing of input list files with climate forcings '''
     grok = self.grok  
     # write lists for fictional scenario
-    grok.generateInputLists(lvalidate=self.lvalidate,)
+    grok.generateInputLists(lvalidate=self.lvalidate, pet_scale=2)
     # convert config file list into string and verify
     output = ''.join(grok._lines) # don't need newlines 
     assert 'precip.inc' in output
@@ -549,8 +551,8 @@ if __name__ == "__main__":
     tests = [] 
     # list of variable tests
 #     tests += ['Grok']
-#     tests += ['HGS']    
-    tests += ['EnsHGS']
+    tests += ['HGS']    
+#     tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()

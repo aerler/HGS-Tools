@@ -61,6 +61,8 @@ class Grok(object):
   pet_folder = None # an alternative folder for PET input (usually for climatology)
   precip_inc = None # a pre-written include file for liquid water forcing (skip auto-generation)
   pet_inc = None  # a pre-written include file for PET forcing to be used (skip auto-generation)
+  precip_scale = None # scaling factor for precip/rain input rasters
+  pet_scale = None # scaling factor for PET input rasters
   output_interval = None # how many evenly spaced restart files to write (supports multiple nested intervals)
   starttime = 0 # model time at initialization
   runtime = None # run time for the simulations (in seconds)
@@ -71,8 +73,8 @@ class Grok(object):
   
   def __init__(self, rundir=None, project=None, problem=None, starttime=0, runtime=None, length=None, 
                output_interval='default', input_mode=None, input_interval=None, input_vars='PET', 
-               input_prefix=None, input_folder='../climate_forcing', precip_inc=None, pet_inc=None, 
-               pet_folder=None, lcheckdir=True, grok_bin='grok.exe'):
+               input_prefix=None, input_folder='../climate_forcing', precip_inc=None, pet_inc=None,  
+               precip_scale=None, pet_scale=None, pet_folder=None, lcheckdir=True, grok_bin='grok.exe'):
     ''' initialize a Grok configuration object with some settings '''
     if lcheckdir and not os.path.isdir(rundir): raise IOError(rundir)
     # determine end time in seconds (begin == 0) or number of intervals (length)
@@ -100,6 +102,7 @@ class Grok(object):
     self.setInputMode(input_mode=input_mode, input_interval=input_interval,
                       input_vars=input_vars, input_prefix=input_prefix, input_folder=input_folder, 
                       precip_inc=precip_inc, pet_inc=pet_inc, pet_folder=pet_folder)
+    self.precip_scale = precip_scale; self.pet_scale = pet_scale
     # output configuration
     self.resolveOutput(output_interval=output_interval)
   
@@ -415,8 +418,8 @@ class Grok(object):
     self.pet_int = pet_inc
   
   def generateInputLists(self, input_vars=None, input_prefix=None, input_folder=None, pet_folder=None,
-                         precip_inc=None, pet_inc=None, lvalidate=True, axis='iTime', lcenter=True, 
-                         l365=True, lFortran=True):
+                         precip_inc=None, precip_scale=None, pet_inc=None, pet_scale=None,
+                         lvalidate=True, axis='iTime', lcenter=True, l365=True, lFortran=True):
     ''' generate and validate lists of input files and write to appropriate files '''
     input_vars = self.input_vars if input_vars is None else input_vars
     input_prefix = self.input_prefix if input_prefix is None else input_prefix
@@ -424,6 +427,8 @@ class Grok(object):
     pet_folder = self.pet_folder if pet_folder is None else pet_folder 
     precip_inc = self.precip_inc if precip_inc is None else precip_inc
     pet_inc = self.pet_inc if pet_inc is None else pet_inc
+    precip_scale = self.precip_scale if precip_scale is None else precip_scale
+    pet_scale = self.pet_scale if pet_scale is None else pet_scale 
     
     # generate default input vars
     if isinstance(input_vars,str):
@@ -487,6 +492,11 @@ class Grok(object):
                                     input_pattern=input_pattern, lcenter=lcenter, lvalidate=lvalidate, 
                                     units='seconds', l365=l365, lFortran=lFortran, interval=input_interval, 
                                     end_time=self.runtime, mode=input_mode)
+      # set scaling factors
+      if varname == 'precip' and precip_scale is not None:
+          self.setParam('scaling factor', str(precip_scale), after='rain')
+      elif varname == 'pet' and pet_scale is not None:
+          self.setParam('scaling factor', str(pet_scale), after='potential evapotranspiration')
       ec += 0 if lec else 1          
     # return exit code
     return ec
@@ -552,7 +562,8 @@ class HGS(Grok):
   ic_files  = None # pattern for initial condition files (path can be expanded)
   
   def __init__(self, rundir=None, project=None, problem=None, runtime=None, length=None, output_interval='default',
-               input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, pet_folder=None, precip_inc=None, pet_inc=None, 
+               input_mode=None, input_interval=None, input_vars='PET', input_prefix=None, pet_folder=None, 
+               precip_inc=None, pet_inc=None, precip_scale=None, pet_scale=None, 
                input_folder='../climate_forcing', template_folder=None, linked_folders=None, NP=1, lindicator=True,
                grok_bin='grok.exe', hgs_bin='phgs.exe', lrestart=False, ic_files=None):
     ''' initialize HGS instance with a few more parameters: number of processors... also ic_files, which is
@@ -561,7 +572,8 @@ class HGS(Grok):
     # call parent constructor (Grok)
     super(HGS,self).__init__(rundir=rundir, project=project, problem=problem, runtime=runtime, 
                              output_interval=output_interval, input_vars=input_vars, input_prefix=input_prefix,
-                             input_mode=input_mode, input_interval=input_interval, pet_folder=pet_folder,precip_inc=precip_inc, pet_inc=pet_inc, 
+                             input_mode=input_mode, input_interval=input_interval, pet_folder=pet_folder,
+                             precip_inc=precip_inc, pet_inc=pet_inc, precip_scale=precip_scale, pet_scale=pet_scale,  
                              input_folder=input_folder, length=length, lcheckdir=False, grok_bin=grok_bin,)
     self.hgs_bin = hgs_bin # HGS executable: first try local folder, then $HGSDIR
     self.template_folder = template_folder # where to get the templates
