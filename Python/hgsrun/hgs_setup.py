@@ -786,13 +786,20 @@ class HGS(Grok):
       raise IOError("HGS executable '{}' not found.".format(self.hgs_bin))
     ## check prerequisites and run, if necessary
     # Grok configuration
+    cec = 0
     if not skip_config and not self.configOK:
       ec = self.setupConfig(ldryrun=ldryrun) # will run with defaults, assuming template is already defined
-      if lerror and ec != 0: raise GrokError('Grok configuration did not complete properly.')
+      if ec != 0:
+          if lerror: raise GrokError('Grok configuration did not complete properly.')
+          else: print('ERROR: Grok configuration did not complete properly.')
+      cec += ec
     # Grok run
     if not skip_grok and not self.GrokOK: 
       ec = self.runGrok(lconfig=not skip_config, lerror=lerror, ldryrun=ldryrun, lcompress=lcompress) # run grok (will raise exception if failed)
-      if lerror and ec != 0: raise GrokError('Grok did not run or complete properly.')
+      if ec != 0:
+          if lerror: raise GrokError('Grok did not run or complete properly.')
+          else: print('ERROR: Grok did not run or complete properly.')
+      cec += ec
     # parallelindex configuration
     if not skip_pidx and not self.pidxOK:
       self.writeParallelIndex() # write parallel index with default settings
@@ -812,6 +819,7 @@ class HGS(Grok):
         # parse log file for errors
         lec = ( tail(lf, n=2)[0].strip() == '---- NORMAL EXIT ----' )
         # i.e. -2, second line from the end (and different capitalization from Grok!)
+    cec += 0 if lec else 1
     # concatenate output from restarts (if necesary)
     if self.lrestart:
       try:
@@ -825,7 +833,7 @@ class HGS(Grok):
           if lcompress:
               lf.write('\nNote that compression of binary output will not be performed.\n')
               lcompress = False
-        if lerror: raise
+        if lerror: raise # raise previous error
     # compress binary 3D output fields
     if lcompress and lec:
       with open(logfile, 'a') as lf: # output and error log
@@ -841,9 +849,10 @@ class HGS(Grok):
             else: lf.write('Cleanup of binary 3D output files (\'{:s}\') failed.\n'.format(bin_regex))
           else:
             lf.write('\nBinary output compression failed; tar exit code: {}\n'.format(ec))
+          cec += ec
         except:
           lf.write('\nBinary output compression failed for unknown reasons; is \'tar\' availalbe?.\n'.format(ec))
-          if lerror: raise
+          if lerror: raise # raise previous error
     os.chdir(pwd) # return to previous working directory
     self.HGSOK = lec # set Grok flag
     # set indicator file to indicate result
@@ -854,7 +863,7 @@ class HGS(Grok):
     if lerror and not lec: 
       raise HGSError("HGS failed; inspect log-file: {}\n  ('{}')".format(logfile,self.rundir))
     # return a regular (POSIX) exit code
-    return 0 if lec else 1
+    return cec
   
   def concatOutput(self):
     ''' a function to concatenate HGS timeseries files after a restart; the following file types are 

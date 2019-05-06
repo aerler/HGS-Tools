@@ -101,17 +101,17 @@ if __name__ == '__main__':
 #     start_date = '2013-01-01'; end_date = '2013-01-31'
 #     grid_name  = 'son1'
     ## operational config for GRW
-    project = 'GRW'
-    start_date = '2011-01-01'; end_date = '2018-12-31'
-    grid_name  = 'grw1'
+#     project = 'GRW'
+#     start_date = '2011-01-01'; end_date = '2018-12-31'
+#     grid_name  = 'grw1'
     ## test config for GRW
 #     project = 'GRW'
 #     start_date = '2011-01-01'; end_date = '2011-12-31'
 #     grid_name  = 'grw2'; resampling = 'nearest'; #source_grid = 'grw1'
     ## operational config for SON2
-#     project = 'SON'
-#     start_date = '2011-01-01'; end_date = None
-#     grid_name  = 'son2'
+    project = 'SON'
+    start_date = '2011-01-01'; end_date = None
+    grid_name  = 'son2'
     ## operational config for ASB2
 #     project = 'ASB'
 #     start_date = '2010-01-01'; end_date = None
@@ -192,7 +192,7 @@ if __name__ == '__main__':
         
     ## define export parameters
 #     mode = 'NetCDF'
-    mode = 'raster2d'; source_grid = grid_name
+    mode = 'raster2d'; #source_grid = grid_name
     raster_format = None; scalefactor = 1.
     # modes
     if mode.lower() == 'raster2d':

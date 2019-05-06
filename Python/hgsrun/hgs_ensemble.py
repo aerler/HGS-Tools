@@ -266,7 +266,7 @@ class EnsHGS(object):
     
   def runSimulations(self, inner_list=None, outer_list=None, lsetup=True, lgrok=False, 
                      lparallel=True, NP=None, runtime_override=None, callback=reportBack, **allargs):
-    ''' execute HGS for each ensemble member and report results; set up run dirs as execute Grok,
+    ''' execute HGS for each ensemble member and report results; setup rundirs and execute Grok,
         if necessary; note that Grok will be executed in runHGS, just prior to HGS '''
     if not self.lreport: callback = None # suppress output
     ec = 0 # cumulative exit code (sum of all members)
@@ -287,7 +287,7 @@ class EnsHGS(object):
                       skip_config=True, **kwargs) # setup already ran (or was skipped intentionally)
     if any(ecs) or not all(self.HGSOK): 
       rundirs = [rundir for rundir,OK in zip(self.rundirs,self.HGSOK) if not OK]
-      raise HGSError("Grok configuration failed in {0} cases:\n{1}".format(sum(ecs),rundirs))
+      raise HGSError("HGS execution failed in {0} cases:\n{1}".format(sum(ecs),rundirs))
     ec += sum(ecs)
     # return sum of all exit codes
     return ec

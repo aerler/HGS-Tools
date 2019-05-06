@@ -495,7 +495,7 @@ class EnsHGSTest(unittest.TestCase):
     print(('\nHGSDIR: {}'.format(self.hgsdir)))
     # setup run folders and run Grok
     enshgs.runSimulations(lsetup=True, lgrok=True, loverwrite=loverwrite, skip_grok=True, lparallel=True, NP=NP, 
-                          runtime_override=120, ldryrun=not lbin) # set runtime to 2 minutes
+                          runtime_override=120, ldryrun=not lbin, lcompress=not lWin) # set runtime to 2 minutes
     assert not lbin or all(g for g in enshgs.HGSOK), enshgs.HGSOK
     for rundir in enshgs.rundirs:
       assert os.path.isdir(rundir), rundir
@@ -551,8 +551,8 @@ if __name__ == "__main__":
     tests = [] 
     # list of variable tests
 #     tests += ['Grok']
-    tests += ['HGS']    
-#     tests += ['EnsHGS']
+#     tests += ['HGS']    
+    tests += ['EnsHGS']
 
     # construct dictionary of test classes defined above
     test_classes = dict()
