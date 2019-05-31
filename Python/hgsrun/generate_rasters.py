@@ -83,10 +83,10 @@ if __name__ == '__main__':
     resampling = 'nearest'
     lexec = True # actually write rasters or just include file
     ## WRF grids
-#     project = 'WRF'
-# #     start_date = '2014-01-01'; end_date = '2015-01-01'
+    project = 'WRF'
+    start_date = '2010-08-01'; end_date = '2015-07-31'
 #     start_date = None; end_date = None
-#     grid_name  = 'wc2_d02'    
+    grid_name  = 'wc2_d01'    
 #     project = 'CMB'
 # #     start_date = '2014-01-01'; end_date = '2014-02-01'
 #     start_date = None; end_date = None
@@ -109,9 +109,9 @@ if __name__ == '__main__':
 #     start_date = '2011-01-01'; end_date = '2011-12-31'
 #     grid_name  = 'grw2'; resampling = 'nearest'; #source_grid = 'grw1'
     ## operational config for SON2
-    project = 'SON'
-    start_date = '2011-01-01'; end_date = None
-    grid_name  = 'son2'
+#     project = 'SON'
+#     start_date = '2011-01-01'; end_date = None
+#     grid_name  = 'son2'
     ## operational config for ASB2
 #     project = 'ASB'
 #     start_date = '2010-01-01'; end_date = None
@@ -175,8 +175,8 @@ if __name__ == '__main__':
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
     
     ## bias correction
-#     bias_correction = None
-    bias_correction = 'SMBC'
+    bias_correction = None
+#     bias_correction = 'SMBC'
     bc_tag = bias_correction+'_' if bias_correction else ''
     bc_varmap = dict(liqprec='liqwatflx') # just for testing...
     if bias_correction:
@@ -191,8 +191,8 @@ if __name__ == '__main__':
             bias_correction = pickle.load(filehandle) 
         
     ## define export parameters
-#     mode = 'NetCDF'
-    mode = 'raster2d'; #source_grid = grid_name
+    mode = 'NetCDF'
+#     mode = 'raster2d'; #source_grid = grid_name
     raster_format = None; scalefactor = 1.
     # modes
     if mode.lower() == 'raster2d':
@@ -208,9 +208,9 @@ if __name__ == '__main__':
         print(("\n***   Exporting '{}' to raster format {}   ***\n".format(dataset,raster_format)))
     elif mode.upper() == 'NETCDF':
         # NetCDF output using netCDF4
-#         varlist = ds_mod.netcdf_varlist # all primary and secondary variables, excluding coordinate variables
+        varlist = ds_mod.netcdf_varlist # all primary and secondary variables, excluding coordinate variables
 #         varlist = ds_mod.binary_varlist
-        varlist = ['liqwatflx']
+#         varlist = ['liqwatflx']
         gridstr = '' if grid_name.lower() == 'native' else '_'+grid_name.lower()
         target_folder = osp.join(ds_mod.daily_folder,grid_name,resampling)
         filename_novar = ds_mod.netcdf_filename.format(bc_tag+'{var:s}'+gridstr)

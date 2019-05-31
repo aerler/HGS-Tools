@@ -1,0 +1,54 @@
+#!/bin/bash
+## queue/PBS settings
+# 1 node with 8 cores, wallclock time 1 day
+# change cores and wall time as appropriate, but always use one node
+#PBS -l nodes=1:ppn=8
+#PBS -l walltime=01:00:00
+# merge standard error and output stream
+#PBS -j oe
+#PBS -o $PBS_JOBNAME.$PBS_JOBID.out
+# send email if abort (nbae)
+##PBS -M "you@institution.com"
+##PBS -m ae
+# job name (overwrite with -N command line option)
+#PBS -N hgs_run
+# submit to queue (this has to be the last PBS line and depends on your system)
+#PBS -q batch
+
+# Note: you need to enable email notifications: change '##PBS' to '#PBS' and enter
+# your email address; '#PBS' indicates a PBS directive; an additional '#' comments it
+# here is a resource with PBS examples
+# https://www2.cisl.ucar.edu/resources/computational-systems/cheyenne/running-jobs/pbs-pro-job-script-examples
+
+# go into directory from where the job was submitted
+cd "${PBS_O_WORKDIR}"
+
+## setup environment using modules
+# purge loaded modules and load necessary ones (prevent conflicts)
+module purge
+module load intel
+module list # list loaded modules (for debugging)
+# Note: this depends on your system setup and whether or 
+# not your system uses modules... (ask your sys admin)
+# use 'module avail' to list all available modules
+
+ulimit -s unlimited # unlimited stack size - necessary for Intel compiler
+ 
+# set number of thread to number of CPUs per node for OpenMP
+export OMP_NUM_THREADS=$PBS_NUM_PPN 
+
+## set directory for license file
+export HGSDIR="$HOME/" # if the license file is in the user home
+
+## run executables
+# Note: assuming that executables are in the current directory; you can also 
+# use absolute path for the executables (as in '/home/user/bin/hgs.x')
+# make sure your executables are actually executable using 'chmod u+x file.exe'
+# execute Grok, piping output into log file
+./grok.x &> grok.log
+# execute HGS, piping output into log file
+./hgs.x &> hgs.log
+# execute HS plot, piping output into log file
+./hsplot.x &> hsplot.log
+# Note: this pipes all output into log files; I find that cleaner; you can have all 
+# output in the job log file by simply removing the redirect ('&> file.log')
