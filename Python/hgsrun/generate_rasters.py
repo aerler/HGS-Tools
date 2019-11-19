@@ -79,15 +79,23 @@ if __name__ == '__main__':
 
     loverwrite = True
     source_grid = None
-    time_chunks = 8 # typically not much speed-up beyond 8
-    resampling = 'nearest'
+    time_chunks = 1 # typically not much speed-up beyond 8
+    resampling = 'average'
     lexec = True # actually write rasters or just include file
     ## WRF grids
-    project = 'WRF'
-    start_date = '2010-08-01'; end_date = '2015-07-31'
-#     start_date = None; end_date = None
-    grid_name  = 'wc2_d01'    
+#     project = 'WRF'
+#     start_date = '2010-08-01'; end_date = '2015-07-31'
+# #     start_date = None; end_date = None
+#     grid_name  = 'wc2_d01'    
 #     project = 'CMB'
+    ## Fraser's Ontario domain
+    project = 'WRF' # load grid from pickle
+#     start_date = '2010-12-13'; end_date = None
+#     grid_name = 'glb1_d02'    
+    start_date = None; end_date = None
+    grid_name = 'glb1_d01'    
+#     start_date = '2010-12-13'; end_date = None
+#     grid_name = 'on1'
 # #     start_date = '2014-01-01'; end_date = '2014-02-01'
 #     start_date = None; end_date = None
 #     grid_name  = 'cmb1'    
@@ -100,6 +108,11 @@ if __name__ == '__main__':
 #     project = 'SON'
 #     start_date = '2013-01-01'; end_date = '2013-01-31'
 #     grid_name  = 'son1'
+    ## config for Hugo's domain in Quebec
+#     project = 'Hugo'
+#     start_date = '2011-01-01'; end_date = '2018-12-31'
+#     grid_name = 'hd1'
+#     mode = 'NetCDF'
     ## operational config for GRW
 #     project = 'GRW'
 #     start_date = '2011-01-01'; end_date = '2018-12-31'
@@ -129,6 +142,9 @@ if __name__ == '__main__':
         tgt_geotrans = griddef.geotransform; tgt_size = griddef.size
     elif project == 'SnoDAS':
         tgt_crs = None # native grid
+    elif project == 'Hugo':
+        # Hugo's projection for Quebec
+        tgt_crs = genProj("+proj=lcc +ellps=NAD83 +datum=NAD83 +lat_0=44.0 +lat_1=46.0 +lat_2=60.0 +lon_0=-68.5  +x_0=0 +y_0=0 +units=m +no_defs", name=grid_name)
     elif project.upper() in ('SON','GRW'):
         # southern Ontario projection
         tgt_crs = genProj("+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
@@ -141,9 +157,14 @@ if __name__ == '__main__':
     # grid definition (mostly UTM grids for HGS)
     if tgt_geotrans is not None and tgt_size is not None:
         pass # already assigned above
+    elif grid_name == 'hd1':
+        tgt_size = (70,49) # lower resolution 5 km grid
+        tgt_geotrans = (-479184.769227,5.e3,0,68508.4877898,0,5.e3) # 5 km
+        resampling = 'average' # it's a fairly coarse grid...
     elif grid_name == 'son1':
         tgt_size = (118,82) # lower resolution 5 km grid
         tgt_geotrans = (320920.,5.e3,0,4624073.,0,5.e3) # 5 km
+        resampling = 'average' # it's a fairly coarse grid...
     elif grid_name == 'son2':
         tgt_size = (590,410) # higher resolution 1 km grid (~ 1 MB per day)
         tgt_geotrans = (320920.,1.e3,0,4624073.,0,1.e3) # 1 km 
@@ -153,6 +174,7 @@ if __name__ == '__main__':
     elif grid_name == 'grw2':
         tgt_size = (27,33) # smaller, lower resolution 5 km grid for GRW
         tgt_geotrans = (500.e3,5.e3,0,4740.e3,0,5.e3) # 5 km 
+        resampling = 'average' # it's a fairly coarse grid...
     elif grid_name == 'cmb1':
         tgt_size = (640,826) # higher resolution 500 m grid
         tgt_geotrans = (292557.,500,0,5872251.,0,-500.) # 500 m 
@@ -209,8 +231,9 @@ if __name__ == '__main__':
     elif mode.upper() == 'NETCDF':
         # NetCDF output using netCDF4
         varlist = ds_mod.netcdf_varlist # all primary and secondary variables, excluding coordinate variables
+#         varlist = ['liqwatflx', 'rho_snw', 'precip'] # derived variables
 #         varlist = ds_mod.binary_varlist
-#         varlist = ['liqwatflx']
+#         varlist = ['snow']
         gridstr = '' if grid_name.lower() == 'native' else '_'+grid_name.lower()
         target_folder = osp.join(ds_mod.daily_folder,grid_name,resampling)
         filename_novar = ds_mod.netcdf_filename.format(bc_tag+'{var:s}'+gridstr)
@@ -249,7 +272,7 @@ if __name__ == '__main__':
     if tgt_size is None: tgt_size = src_size
     time_coord = xds.coords['time'].data
     if start_date is None: start_date = pd.to_datetime(time_coord[0]).strftime('%Y-%m-%d')
-    if end_date is None: end_date = pd.to_datetime(time_coord[0]).strftime('%Y-%m-%d')
+    if end_date is None: end_date = pd.to_datetime(time_coord[-1]).strftime('%Y-%m-%d')
     
     
     # make sure target path exists

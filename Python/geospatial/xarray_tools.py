@@ -8,6 +8,7 @@ Utility functions to extract data from xarray Dataset or DataArray classes.
 
 import numpy as np
 import xarray as xr
+import netCDF4 as nc
 
 
 # names of valid geographic/projected coordinates
@@ -23,13 +24,10 @@ def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True):
     if x_coords is None: x_coords = default_x_coords
     if y_coords is None: y_coords = default_y_coords
     
-    if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
-        if lraise: # optionally check input
-            raise TypeError("Can only infer coordinates from xarray - not from {}".format(xvar.__class__))
-    else:
-        
+    xlon,ylat = None,None # return None, if nothing is found
+    
+    if isinstance(xvar,(xr.DataArray,xr.Dataset)):
         # test geographic grid and projected grids separately
-        xlon,ylat = None,None # return None, if nothing is found
         for coord_type in x_coords.keys():
             for name,coord in xvar.coords.items():
                 if name.lower() in x_coords[coord_type]: 
@@ -39,39 +37,60 @@ def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True):
                     ylat = coord; break
             if xlon is not None and ylat is not None: break
             else: xlon,ylat = None,None
+    elif isinstance(xvar,nc.Variable) and lraise:
+        raise TypeError("Cannot infer coordinates from netCDF4 Variable - only Dataset!")
+    elif isinstance(xvar,nc.Dataset):
+        # test geographic grid and projected grids separately
+        for coord_type in x_coords.keys():
+            for name in xvar.dimensions:
+                if name.lower() in x_coords[coord_type]: 
+                    if name in xvar.variables:
+                        xlon = xvar.variables[name]; break
+            for name in xvar.dimensions:
+                if name.lower() in y_coords[coord_type]: 
+                    if name in xvar.variables:
+                        ylat = xvar.variables[name]; break
+            if xlon is not None and ylat is not None: break
+            else: xlon,ylat = None,None      
+    elif lraise: # optionally check input
+        raise TypeError("Can only infer coordinates from xarray - not from {}".format(xvar.__class__))
+    else:
+        pass # return None,None
         
-        # optionally raise error if no coordinates are found, otherwise just return None
-        if lraise and (xlon is None or ylat is None):
-            raise ValueError("No valid pair of geographic coodinates found:\n {}".format(xvar.dims))
+    # optionally raise error if no coordinates are found, otherwise just return None
+    if lraise and (xlon is None or ylat is None):
+        raise ValueError("No valid pair of geographic coodinates found:\n {}".format(xvar.dims))
     
     # return a valid pair of geographic or projected coordinate axis
     return xlon,ylat
 
   
 def isGeoVar(xvar, x_coords=None, y_coords=None, lraise=True):
-    ''' helper function to identify variables that have geographic or projected coordinates,
-        based on xarray dimension names '''
+    ''' helper function to identify variables that have geospatial coordinates (geographic or 
+        projected), based on xarray or netCDF4 dimension names '''
     
     if x_coords is None: x_coords = default_x_coords
     if y_coords is None: y_coords = default_y_coords
 
-    if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
-        if lraise: # optionally check input
-            raise TypeError("Can only infer coordinate system from xarray - not from {}".format(xvar.__class__))
-        else: 
-            return None # evaluates as False, but allows checking
+    if isinstance(xvar,(xr.DataArray,xr.Dataset)):
+        dims = xvar.coords.keys()
+    elif isinstance(xvar,(nc.Dataset,nc.Variable)):
+        dims = xvar.dimensions
+    elif lraise:
+        raise TypeError("Can only infer coordinate system from xarray or netCDF4- not from {}".format(xvar.__class__))
     else:
+        return None # evaluates as False, but allows checking
         
-        # test geographic grid and projected grids separately
-        for coord_type in x_coords.keys():
-            xlon,ylat = False,False
-            for name in xvar.coords.keys():
-                if name.lower() in x_coords[coord_type]: 
-                    xlon = True; break
-            for name in xvar.coords.keys():
-                if name.lower() in y_coords[coord_type]: 
-                    ylat = True; break
-            if xlon and ylat: break
+    # test geographic grid and projected grids separately
+    for coord_type in x_coords.keys():
+        xlon,ylat = False,False
+        for name in dims:
+            if name.lower() in x_coords[coord_type]: 
+                xlon = True; break
+        for name in dims:
+            if name.lower() in y_coords[coord_type]: 
+                ylat = True; break
+        if xlon and ylat: break
     
     # if it has a valid pair of geographic or projected coordinate axis
     return ( xlon and ylat )
@@ -84,19 +103,22 @@ def isGeoCRS(xvar, lat_coords=None, lon_coords=None, lraise=True):
     if lon_coords is None: lon_coords = default_x_coords['geo']
     if lat_coords is None: lat_coords = default_y_coords['geo']
     
-    if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
-        if lraise:
-            raise TypeError("Can only infer coordinate system from xarray - not from {}".format(xvar.__class__))
-        else: 
-            return None # evaluates as False, but allows checking
+    if isinstance(xvar,(xr.DataArray,xr.Dataset)):
+        dims = xvar.coords.keys()
+    elif isinstance(xvar,(nc.Dataset,nc.Variable)):
+        dims = xvar.dimensions
+    elif lraise:
+        raise TypeError("Can only infer coordinate system from xarray or netCDF4- not from {}".format(xvar.__class__))
     else:
-        # check dimension names
-        for name in xvar.coords.keys():
-            if name.lower() in lon_coords: 
-                lon = True; break
-        for name in xvar.coords.keys():
-            if name.lower() in lat_coords: 
-                lat = True; break
+        return None # evaluates as False, but allows checking
+      
+    # check dimension names
+    for name in dims:
+        if name.lower() in lon_coords: 
+            lon = True; break
+    for name in dims:
+        if name.lower() in lat_coords: 
+            lat = True; break
     
     # it is a geographic coordinate system if both, lat & lon are present
     return ( lat and lon )
@@ -106,13 +128,16 @@ def getTransform(xvar=None, x=None, y=None, lcheck=True):
     ''' generate an affine transformation from xarray coordinate axes '''
     from rasterio.transform import Affine # to generate Affine transform
     
-    if isinstance(xvar,(xr.DataArray,xr.Dataset)):
+    if isinstance(xvar,(xr.DataArray,xr.Dataset,nc.Dataset)):
         x,y = getGeoCoords(xvar, lraise=True)
+    elif xvar is None and isinstance(x,(xr.DataArray,nc.Variable)) and isinstance(y,(xr.DataArray,nc.Variable)):
+        pass # x and y axes are supplied directly
     elif xvar:
-        raise TypeError('Can only infer GeoTransform from xarray Dataset or DataArray - not from {}.'.format(xvar))
+        raise TypeError('Can only infer GeoTransform from xarray Dataset or DataArray or netCDF4 Dataset\n - not from {}.'.format(xvar))
     
     # check X-axis
     if isinstance(x,xr.DataArray): x = x.data
+    elif isinstance(x,nc.Variable): x = x[:]
     if not isinstance(x,np.ndarray): 
         raise TypeError(x)
     diff_x = np.diff(x); dx = diff_x.min()
@@ -121,6 +146,7 @@ def getTransform(xvar=None, x=None, y=None, lcheck=True):
     
     # check Y-axis
     if isinstance(y,xr.DataArray): y = y.data
+    elif isinstance(y,nc.Variable): y = y[:]
     if not isinstance(y,np.ndarray): 
         raise TypeError(y)
     diff_y = np.diff(y); dy = diff_y.min()

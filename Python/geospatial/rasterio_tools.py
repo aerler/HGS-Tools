@@ -13,6 +13,7 @@ import numpy as np
 from six import string_types # for testing string in Python 2 and 3
 import pandas as pd
 import rasterio as rio
+from rasterio.warp import reproject, Resampling, calculate_default_transform
 
 # prevent failue if xarray is not installed
 try: 
@@ -33,7 +34,9 @@ def genProj(*args,**kwargs):
     if args:
         if len(args) > 1: raise ValueError(args)
         arg = args[0]
-        if isinstance(arg,rio.crs.CRS):
+        if arg is None:
+            crs = rio.crs.CRS.from_epsg(4326) # geographic lat/lon projection
+        elif isinstance(arg,rio.crs.CRS):
             crs = arg # nothing to do
         elif isinstance(arg,string_types):
             if kwargs:
@@ -60,9 +63,19 @@ def genProj(*args,**kwargs):
     return crs
 
 
-def constructCoords(geotrans, size, dtype='float32'):
+def constructCoords(geotrans, size=None, dtype='float32'):
     ''' construct coordinate arrays from geotransform and size; coordinates are centered w.r.t. pixels '''
     
+    # parse input
+    if size is None:
+        if isinstance(geotrans,rio.io.DatasetReader):
+            size = (geotrans.width,geotrans.height)
+            geotrans = geotrans.transform
+        else:
+            raise NotImplementedError(geotrans)
+    elif len(size) != 2:
+        raise ValueError(size)
+          
     # use GDAL conventions
     if isinstance(geotrans,rio.transform.Affine):
         geotrans = geotrans.to_gdal()
@@ -80,6 +93,15 @@ def constructCoords(geotrans, size, dtype='float32'):
     # return numpy arrays     
     return xlon,ylat
 
+
+def projectGeoTrans(src_crs=None, tgt_crs=None, src_transform=None, src_size=None):
+    ''' a function to compute the default geotransform in a new projection '''
+    left,bottom = src_transform*(0,0); right,top = src_transform*src_size
+    geotrans, wdt, hgt = calculate_default_transform(src_crs=src_crs, dst_crs=tgt_crs, 
+                                                     width=src_size[0], height=src_size[1], 
+                                                     left=left, bottom=bottom, right=right, top=top)
+    return geotrans, (wdt, hgt)    
+    
 
 ## functions for Dask execution
 
@@ -125,10 +147,10 @@ def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampli
     
     # prepare reprojection
     if isinstance(resampling,string_types):
-        resampling = getattr(rio.warp.Resampling,resampling)
+        resampling = getattr(Resampling,resampling)
     # do GDAL reprojection
-    rio.warp.reproject(src_data, tgt_data, src_transform=src_transform, src_crs=src_crs,
-                       dst_transform=tgt_transform, dst_crs=tgt_crs, resampling=resampling, **kwargs)
+    reproject(src_data, tgt_data, src_transform=src_transform, src_crs=src_crs,
+              dst_transform=tgt_transform, dst_crs=tgt_crs, resampling=resampling, **kwargs)
     
     # restore shape
     if len(tgt_shp) > 3:

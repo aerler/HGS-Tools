@@ -251,8 +251,8 @@ if __name__ == '__main__':
     # test cases
 #     test_case = 'simple_mean'
 #     test_case = 'climatology'
-#     test_case = 'time-series'
-    test_case = 'existing_inc_file'
+    test_case = 'time-series'
+#     test_case = 'existing_inc_file'
     
     ## file settings
     # work directory settings ("global" variable)
@@ -275,7 +275,8 @@ if __name__ == '__main__':
 #     grid = 'snw1'; project = 'SNW'; length = 360
 #     grid = 'son1'; project = 'SON'; length = 120
     grid = 'arb2'; project = 'ARB'; length = 180
-    varname = 'liqwatflx'; testfile = 'precip.inc';
+    varname = 'liqwatflx'; testfile = 'precip_ts.inc';
+#     varname = 'pet-05'; testfile = 'pet_ts-05.inc';    
 #     varname = 'liqwatflx_CMC'; testfile = 'precip_CMC.inc'; 
 #     varname = 'pet'; testfile = 'pet.inc'      
 #     varname = 'pet_wrf'; testfile = 'pet_wrf.inc'      

@@ -189,14 +189,16 @@ def add_var(dst, name, dims, data=None, shape=None, atts=None, dtype=None, zlib=
 
 ## copy functions
 
-def copy_ncatts(dst, src, prefix = '', incl_=True):
+def copy_ncatts(dst, src, prefix='', incl_=True):
     ''' copy attributes from a variable or dataset to another '''
   
     # loop over attributes
     for att in src.ncattrs(): 
       if att in ('missing_value','fillValue','_FillValue'): pass
       elif att[0] != '_' or incl_: # these seem to cause problems
-        dst.setncattr(prefix+att,src.getncattr(att))
+          value = src.getncattr(att)
+          if isinstance(value,string_types): dst.setncattr_string(prefix+att,value)
+          else: dst.setncattr(prefix+att,value)
     
     # return modified dataset
     return dst
@@ -208,7 +210,7 @@ def copy_vars(dst, src, varlist=None, namemap=None, dimmap=None, remove_dims=Non
     
     # prefix is passed to copy_ncatts, the remaining kwargs are passed to dst.createVariable()
     if varlist is None: varlist = src.variables.keys() # just copy all
-    if dimmap: midmap = dict(zip(dimmap.values(),dimmap.keys())) # reverse mapping
+    #if dimmap: midmap = dict(zip(dimmap.values(),dimmap.keys())) # reverse mapping
     varargs = dict() # arguments to be passed to createVariable
     if zlib: varargs.update(zlib_default)
     varargs.update(kwargs)
@@ -221,7 +223,8 @@ def copy_vars(dst, src, varlist=None, namemap=None, dimmap=None, remove_dims=Non
         else: rav = src.variables[name]
         dims = [] # figure out dimension list
         for dim in rav.dimensions:
-            if dimmap and midmap.has_key(dim): dim = midmap[dim] # apply name mapping (in reverse)
+            #if dimmap and dim in midmap: dim = midmap[dim] # apply name mapping (in reverse)
+            if dimmap and dim in dimmap: dim = dimmap[dim] # apply name mapping
             if not (remove_dims and dim in remove_dims): dims.append(dim)
         
         # create new variable
@@ -323,6 +326,47 @@ def add_time_coord(dst, data, name=None, units='D', atts=None, ts_atts=None, dat
     # return dataset handle
     return dst
     
+def addGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=None, varatts=None, 
+                    zlib=True, lcoords=True, loverwrite=False):
+    ''' function to add georeferencing information based on rasterio/GDAL info to existing netCDF4 Dataset '''
+    from geospatial.rasterio_tools import genProj, constructCoords
+
+    # determine type of coordinate reference system   
+    if crs is None:
+        raise NotImplementedError
+    crs = genProj(crs)
+    lproj = crs.is_projected    
+    # construct coordinate axes
+    if not xlon and not ylat:
+        xlon,ylat = ('x','y') if lproj else ('lon','lat')
+    assert xlon and ylat, (xlon,ylat)
+    
+    # construct coordinate variables
+    if lcoords:    
+      xlon_coord,ylat_coord = constructCoords(geotrans, size, dtype=netcdf_dtype)          
+      # add coordinate variables
+      if varatts is None: varatts = default_varatts
+      # latitude (intermediate/regular dimension)
+      yatts = varatts[ylat]; yname = yatts['name']
+      if yname not in ds.variables or loverwrite: 
+          dtype = yatts.get('dtype',netcdf_dtype)
+          add_coord(ds, yname, data=ylat_coord, length=size[1], atts=yatts, dtype=dtype, zlib=zlib)
+      # longitude is typically the inner-most dimension (continuous)
+      xatts = varatts[xlon]; xname = xatts['name']
+      if xname not in ds.variables or loverwrite: 
+          dtype = xatts.get('dtype',netcdf_dtype)
+          add_coord(ds, xname, data=xlon_coord, length=size[0], atts=xatts, dtype=dtype, zlib=zlib)
+    
+    ## save attributes, including georeferencing information
+    ds.setncattr_string('xlon',xlon)
+    ds.setncattr_string('ylat',ylat)
+    ds.setncattr_string('proj4',crs.to_string())
+    ds.setncattr_string('WKT',crs.to_wkt())
+    ds.setncattr('EPSG',crs.to_epsg())
+    ds.setncattr('is_projected',int(lproj))
+        
+    # return modified dataset
+    return ds    
 
 netcdf_dtype    = np.dtype('<f4') # little-endian 32-bit float
 default_varatts = dict( # attributed for coordinate variables
@@ -333,14 +377,11 @@ default_varatts = dict( # attributed for coordinate variables
                        time = dict(name='time', units='day', long_name='Days'), # time coordinate
                        time_stamp = dict(name='time_stamp', units='', long_name='Human-readable Time Stamp'),) # readable time stamp (string)
 
-
 def createGeoNetCDF(filename, atts=None, folder=None, xlon=None, ylat=None, time=None, time_args=None, 
                     varatts=None, crs=None, geotrans=None, size=None, 
                     nc_format='NETCDF4', zlib=True, loverwrite=True):
     ''' create a NetCDF-4 file, create dimensions and geographic coordinates, and set attributes '''
-    
-    from geospatial.rasterio_tools import genProj, constructCoords
-    
+        
     # create Dataset/file    
     if folder:
         if not osp.exists(folder):
@@ -352,8 +393,14 @@ def createGeoNetCDF(filename, atts=None, folder=None, xlon=None, ylat=None, time
         ds = nc.Dataset(filepath, mode='a', format=nc_format, clobber=False)
     else:
         ds = nc.Dataset(filepath, mode='w', format=nc_format, clobber=True)
-    # add coordinate variables
-    if varatts is None: varatts = default_varatts
+    # add attributes
+    if atts is None: atts = dict()
+    else: atts = coerceAtts(atts)
+    for key,value in atts.items():
+        if isinstance(value,string_types): ds.setncattr_string(key,value)
+        else: ds.setncattr(key,value)
+    # default varatts
+    if varatts is None: varatts = default_varatts    
     
     ## construct time dimension and time stamp variable from xarray/datetime64
     if time is not None:
@@ -379,39 +426,8 @@ def createGeoNetCDF(filename, atts=None, folder=None, xlon=None, ylat=None, time
             add_time_coord(ds, time_coord, **kwargs)
         
     ## construct geographic coordinate axes from xarray or GDAL/rasterio georeference
-        
-    # determine type of coordinate reference system
-    if crs is None:
-        raise NotImplementedError
-    crs = genProj(crs)
-    lproj = crs.is_projected    
-    # construct coordinate axes
-    if not xlon and not ylat:
-        xlon,ylat = ('x','y') if lproj else ('lon','lat')
-    assert xlon and ylat, (xlon,ylat)    
-    xlon_coord,ylat_coord = constructCoords(geotrans, size, dtype=netcdf_dtype)    
-    
-    # latitude (intermediate/regular dimension)
-    yatts = varatts[ylat]; yname = yatts['name']
-    if yname not in ds.variables or loverwrite: 
-        dtype = yatts.get('dtype',netcdf_dtype)
-        add_coord(ds, yname, data=ylat_coord, length=size[1], atts=yatts, dtype=dtype, zlib=zlib)
-    # longitude is typically the inner-most dimension (continuous)
-    xatts = varatts[xlon]; xname = xatts['name']
-    if xname not in ds.variables or loverwrite: 
-        dtype = xatts.get('dtype',netcdf_dtype)
-        add_coord(ds, xname, data=xlon_coord, length=size[0], atts=xatts, dtype=dtype, zlib=zlib)
-    
-    ## save attributes, including georeferencing information
-    if atts is None: atts = dict()
-    else: atts = coerceAtts(atts)
-    atts['xlon'] = xlon; atts['ylat'] = ylat
-    atts['proj4'] = crs.to_string(); atts['is_projected'] = str(lproj)
-    for key,value in atts.items():
-        if isinstance(value,string_types):
-            ds.setncattr_string(key,value)
-        else:
-            ds.setncattr(key,value)
+    ds = addGeoReference(ds, crs=crs, geotrans=geotrans, size=size, xlon=xlon, ylat=ylat, varatts=varatts, 
+                         zlib=zlib, lcoords=True, loverwrite=loverwrite)    
     
     # return dataset object
     return ds
@@ -426,7 +442,7 @@ if __name__ == '__main__':
     geotrans = (320920.,5.e3,0,4624073.,0,5.e3) # 5 km
     
     # create georeferenced NetCDF file for testing
-    filepath = 'C:/Users/Aerler/Data/test/geo_test.nc'
+    filepath = 'D:/Data/test/geo_test.nc'
     print(filepath)
     atts = dict(note='a geo-referenced test dataset')
     time = np.arange('2014-09-28','2014-10-21',dtype='datetime64[D]')
