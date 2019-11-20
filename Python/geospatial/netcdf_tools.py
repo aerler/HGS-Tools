@@ -34,15 +34,12 @@ class NCAxisError(Exception):
   ''' Exceptions related to axis/dimensions in NetCDF datasets. '''
   pass
 
-# prevent failue if xarray is not installed
-try: 
+# prevent failure if xarray is not installed
+try:
     from xarray import DataArray
-    from geospatial.xarray_tools import getTransform, isGeoCRS, getProj
-except: 
-    DataArray = NotImplemented
-    getTransform  = NotImplemented
-    isGeoCRS = NotImplemented
-    getProj = NotImplemented
+except:
+    warn("Import of 'xarray' failed: cannot handle 'DataArray'.")
+    DataArray = NotImplemented.__class__ # set to __class__, so that isinstance works (and usually fails)
 
 
 ## helper functions
@@ -95,6 +92,28 @@ def coerceAtts(atts):
     # return reformatted attribute dict
     return ncatts
 
+
+def getNCAtts(src):
+    ''' return NetCDF attributes as dictionary '''
+    atts = dict()
+    # loop over attribute list
+    for att in src.ncattrs(): 
+        # extract each value individually (no other option)
+        atts[att] = src.getncattr(att)
+    return atts
+
+def setNCAtts(tgt, atts, lcoerce=True):
+    ''' set NetCDF attributes based on dictionary, with some general checking '''
+    # coerce type of attributes
+    if lcoerce: 
+        atts = coerceAtts(atts)
+    # loop over dictionary
+    for key,value in atts.items(): 
+        # set attributed individually (no other option)
+        if isinstance(value,string_types): tgt.setncattr_string(key,value)
+        else: tgt.setncattr(key,value)
+    return atts
+   
 
 ## generic functions to create netCDF variables
 
@@ -326,15 +345,16 @@ def add_time_coord(dst, data, name=None, units='D', atts=None, ts_atts=None, dat
     # return dataset handle
     return dst
     
-def addGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=None, varatts=None, 
+def createGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=None, varatts=None, 
                     zlib=True, lcoords=True, loverwrite=False):
-    ''' function to add georeferencing information based on rasterio/GDAL info to existing netCDF4 Dataset '''
-    from geospatial.rasterio_tools import genProj, constructCoords
+    ''' function to add georeferencing information based on rasterio/GDAL info to existing netCDF4 Dataset;
+        this can include adding new axes, but does not modify existing variables '''
+    from geospatial.rasterio_tools import genCRS, constructCoords
 
     # determine type of coordinate reference system   
     if crs is None:
         raise NotImplementedError
-    crs = genProj(crs)
+    crs = genCRS(crs)
     lproj = crs.is_projected    
     # construct coordinate axes
     if not xlon and not ylat:
@@ -377,8 +397,8 @@ default_varatts = dict( # attributed for coordinate variables
                        time = dict(name='time', units='day', long_name='Days'), # time coordinate
                        time_stamp = dict(name='time_stamp', units='', long_name='Human-readable Time Stamp'),) # readable time stamp (string)
 
-def createGeoNetCDF(filename, atts=None, folder=None, xlon=None, ylat=None, time=None, time_args=None, 
-                    varatts=None, crs=None, geotrans=None, size=None, 
+def createGeoNetCDF(filename, atts=None, folder=None, xlon=None, ylat=None, time=None, 
+                    time_args=None, varatts=None, crs=None, geotrans=None, size=None, 
                     nc_format='NETCDF4', zlib=True, loverwrite=True):
     ''' create a NetCDF-4 file, create dimensions and geographic coordinates, and set attributes '''
         
@@ -395,10 +415,7 @@ def createGeoNetCDF(filename, atts=None, folder=None, xlon=None, ylat=None, time
         ds = nc.Dataset(filepath, mode='w', format=nc_format, clobber=True)
     # add attributes
     if atts is None: atts = dict()
-    else: atts = coerceAtts(atts)
-    for key,value in atts.items():
-        if isinstance(value,string_types): ds.setncattr_string(key,value)
-        else: ds.setncattr(key,value)
+    setNCAtts(ds, atts, lcoerce=True)
     # default varatts
     if varatts is None: varatts = default_varatts    
     
@@ -426,8 +443,8 @@ def createGeoNetCDF(filename, atts=None, folder=None, xlon=None, ylat=None, time
             add_time_coord(ds, time_coord, **kwargs)
         
     ## construct geographic coordinate axes from xarray or GDAL/rasterio georeference
-    ds = addGeoReference(ds, crs=crs, geotrans=geotrans, size=size, xlon=xlon, ylat=ylat, varatts=varatts, 
-                         zlib=zlib, lcoords=True, loverwrite=loverwrite)    
+    ds = createGeoReference(ds, crs=crs, geotrans=geotrans, size=size, xlon=xlon, ylat=ylat, 
+                            varatts=varatts, zlib=zlib, lcoords=True, loverwrite=loverwrite)    
     
     # return dataset object
     return ds

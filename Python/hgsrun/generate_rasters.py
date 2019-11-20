@@ -19,8 +19,8 @@ import rasterio as rio
 from rasterio.warp import calculate_default_transform # need to import separately...
 from importlib import import_module
 # internal imports
-from geospatial.rasterio_tools import genProj, generate_regrid_and_export
-from geospatial.xarray_tools import getProj, getTransform, rechunkTo2Dslices
+from geospatial.rasterio_tools import genCRS, generate_regrid_and_export
+from geospatial.xarray_tools import getCRS, getTransform, rechunkTo2Dslices
 
 # WindowsError is not defined on Linux - need a dummy
 try: 
@@ -89,11 +89,11 @@ if __name__ == '__main__':
 #     grid_name  = 'wc2_d01'    
 #     project = 'CMB'
     ## Fraser's Ontario domain
-    project = 'WRF' # load grid from pickle
-#     start_date = '2010-12-13'; end_date = None
-#     grid_name = 'glb1_d02'    
-    start_date = None; end_date = None
-    grid_name = 'glb1_d01'    
+#     project = 'WRF' # load grid from pickle
+# #     start_date = '2010-12-13'; end_date = None
+# #     grid_name = 'glb1_d02'    
+#     start_date = None; end_date = None
+#     grid_name = 'glb1_d01'    
 #     start_date = '2010-12-13'; end_date = None
 #     grid_name = 'on1'
 # #     start_date = '2014-01-01'; end_date = '2014-02-01'
@@ -105,9 +105,9 @@ if __name__ == '__main__':
 #     start_date = '2014-01-01'; end_date = '2014-01-05'
 #     grid_name  = 'native'
     ## fast test config
-#     project = 'SON'
-#     start_date = '2013-01-01'; end_date = '2013-01-31'
-#     grid_name  = 'son1'
+    project = 'SON'
+    start_date = '2013-01-01'; end_date = '2013-01-31'
+    grid_name  = 'son1'
     ## config for Hugo's domain in Quebec
 #     project = 'Hugo'
 #     start_date = '2011-01-01'; end_date = '2018-12-31'
@@ -138,22 +138,22 @@ if __name__ == '__main__':
         from geodata.gdal import loadPickledGridDef
         griddef = loadPickledGridDef(grid=grid_name, encoding='latin1')
         print(griddef)
-        tgt_crs = genProj(griddef.projection.ExportToProj4(), name=grid_name)
+        tgt_crs = genCRS(griddef.projection.ExportToProj4(), name=grid_name)
         tgt_geotrans = griddef.geotransform; tgt_size = griddef.size
     elif project == 'SnoDAS':
         tgt_crs = None # native grid
     elif project == 'Hugo':
         # Hugo's projection for Quebec
-        tgt_crs = genProj("+proj=lcc +ellps=NAD83 +datum=NAD83 +lat_0=44.0 +lat_1=46.0 +lat_2=60.0 +lon_0=-68.5  +x_0=0 +y_0=0 +units=m +no_defs", name=grid_name)
+        tgt_crs = genCRS("+proj=lcc +ellps=NAD83 +datum=NAD83 +lat_0=44.0 +lat_1=46.0 +lat_2=60.0 +lon_0=-68.5  +x_0=0 +y_0=0 +units=m +no_defs", name=grid_name)
     elif project.upper() in ('SON','GRW'):
         # southern Ontario projection
-        tgt_crs = genProj("+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
+        tgt_crs = genCRS("+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
     elif project.upper() == 'CMB':
         # southern Ontario projection
-        tgt_crs = genProj("+proj=utm +zone=11 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
+        tgt_crs = genCRS("+proj=utm +zone=11 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
     elif project.upper() == 'ASB':
         # Assiniboin projection
-        tgt_crs = genProj("+proj=utm +zone=14 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs", name=grid_name)
+        tgt_crs = genCRS("+proj=utm +zone=14 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs", name=grid_name)
     # grid definition (mostly UTM grids for HGS)
     if tgt_geotrans is not None and tgt_size is not None:
         pass # already assigned above
@@ -247,7 +247,7 @@ if __name__ == '__main__':
     xds = ds_mod.loadDailyTimeSeries(varlist=varlist, time_chunks=time_chunks, grid=source_grid)
     
     # get georeference
-    src_crs = getProj(xds)
+    src_crs = getCRS(xds)
     if tgt_crs is None: tgt_crs = src_crs
     # figure out bounds for clipping
     if tgt_geotrans is not None and tgt_size is not None:

@@ -14,21 +14,29 @@ from six import string_types # for testing string in Python 2 and 3
 import pandas as pd
 import rasterio as rio
 from rasterio.warp import reproject, Resampling, calculate_default_transform
+from warnings import warn
 
-# prevent failue if xarray is not installed
-try: 
+# prevent failue if xarray or netCDF4 are not installed
+try:
+    from netCDF4 import Variable
+except:
+    Variable = NotImplemented    
+try:
     from xarray import DataArray
-    from geospatial.xarray_tools import getTransform, isGeoCRS, getProj
+except:
+    warn("Import of 'xarray' failed: cannot handle 'DataArray'.")
+    DataArray = NotImplemented.__class__ # set to __class__, so that isinstance works (and usually fails)
+try: 
+    from geospatial.xarray_tools import getTransform, getCRS
 except: 
-    DataArray = NotImplemented
+    warn("Import of 'xarray' failed; not all functionality available.")
     getTransform  = NotImplemented
-    isGeoCRS = NotImplemented
-    getProj = NotImplemented
+    getCRS = NotImplemented
 
 
 ## functions to interface with xarray
 
-def genProj(*args,**kwargs):
+def genCRS(*args,**kwargs):
     ''' generate a rasterio CRS object, based on Proj4/pyproj convention '''
  
     if args:
@@ -110,18 +118,17 @@ def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampli
     ''' a function to regrid/reproject a data array to a new grid; src attributes can be inferred from xarray '''
     
     # infer source attributes
-    if isinstance(data,DataArray):
+    if isinstance(data,(DataArray,Variable)):
         if src_transform is None:
             src_transform, size = getTransform(data,)
         else: size = (data.shape[-1],data.shape[-2])
         if src_size and src_size != size: raise ValueError(src_size,size)
         else: src_size = size
+        if src_crs is None: src_crs = getCRS(data, lraise=True)
         if data.attrs.get('dim_order',None) is False:
-            raise NotImplementedError("This the x/lon and y/lat axes of this xarray have to be swapped:\n {}".format(data))
-        if src_crs is None:
-            if isGeoCRS(data): src_crs = getProj()
-            else: raise ValueError("No source projection 'src_crs' supplied and can't infer projection from source data.")
-        data = data.data
+            raise NotImplementedError("The x/lon and y/lat axes of this xarray have to be swapped:\n {}".format(data))
+        if isinstance(data,DataArray): data = data.data
+        else: data = data[:]
     
     # N.B.: GDAL convention for data arrays is band,y/lat,x/lon,
     #       but the GDAL size tuple is stored as (x/lon,y/lat)
@@ -182,19 +189,28 @@ def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', mis
             height,width = data.shape[-2:]
             count = np.prod(data.shape[:-2])
         
-        # prep data
-        if isinstance(data,DataArray): 
-            data = data.data
-            # optionally infer grid from xarray and defaults
+        # check/prep data
+        if isinstance(data,(DataArray,Variable)): 
+            # optionally infer grid from xarray/netCDF4 and defaults
             if crs is None:
-                crs = getProj(data, lraise=True) # default lat/lon
+                crs = getCRS(data, lraise=True) # default lat/lon
             if transform is None:
                 transform, size = getTransform(data, lcheck=False) 
                 assert data.shape == size, data.shape
+            if data.attrs.get('dim_order',None) is False:
+                raise NotImplementedError("The x/lon and y/lat axes of this xarray have to be swapped:\n {}".format(data))
+            if isinstance(data,DataArray): data = data.data
+            else: data = data[:]
         elif crs is None or transform is None:
             raise ValueError("Can only infer grid/projection from xarray DataArray.")
-        if isinstance(data,np.ma.MaskedArray): data = data.filled(missing_value)
-        if lmask_invalid: data[~np.isfinite(data)] = missing_value
+          
+        if isinstance(data,np.ma.MaskedArray): 
+            data = data.filled(missing_value)
+        elif not isinstance(data,np.ndarray): 
+            raise TypeError(data)
+        
+        if lmask_invalid: 
+            data[~np.isfinite(data)] = missing_value
         
         # fix transform
         if transform.e > 0:
@@ -303,12 +319,12 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
     
     # infer xarray meta data
     if not isinstance(xvar,DataArray): 
-        raise NotImplementedError("Can only infer grid/projection from xarray DataArray.")
+        raise NotImplementedError("Can only infer grid/projection from xarray DataArray (and netCDF4 has no Dask integration).")
     if len(xvar.dims) != 3:
         raise NotImplementedError(xvar)
     
     # infer grid from xarray and defaults
-    src_crs = getProj(xvar, lraise=True) # default lat/lon
+    src_crs = getCRS(xvar, lraise=True) # default lat/lon
     src_geotrans, src_size = getTransform(xvar, lcheck=True) 
     
     # time axis
@@ -367,7 +383,7 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
                                  lecho=lecho, loverwrite=loverwrite, return_dummy=dummy_array)
     
     # return function with dummy array (for measure)
-    return dask_fct,dummy_array,dataset
+    return dask_fct, dummy_array, dataset
 
 
 if __name__ == '__main__':

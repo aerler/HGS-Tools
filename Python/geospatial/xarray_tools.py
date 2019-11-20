@@ -10,15 +10,30 @@ import numpy as np
 import xarray as xr
 import netCDF4 as nc
 
+# internal imports
+from geospatial.netcdf_tools import getNCAtts # this import shpuld be fine
+
 
 # names of valid geographic/projected coordinates
 default_x_coords = dict(geo=('lon','long','longitude',), proj=('x','easting') )
 default_y_coords = dict(geo=('lat','latitude',),         proj=('y','northing'))
 
 
+## helper functions
+
+def getAtts(xvar, lraise=True):
+    ''' return dictionary of attributed from netCDF4 or xarray '''
+    if isinstance(xvar,(xr.DataArray,xr.Dataset)):
+        atts = xvar.attrs.copy()
+    elif isinstance(xvar,(nc.Variable,nc.Dataset)):
+        atts = getNCAtts(xvar)
+    elif lraise: 
+        raise TypeError(xvar)
+    return atts
+
 ## functions to interface with rasterio
 
-def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True):
+def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True, lvars=True):
     '''  helper function to extract geographic/projected coordinates from xarray'''
     
     if x_coords is None: x_coords = default_x_coords
@@ -31,10 +46,10 @@ def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True):
         for coord_type in x_coords.keys():
             for name,coord in xvar.coords.items():
                 if name.lower() in x_coords[coord_type]: 
-                    xlon = coord; break
+                    xlon = coord if lvars else name; break
             for name,coord in xvar.coords.items():
                 if name.lower() in y_coords[coord_type]: 
-                    ylat = coord; break
+                    ylat = coord if lvars else name; break
             if xlon is not None and ylat is not None: break
             else: xlon,ylat = None,None
     elif isinstance(xvar,nc.Variable) and lraise:
@@ -45,15 +60,15 @@ def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True):
             for name in xvar.dimensions:
                 if name.lower() in x_coords[coord_type]: 
                     if name in xvar.variables:
-                        xlon = xvar.variables[name]; break
+                        xlon = xvar.variables[name] if lvars else name; break
             for name in xvar.dimensions:
                 if name.lower() in y_coords[coord_type]: 
                     if name in xvar.variables:
-                        ylat = xvar.variables[name]; break
+                        ylat = xvar.variables[name] if lvars else name; break
             if xlon is not None and ylat is not None: break
             else: xlon,ylat = None,None      
     elif lraise: # optionally check input
-        raise TypeError("Can only infer coordinates from xarray - not from {}".format(xvar.__class__))
+        raise TypeError("Can only infer coordinates from xarray or netCDF4 - not from {}".format(xvar.__class__))
     else:
         pass # return None,None
         
@@ -157,52 +172,103 @@ def getTransform(xvar=None, x=None, y=None, lcheck=True):
     return Affine.from_gdal(x[0]-dx/2.,dx,0.,y[0]-dy/2.,0.,dy), (len(x),len(y))
 
 
-def getProj(xvar, lraise=True):
+def getCRS(xvar, lraise=True):
     ''' infer projection from a xarray Dataset or DataArray; this function assumes that either a proj4 string or
         an EPSG designation is stored in the attributes of the dataset/variable. '''
-    from geospatial.rasterio_tools import genProj # used to generate CRS object
+    from geospatial.rasterio_tools import genCRS # used to generate CRS object
     
-    if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
-        if lraise:
-            raise TypeError("Can only infer coordinate system from xarray - not from {}".format(xvar.__class__))
-        else: 
-            return None # no projection
-    proj = None
-    
-    # search for Proj4 string
-    for key,value in xvar.attrs.items():
-        if key.lower() == 'proj4': proj = genProj(value); break
-    
+    if isinstance(xvar,(xr.DataArray,xr.Dataset)):
+        atts = xvar.attrs
+    elif isinstance(xvar,(nc.Variable,nc.Dataset)):        
+        atts = getAtts(xvar)
+    elif lraise:
+        raise TypeError("Can only infer coordinate system from xarray or netCDF4 - not from {}".format(xvar.__class__))
+    else: 
+        return None # no projection
+          
+    crs = None    
     # search for EPSG number
-    if proj is None:
-        for key,value in xvar.attrs.items():
-            if key.upper() == 'EPSG': proj = genProj(value); break
-    
+    for key,value in atts.items():
+        if key.upper() == 'EPSG': crs = genCRS(value); break    
+    # search for Proj4 string
+    if crs is None:
+        for key,value in atts.items():
+            if key.lower() == 'proj4': crs = genCRS(value); break    
     # check for simple geographic lat/lon system
-    if proj is None:
+    if crs is None:
         if isGeoCRS(xvar, lraise=False): # error will be raised below (if desired)
-            proj = genProj() # no arguments for default lat/lon
-    
+            crs = genCRS() # no arguments for default lat/lon    
     # return values
-    if lraise and proj is None:
+    if lraise and crs is None:
         raise ValueError("No projection information found in attributes.")
     
     # return a GDAL/rasterio CRS instance
-    return proj
+    return crs
 
+
+def inferGeoInfo(xvar, varname=None, crs=None, transform=None, size=None, lraise=True, lcheck=True):
+    ''' infere geo-reference information from xarray DataArray or Dataset and netCDF4 Dataset '''
+    
+    # CRS
+    _crs = getCRS(xvar, lraise=lraise)
+    if crs is None: crs = _crs
+    elif crs != _crs: 
+        from geospatial.rasterio_tools import genCRS # used to generate CRS object
+        crs = genCRS(crs)
+        if crs != _crs:
+            raise ValueError("Prescribed CRS and inferred CRS are incompatible:\n{}\n{}".format(crs,_crs))
+    crs = _crs # for some reason EPSG ints also pass the equality test...
+    
+    # geotransform & grid size
+    xlon,ylat = getGeoCoords(xvar, lraise=True, lvars=False)
+    _transform, _size = getTransform(xvar, lcheck=lraise)
+    if transform is None: transform = _transform
+    elif not transform is _transform:
+        raise ValueError("Prescribed and inferred Geotransform are incompatible:\n{}\n{}".format(transform,_transform))
+    if size is None: size = _size
+    elif not size is _size:
+        raise ValueError("Prescribed and inferred grid sizes are incompatible:\n{}\n{}".format(size,_size))
+    
+    # do some checks
+    if lcheck:
+        if crs.is_projected and isGeoCRS(xvar):
+            raise ValueError(crs,xvar) # simple check
+        if isinstance(xvar,xr.Dataset) and varname: 
+            xvar = xvar[varname]
+        shape = None; dims = None
+        if isinstance(xvar,xr.DataArray): 
+            shape = xvar.data.shape; dims = xvar.dims
+            if xvar.attrs.get('dim_order',None) is False:
+                raise NotImplementedError("The x/lon and y/lat axes of this xarray have to be swapped:\n {}".format(xvar))
+        elif isinstance(xvar,nc.Dataset) and varname:
+            xvar = xvar.variables[varname]
+            shape = xvar.shape; dims = xvar.dimensions
+        if shape:
+            if shape[-2:] != (size[1],size[0]):
+                raise ValueError(xvar)
+        if dims:
+            if dims[-2] != ylat or dims[-1] != xlon:
+                raise ValueError(xvar)
+          
+    # return verified georef info
+    return crs, transform, size    
+
+
+## functions that modify a dataset
 
 def addGeoReference(xds, proj4_string=None, x_coords=None, y_coords=None):
-    ''' helper function to add GDAL/rasterio-style georeferencing to an xarray dataset '''
+    ''' helper function to add GDAL/rasterio-style georeferencing information to an xarray dataset;
+        note that this only refers to attributed, not axes, but also includes variables '''
     xds.attrs['proj4'] = proj4_string
-    xlon,ylat = getGeoCoords(xds, x_coords=x_coords, y_coords=y_coords)
-    xds.attrs['xlon'] = xlon.name
-    xds.attrs['ylat'] = ylat.name
+    xlon,ylat = getGeoCoords(xds, x_coords=x_coords, y_coords=y_coords, lvars=False)
+    xds.attrs['xlon'] = xlon
+    xds.attrs['ylat'] = ylat
     for xvar in list(xds.data_vars.values()): 
         if isGeoVar(xvar):
             xvar.attrs['proj4'] = proj4_string
-            xvar.attrs['xlon'] = xlon.name
-            xvar.attrs['ylat'] = ylat.name
-            xvar.attrs['dim_order'] = int( xvar.dims[-2:] == (ylat.name, xlon.name) )
+            xvar.attrs['xlon'] = xlon
+            xvar.attrs['ylat'] = ylat
+            xvar.attrs['dim_order'] = int( xvar.dims[-2:] == (ylat, xlon) )
             # N.B.: the NetCDF-4 backend does not like Python bools
     return xds
 
