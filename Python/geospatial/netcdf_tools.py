@@ -378,6 +378,10 @@ def createGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=N
           add_coord(ds, xname, data=xlon_coord, length=size[0], atts=xatts, dtype=dtype, zlib=zlib)
     
     ## save attributes, including georeferencing information
+    dx = abs(geotrans.a); dy = abs(geotrans.e) # I'm never sure if I got this right...
+    gdal_geotran = geotrans.to_gdal()
+    assert (abs(gdal_geotran[1]),abs(gdal_geotran[5])) == (dx,dy), gdal_geotran 
+    ds.setncattr('dx',dx); ds.setncattr('dy',dy)
     ds.setncattr_string('xlon',xlon)
     ds.setncattr_string('ylat',ylat)
     ds.setncattr_string('proj4',crs.to_string())
@@ -388,7 +392,7 @@ def createGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=N
     # return modified dataset
     return ds    
 
-netcdf_dtype    = np.dtype('<f4') # little-endian 32-bit float
+netcdf_dtype    = np.dtype('<f8') # little-endian 32-bit float
 default_varatts = dict( # attributed for coordinate variables
                        x  = dict(name='x', units='m', long_name='Northing'), # geographic northing
                        y  = dict(name='y', units='m', long_name='Easting'), # geographic easting
