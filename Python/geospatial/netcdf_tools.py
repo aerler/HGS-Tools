@@ -363,18 +363,18 @@ def createGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=N
     
     # construct coordinate variables
     if lcoords:    
-      xlon_coord,ylat_coord = constructCoords(geotrans, size, dtype=netcdf_dtype)          
+      xlon_coord,ylat_coord = constructCoords(geotrans, size, dtype=nc_coord_dtype)          
       # add coordinate variables
       if varatts is None: varatts = default_varatts
       # latitude (intermediate/regular dimension)
       yatts = varatts[ylat]; yname = yatts['name']
       if yname not in ds.variables or loverwrite: 
-          dtype = yatts.get('dtype',netcdf_dtype)
+          dtype = yatts.get('dtype',nc_coord_dtype)
           add_coord(ds, yname, data=ylat_coord, length=size[1], atts=yatts, dtype=dtype, zlib=zlib)
       # longitude is typically the inner-most dimension (continuous)
       xatts = varatts[xlon]; xname = xatts['name']
       if xname not in ds.variables or loverwrite: 
-          dtype = xatts.get('dtype',netcdf_dtype)
+          dtype = xatts.get('dtype',nc_coord_dtype)
           add_coord(ds, xname, data=xlon_coord, length=size[0], atts=xatts, dtype=dtype, zlib=zlib)
     
     ## save attributes, including georeferencing information
@@ -392,7 +392,8 @@ def createGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=N
     # return modified dataset
     return ds    
 
-netcdf_dtype    = np.dtype('<f8') # little-endian 32-bit float
+nc_coord_dtype  = np.dtype('<f8') # little-endian 64-bit float, otherwise errors in geotransform accumulate
+netcdf_dtype    = np.dtype('<f4') # little-endian 32-bit float, to save space...
 default_varatts = dict( # attributed for coordinate variables
                        x  = dict(name='x', units='m', long_name='Northing'), # geographic northing
                        y  = dict(name='y', units='m', long_name='Easting'), # geographic easting
