@@ -107,6 +107,8 @@ binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                                                                                                            'head_pm','lordered','ldepth','lcap', # for depth2gw
                                                                                                            'z_pmelm','z_elm','depth2gw_elm','q_pm','ExchFlux_olf_elm',
                                                                                                            'n_elm','n_lay','lreset','ldepth','lexfil0','lnoneg']),),
+                             div_olf = dict(name='div_olf', units='m/s', atts=dict(long_name='Groundwater Divergence (OLF-based)', function='calculate_divergence_olf', 
+                                                                                   dependencies=['ExchFlux_olf','ETPmEvap_olf','ETPmTranspire_olf']),),
                              )
 constant_attributes = dict(# variables that are not time-dependent (mostly coordinate variables)
                            vector = dict(name='vector', units='', dtype=np.int64, atts=dict(
@@ -613,6 +615,20 @@ def calculate_recharge_et(ExchFlux_olf=None, ETPmEvap_olf=None, ETPmTranspire_ol
     assert isinstance(ETPmTranspire_olf,np.ndarray), ETPmTranspire_olf
     recharge = np.where(ExchFlux_olf>0,0,ExchFlux_olf) 
     recharge *= -1.
+    recharge += ETPmEvap_olf 
+    recharge += ETPmTranspire_olf
+    # assuming infiltration is equivalent to negative exchange flux and evapotranspiration is negative
+    return recharge
+
+def calculate_divergence_olf(ExchFlux_olf=None, ETPmEvap_olf=None, ETPmTranspire_olf=None):
+    ''' a function to calculate infiltration from the OLF domain into the PM domain '''
+    if isinstance(ExchFlux_olf, (pd.DataFrame,pd.Series)): ExchFlux_olf = ExchFlux_olf.values
+    if isinstance(ETPmEvap_olf, (pd.DataFrame,pd.Series)): ETPmEvap_olf = ETPmEvap_olf.values
+    if isinstance(ETPmTranspire_olf, (pd.DataFrame,pd.Series)): ETPmTranspire_olf = ETPmTranspire_olf.values
+    assert isinstance(ExchFlux_olf,np.ndarray), ExchFlux_olf
+    assert isinstance(ETPmEvap_olf,np.ndarray), ETPmEvap_olf
+    assert isinstance(ETPmTranspire_olf,np.ndarray), ETPmTranspire_olf
+    recharge = -1.*ExchFlux_olf
     recharge += ETPmEvap_olf 
     recharge += ETPmTranspire_olf
     # assuming infiltration is equivalent to negative exchange flux and evapotranspiration is negative
