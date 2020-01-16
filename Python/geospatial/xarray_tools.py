@@ -23,7 +23,7 @@ default_y_coords = dict(geo=('lat','latitude',),         proj=('y','northing'))
 
 def getAtts(xvar, lraise=True):
     ''' return dictionary of attributed from netCDF4 or xarray '''
-    if isinstance(xvar,(xr.DataArray,xr.Dataset)):
+    if isinstance(xvar,(xr.DataArray,xr.Variable,xr.Dataset)):
         atts = xvar.attrs.copy()
     elif isinstance(xvar,(nc.Variable,nc.Dataset)):
         atts = getNCAtts(xvar)
@@ -172,6 +172,56 @@ def getTransform(xvar=None, x=None, y=None, lcheck=True):
     return Affine.from_gdal(x[0]-dx/2.,dx,0.,y[0]-dy/2.,0.,dy), (len(x),len(y))
 
 
+def readCFCRS(xds, grid_mapping=None, lraise=True, lproj4=False):
+    ''' function to generate CRS from CF-Convention grid mappign variable; only works with Datasets '''
+    # read CF convention string
+    if not isinstance(xds,(nc.Dataset,xr.Dataset)):
+        raise TypeError("Only xarray of netCDF4 Datasets are supported.")
+    atts = getAtts(xds) # works for xarray or netCDF4
+    if 'Conventions' in atts:
+        cf_str = atts['Conventions']
+        if cf_str[:3] != 'CF-' or float(cf_str[3:]) < 1:
+            raise ValueError("Only CF convection version 1 or later is supported; not '{}'.".format(cf_str))
+    elif lraise:
+        raise ValueError("No CF convention attribute found; this Dataset may not adhere to CF conventions.")
+    else:
+        return None # return without CRS
+    # find grid mapping variable
+    if grid_mapping:
+        if grid_mapping in xds.variables:
+            grid_type = grid_mapping
+            grid_atts = getAtts(xds.variables[grid_mapping])
+        else: 
+            raise ValueError("Grid mapping '{}' not found in dataset.".format(grid_mapping))
+    else:
+        grid_type = None
+        grid_varlist = ['Lambert_Conformal']
+        for grid_var in grid_varlist:
+            if grid_var in xds.variables:
+                if grid_type is None:
+                    grid_type = grid_var
+                    grid_atts = getAtts(xds.variables[grid_var])
+                else:
+                    raise ValueError("Multiple grid_mapping variables detected:",grid_type,grid_var)
+    if grid_type is None:
+        if lraise:
+            raise NotImplementedError("No supported grid_mapping variable detected:\n",grid_varlist)
+        else:
+            return None # return without CRS
+    elif grid_type == 'Lambert_Conformal':
+        assert grid_atts['grid_mapping_name'] == "lambert_conformal_conic", grid_atts
+        proj4 = ('+proj=lcc +lat_1={lat_1} +lat_2={lat_1} '.format(lat_1=grid_atts['standard_parallel'])
+                 + '+lat_0={lat_0} +lon_0={lon_0} '.format(lat_0=grid_atts['latitude_of_projection_origin'],
+                                                           lon_0=grid_atts['longitude_of_central_meridian'])
+                 + '+x_0=0 +y_0=0 +a=6371229 +b=6371229 +units=m +no_defs' )
+    else:
+        raise NotImplementedError("The grid_mapping '{}' is currently not implemented/supported.".format(grid_type))
+    import rasterio as rio
+    # return either string or CRS object
+    if lproj4: crs = proj4
+    else: crs = rio.crs.CRS.from_string(proj4) # initialize from Proj4 string
+    return crs
+
 def getCRS(xvar, lraise=True):
     ''' infer projection from a xarray Dataset or DataArray; this function assumes that either a proj4 string or
         an EPSG designation is stored in the attributes of the dataset/variable. '''
@@ -186,10 +236,14 @@ def getCRS(xvar, lraise=True):
     else: 
         return None # no projection
           
-    crs = None    
+    crs = None
+    # check CF convention
+    if isinstance(xvar,(xr.Dataset,nc.Dataset)):
+        crs = readCFCRS(xvar, lraise=False, lproj4=False)        
     # search for EPSG number
-    for key,value in atts.items():
-        if key.upper() == 'EPSG': crs = genCRS(value); break    
+    if crs is None:
+        for key,value in atts.items():
+            if key.upper() == 'EPSG': crs = genCRS(value); break    
     # search for Proj4 string
     if crs is None:
         for key,value in atts.items():
