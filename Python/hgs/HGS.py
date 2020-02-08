@@ -109,6 +109,8 @@ binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                                                                                                            'n_elm','n_lay','lreset','ldepth','lexfil0','lnoneg']),),
                              div_olf = dict(name='div_olf', units='m/s', atts=dict(long_name='Groundwater Divergence (OLF-based)', function='calculate_divergence_olf', 
                                                                                    dependencies=['ExchFlux_olf','ETPmEvap_olf','ETPmTranspire_olf']),),
+                             dflx_olf = dict(name='dflx_olf', units='m^2/s', atts=dict(long_name='2D Groundwater Flux (PM-based)', function='calculate_2D_dflx', 
+                                                                                       dependencies=['q_pm','dz_elm'], elemental=True, vector=True, pm=False),),
                              )
 constant_attributes = dict(# variables that are not time-dependent (mostly coordinate variables)
                            vector = dict(name='vector', units='', dtype=np.int64, atts=dict(
@@ -131,6 +133,7 @@ constant_attributes = dict(# variables that are not time-dependent (mostly coord
                            y_elm = dict(name='y_elm', units='m', atts=dict(long_name='Y Coord. (Elemental)', elemental=True)),
                            z_elm = dict(name='zs_elm', units='m', atts=dict(long_name='Surface Elevation (Elemental)', elemental=True)),
                            z_pmelm = dict(name='z_elm', units='m', atts=dict(long_name='Z Coord. (Elemental)', elemental=True, pm=True)),
+                           dz_elm  = dict(name='dz_elm', units='m', atts=dict(long_name='Layer Thickness (Elemental)', elemental=True, pm=True)),
                            layer   = dict(name='layer', units='', dtype=np.int64, atts=dict(long_name='Layer Number', elemental=True, pm=True)),
                            element = dict(name='element', units='', dtype=np.int64, atts=dict(long_name='2D Element Number', elemental=True, pm=True)),
                            elements_pm = dict(name='elemements_pm', units='', dtype=np.int64, atts=dict(long_name='3D Element Number', elemental=True, pm=True)),
@@ -628,11 +631,29 @@ def calculate_divergence_olf(ExchFlux_olf=None, ETPmEvap_olf=None, ETPmTranspire
     assert isinstance(ExchFlux_olf,np.ndarray), ExchFlux_olf
     assert isinstance(ETPmEvap_olf,np.ndarray), ETPmEvap_olf
     assert isinstance(ETPmTranspire_olf,np.ndarray), ETPmTranspire_olf
-    recharge = -1.*ExchFlux_olf
-    recharge += ETPmEvap_olf 
-    recharge += ETPmTranspire_olf
+    divergence = -1.*ExchFlux_olf
+    divergence += ETPmEvap_olf 
+    divergence += ETPmTranspire_olf
     # assuming infiltration is equivalent to negative exchange flux and evapotranspiration is negative
-    return recharge
+    return divergence
+  
+def calculate_2D_dflx(q_pm=None, dz_elm=None):
+    ''' a function to calculate infiltration from the OLF domain into the PM domain '''
+    if isinstance(q_pm, (pd.DataFrame,pd.Series)): q_pm = q_pm.values
+    if isinstance(dz_elm, (pd.DataFrame,pd.Series)): dz_elm = dz_elm.values
+    assert isinstance(q_pm,np.ndarray), q_pm
+    assert isinstance(dz_elm,np.ndarray), dz_elm
+    assert q_pm.ndim == 2, q_pm.shape
+    assert dz_elm.ndim == 2, dz_elm.shape
+    q_pm = q_pm.reshape(dz_elm.shape+(q_pm.shape[1],))
+    dflx = q_pm[:,:,:2] # extract view to x & y components
+    dflx_olf = np.zeros(((dz_elm.shape[1],3)), dtype=np.float32) # allocate results (single precision)
+    # vertical integration
+    dflx *= dz_elm.reshape(dz_elm.shape+(1,)) # broadcast last dimension
+    np.sum(dflx, out=dflx_olf[:,:2], axis=0) # write sum to output array
+    # add z component (just flux at top layer)
+    dflx_olf[:,2] = q_pm[-1,:,2]
+    return dflx_olf
 
   
 ## function to load HGS binary data
@@ -828,7 +849,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       dataset += elem_ax
       elem_coords_olf = reader.compute_element_coordinates(elements=elem_olf, coords_pm=coords_pm, 
                                                            coord_list=('x','y','z'), lpd=False)
-      if lallelem: 
+      if lallelem or 'dz_elm' in varlist: 
 #           elem_olf_offset = elem_olf - (se-1)*ne
 #           # N.B.: in principle it would be possible to look up the corresponding PM and OLF nodes,
 #           #       and replace PM indices with OLF indices, but that is extremely inefficient, and
@@ -836,7 +857,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
 #           #       same in each sheet (and the OLF domain), so that simple subtraction should work.
 #           #       Nevertheless, it is still saver to test this, at least a little...
           elem_olf_offset = reader.get_olf_node2element_mapping(pm_olf_mapping=pm_olf_mapping, 
-                                                                elem_olf=elem_olf, lcheck=True)
+                                                                elem_olf=elem_olf, lcheck=True)          
           assert elem_olf_offset.values[:,1:3].min() == 1
           assert elem_olf_offset.values[:,1:3].max() == ne
       # add surface element coordinate fields (x, y, and surface elevation zs)
@@ -855,12 +876,27 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
           dataset += Variable(data=elem_pm.index.values.reshape((nlay,nelem)), axes=(layer_ax,elem_ax), 
                               **constatts['elements_pm'])
           # add 3D element elevation (z coordinate), if requested
-          if 'z_elm' in final_varlist or 'recharge_gwt' in final_varlist:
+          if any([varname in final_varlist for varname in ('z_elm','dz_elm','recharge_gwt',)]):
               elem_coords_pm = reader.compute_element_coordinates(elements=elem_pm, coords_pm=coords_pm, 
                                                                   coord_list=('z',), lpd=False)
               dataset += Variable(data=elem_coords_pm['z'].reshape((nlay,nelem)), axes=(layer_ax,elem_ax,), 
                                   **constatts['z_pmelm']) # 'z' is already used for the 'zs' variable
-              assert np.all(np.diff(dataset['z_elm'][:], axis=0) > 0) 
+              assert np.all(np.diff(dataset['z_elm'][:], axis=0) > 0)
+          # compute layer thickness
+          if 'dz_elm' in final_varlist:
+              z_pm = dataset['z'][:]
+              assert (se,ne) == z_pm.shape, z_pm.shape
+              dz_elm = np.zeros((nlay,nelem)) # allocate
+              lower_z = None
+              for i in range(0,se): # interpolate to elements layer-wise
+                  upper_z = z_pm[i,:]
+                  if lower_z is not None:
+                      dz = upper_z - lower_z # compute difference (uses less memory in loop)
+                      dz_elm[i-1,:] = reader.interpolate_node2element(dz, elements=elem_olf_offset, lpd=False)
+                  lower_z = upper_z
+              # create and add variable to dataset
+              assert dz_elm.max() > 0, 'There may be a sign error...'
+              dataset += Variable(data=dz_elm, axes=(layer_ax,elem_ax,), **constatts['dz_elm'])
           # add elemental K
           if 'K' in final_varlist:
               elem_k = reader.read_k(override_k_option=override_k_option)
@@ -917,7 +953,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       all_deps['n_node'] = ne
       all_deps['n_sheet'] = se
       all_deps.update(var_opts) # options for groundwater table calculation
-      for depvar in ['z_pm','z','z_pmelm','z_elm']:
+      for depvar in ['z_pm','z','z_pmelm','z_elm','dz_elm']:
           if depvar in all_deps:
               all_deps[depvar] = dataset[constatts[depvar]['name']][:] # these are just arrays
       sim_time = reader.read_timestamp()
@@ -1057,8 +1093,8 @@ if __name__ == '__main__':
 
 
 #   test_mode = 'gage_station'
-  test_mode = 'dataset_regrid'
-#   test_mode = 'binary_dataset'
+#   test_mode = 'dataset_regrid'
+  test_mode = 'binary_dataset'
 #   test_mode = 'time_axis'
 #   test_mode = 'station_dataset'
 #   test_mode = 'station_ensemble'
@@ -1103,10 +1139,10 @@ if __name__ == '__main__':
     tic = timer()
     
     # load dataset
-    vecvar = 'dflx'
+    vecvar = 'dflx_olf'
     #hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_deep'
-    dataset = loadHGS(varlist=['d_gw','sat'], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
-                      lallelem=False, sheet=-2, layer=(12,17), season='MAM', tensor='z', vector='z', 
+    dataset = loadHGS(varlist=[vecvar,'z_elm','dz_elm'], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
+                      lallelem=False, sheet=None, layer=None, season='MAM', tensor='z', vector=None, 
                       folder=hgs_folder, conservation_authority='GRCA', 
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', #lgrid=True, griddef='grw2',
                       basin=basin_name, basin_list=basin_list, lkgs=False, )
@@ -1125,6 +1161,10 @@ if __name__ == '__main__':
         print('')
         print((dataset.layer))
         print((dataset.layer[:]))
+    if 'dz_elm' in dataset:
+        dz0 = dataset.dz_elm.mean(axis='element')
+        print(dz0)
+        print(dz0[:])
     if 'z_elm' in dataset and 'zs_elm' in dataset:
         d0 = dataset.zs_elm - dataset.z_elm(layer=dataset.layer.max())
         print(d0)
