@@ -13,6 +13,8 @@ import netCDF4 as nc
 # internal imports
 from geospatial.netcdf_tools import getNCAtts # this import shpuld be fine
 
+## an important option I am relying on!
+xr.set_options(keep_attrs=True)
 
 # names of valid geographic/projected coordinates
 default_x_coords = dict(geo=('lon','long','longitude',), proj=('x','easting') )

@@ -110,7 +110,7 @@ binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                              div_olf = dict(name='div_olf', units='m/s', atts=dict(long_name='Groundwater Divergence (OLF-based)', function='calculate_divergence_olf', 
                                                                                    dependencies=['ExchFlux_olf','ETPmEvap_olf','ETPmTranspire_olf']),),
                              dflx_olf = dict(name='dflx_olf', units='m^2/s', atts=dict(long_name='2D Groundwater Flux (PM-based)', function='calculate_2D_dflx', 
-                                                                                       dependencies=['q_pm','dz_elm'], elemental=True, vector=True, pm=False),),
+                                                                                       dependencies=['q_pm','dz_elm','z_pm'], elemental=True, vector=True, pm=False),),
                              )
 constant_attributes = dict(# variables that are not time-dependent (mostly coordinate variables)
                            vector = dict(name='vector', units='', dtype=np.int64, atts=dict(
@@ -772,15 +772,14 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
                   # figure out which variable to add to actual load list (if any)
                   if depvar in ('coordinates_pm','coordinates_olf','pm_olf_mapping'): pass
                   elif depvar in var_opts or depvar in ('n_elm','n_lay','n_node','n_sheet'): pass
-                  elif depvar in varlist or depvar in constatts: pass
+                  elif depvar in varlist: pass
                   else: 
                       if depvar not in varatts and depvar.endswith('_elm') and depvar[:-4] in varatts:
                           depvar = depvar[:-4]
                           if not lallelem:
                               lallelem = True
                               print("Enabling interpolation to elements for all variables, since some dependencies require it (lallelem=True).")
-                      if depvar not in varlist:
-                          varlist.insert(varlist.index(var),depvar)
+                      varlist.insert(varlist.index(var),depvar)
       else:
           if var not in constatts: 
               raise VariableError("Variable '{}' not found in variable attributes.".format(var))
@@ -876,14 +875,14 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
           dataset += Variable(data=elem_pm.index.values.reshape((nlay,nelem)), axes=(layer_ax,elem_ax), 
                               **constatts['elements_pm'])
           # add 3D element elevation (z coordinate), if requested
-          if any([varname in final_varlist for varname in ('z_elm','dz_elm','recharge_gwt',)]):
+          if any([varname in varlist for varname in ('z_elm','recharge_gwt',)]):
               elem_coords_pm = reader.compute_element_coordinates(elements=elem_pm, coords_pm=coords_pm, 
                                                                   coord_list=('z',), lpd=False)
               dataset += Variable(data=elem_coords_pm['z'].reshape((nlay,nelem)), axes=(layer_ax,elem_ax,), 
                                   **constatts['z_pmelm']) # 'z' is already used for the 'zs' variable
               assert np.all(np.diff(dataset['z_elm'][:], axis=0) > 0)
           # compute layer thickness
-          if 'dz_elm' in final_varlist:
+          if 'dz_elm' in varlist:
               z_pm = dataset['z'][:]
               assert (se,ne) == z_pm.shape, z_pm.shape
               dz_elm = np.zeros((nlay,nelem)) # allocate
@@ -1141,8 +1140,8 @@ if __name__ == '__main__':
     # load dataset
     vecvar = 'dflx_olf'
     #hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_deep'
-    dataset = loadHGS(varlist=[vecvar,'z_elm','dz_elm'], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
-                      lallelem=False, sheet=None, layer=None, season='MAM', tensor='z', vector=None, 
+    dataset = loadHGS(varlist=[vecvar,'z_elm','dz_elm'][:1], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
+                      lallelem=True, sheet=None, layer=None, season='MAM', tensor='z', vector=None, 
                       folder=hgs_folder, conservation_authority='GRCA', 
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', #lgrid=True, griddef='grw2',
                       basin=basin_name, basin_list=basin_list, lkgs=False, )

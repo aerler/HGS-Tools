@@ -79,6 +79,7 @@ if __name__ == '__main__':
 
     loverwrite = True
     source_grid = None
+    lhourly = False
     time_chunks = 1 # typically not much speed-up beyond 8
     resampling = 'average'
     lexec = True # actually write rasters or just include file
@@ -105,9 +106,9 @@ if __name__ == '__main__':
 #     start_date = '2014-01-01'; end_date = '2014-01-05'
 #     grid_name  = 'native'
     ## fast test config
-    project = 'SON'
-    start_date = '2013-01-01'; end_date = '2013-01-31'
-    grid_name  = 'son1'
+#     project = 'SON'
+#     start_date = '2013-01-01'; end_date = '2013-01-31'
+#     grid_name  = 'son1'
     ## config for Hugo's domain in Quebec
 #     project = 'Hugo'
 #     start_date = '2011-01-01'; end_date = '2018-12-31'
@@ -125,6 +126,10 @@ if __name__ == '__main__':
 #     project = 'SON'
 #     start_date = '2011-01-01'; end_date = None
 #     grid_name  = 'son2'
+    ## 
+    project = 'SNW'
+    start_date = '2017-09-11T12'; end_date = None
+    grid_name  = 'snw2'
     ## operational config for ASB2
 #     project = 'ASB'
 #     start_date = '2010-01-01'; end_date = None
@@ -148,6 +153,9 @@ if __name__ == '__main__':
     elif project.upper() in ('SON','GRW'):
         # southern Ontario projection
         tgt_crs = genCRS("+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
+    elif project.upper() in ('SNW'):
+        # South Nation projection
+        tgt_crs = genCRS("+proj=utm +zone=18 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
     elif project.upper() == 'CMB':
         # southern Ontario projection
         tgt_crs = genCRS("+proj=utm +zone=11 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
@@ -175,6 +183,10 @@ if __name__ == '__main__':
         tgt_size = (27,33) # smaller, lower resolution 5 km grid for GRW
         tgt_geotrans = (500.e3,5.e3,0,4740.e3,0,5.e3) # 5 km 
         resampling = 'average' # it's a fairly coarse grid...
+    elif grid_name == 'snw2':
+        tgt_size = (44,55) # 2 km resolution SNW grid for CaLDAS/CaPA data
+        tgt_geotrans = (438.e3,2.e3,0,4940.e3,0,2.e3) # 2 km 
+        resampling = 'average' # it's a fairly coarse grid...
     elif grid_name == 'cmb1':
         tgt_size = (640,826) # higher resolution 500 m grid
         tgt_geotrans = (292557.,500,0,5872251.,0,-500.) # 500 m 
@@ -192,8 +204,8 @@ if __name__ == '__main__':
     
     
     ## define source data
-    # SnoDAS
-    dataset = 'SnoDAS'
+#     dataset = 'SnoDAS'
+    dataset = 'CaSPAr'; source_grid = 'lcc_snw'; lhourly = True
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
     
     ## bias correction
@@ -213,16 +225,19 @@ if __name__ == '__main__':
             bias_correction = pickle.load(filehandle) 
         
     ## define export parameters
-    mode = 'NetCDF'
-#     mode = 'raster2d'; #source_grid = grid_name
+#     mode = 'NetCDF'
+    mode = 'raster2d'; #source_grid = grid_name
     raster_format = None; scalefactor = 1.
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
-        varlist = ['liqwatflx']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
+#         varlist = ['liqwatflx']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
+        varlist = ['pet']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
         gridstr = dataset.lower() if grid_name.lower() == 'native' else grid_name.lower()
-        target_folder = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_daily/climate_forcing/'.format(
-                          root=os.getenv('HGS_ROOT'), proj=project, grid=gridstr, name=dataset, bc=bc_tag)          
+        time_interval = 'hourly' if lhourly else 'daily'
+        target_folder = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/climate_forcing/'.format(
+                          root=os.getenv('HGS_ROOT'), proj=project, grid=gridstr, name=dataset, 
+                          bc=bc_tag, int=time_interval)          
         raster_format = 'AAIGrid'
         raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
         filename_novar = raster_name.format(dataset=dataset.lower(), variable='{var:s}',
@@ -244,7 +259,10 @@ if __name__ == '__main__':
     
     
     # lazily load dataset (assuming xarray)
-    xds = ds_mod.loadDailyTimeSeries(varlist=varlist, time_chunks=time_chunks, grid=source_grid)
+    if lhourly:
+        xds = ds_mod.loadHourlyTimeSeries(varlist=varlist, time_chunks=time_chunks, grid=source_grid)
+    else:
+        xds = ds_mod.loadDailyTimeSeries(varlist=varlist, time_chunks=time_chunks, grid=source_grid)
     
     # get georeference
     src_crs = getCRS(xds)
@@ -261,6 +279,7 @@ if __name__ == '__main__':
             left,top = trans*(0,0); right,bottom = trans*(w,h)
         # clip source data
         space_slice = {xds.attrs['xlon']:slice(left,right), xds.attrs['ylat']:slice(bottom,top)}
+        print(space_slice)
         xds = xds.loc[space_slice]
     # clip time axis as well
     if start_date or end_date:
@@ -271,8 +290,11 @@ if __name__ == '__main__':
     if tgt_geotrans is None: tgt_geotrans = src_geotrans
     if tgt_size is None: tgt_size = src_size
     time_coord = xds.coords['time'].data
-    if start_date is None: start_date = pd.to_datetime(time_coord[0]).strftime('%Y-%m-%d')
-    if end_date is None: end_date = pd.to_datetime(time_coord[-1]).strftime('%Y-%m-%d')
+    # time format
+    if lhourly: date_fmt = '%Y%m%d%H'; date_longfmt = '%Y-%m-%dT%H'
+    else: date_fmt = '%Y%m%d'; date_longfmt = '%Y-%m-%d'
+    if start_date is None: start_date = pd.to_datetime(time_coord[0]).strftime(date_longfmt)
+    if end_date is None: end_date = pd.to_datetime(time_coord[-1]).strftime(date_longfmt)
     
     
     # make sure target path exists
@@ -300,7 +322,7 @@ if __name__ == '__main__':
             inc_filepath = target_folder+varname.lower()+'.inc'
             print(("\nWriting HGS include file:\n '{:s}'".format(inc_filepath)))
             writeIncFile(filepath=inc_filepath, time_coord=time_coord, 
-                          filename_pattern=filename, date_fmt='%Y%m%d')
+                          filename_pattern=filename, date_fmt=date_fmt)
             end_inc = time()
             #print("\nTiming to write include file: {} seconds".format(end_inc-start_inc))
             
@@ -329,7 +351,7 @@ if __name__ == '__main__':
         # generate dask execution function
         dask_fct,dummy,dataset = generate_regrid_and_export(xvar, time_coord=time_coord,
                                                     tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
-                                                    mode=mode, resampling=resampling, 
+                                                    mode=mode, resampling=resampling, time_fmt=date_fmt,
                                                     folder=target_folder, filename=filename, driver=raster_format,
                                                     bias_correction=bias_correction, bc_varname=bc_varmap.get(varname,varname),
                                                     lecho=True, loverwrite=loverwrite,)
