@@ -6,6 +6,8 @@ Utility functions to extract data from xarray Dataset or DataArray classes.
 @author: Andre R. Erler, GPL v3
 '''
 
+from warnings import warn
+
 import numpy as np
 import xarray as xr
 import netCDF4 as nc
@@ -175,7 +177,7 @@ def getTransform(xvar=None, x=None, y=None, lcheck=True):
 
 
 def readCFCRS(xds, grid_mapping=None, lraise=True, lproj4=False):
-    ''' function to generate CRS from CF-Convention grid mappign variable; only works with Datasets '''
+    ''' function to generate CRS from CF-Convention grid mapping variable; only works with Datasets '''
     # read CF convention string
     if not isinstance(xds,(nc.Dataset,xr.Dataset)):
         raise TypeError("Only xarray of netCDF4 Datasets are supported.")
@@ -311,6 +313,44 @@ def inferGeoInfo(xvar, varname=None, crs=None, transform=None, size=None, lraise
 
 
 ## functions that modify a dataset
+
+def updateVariableAttrs(xds, varatts=None, varmap=None, **kwargs):
+    ''' a helper function to update variable attributes, rename variables, and apply scaling factors '''
+    if varatts is None: 
+        varatts = dict()
+    elif isinstance(varatts,dict): 
+        varatts = varatts.copy()
+    else: 
+        raise TypeError(varatts)
+    varatts.update(kwargs) # add kwargs
+    # update attributes (using old names)
+    for varname,atts in varatts.items():
+        if varname in xds.variables:
+            if varname == 'time':
+                warn("The 'time' coordinate is handled automatically by xarray using numpy datetime64; "
+                      + "changing attributes can break this functionality when the dataset is saved to file. ")
+            var = xds.variables[varname]
+            atts = atts.copy() # because we will pop scalefactor...
+            if 'units' in atts:
+              if 'units' not in var.attrs or var.attrs['units'] != atts['units']:
+                if 'scalefactor' in atts and atts['scalefactor'] != 1:
+                    var *= atts['scalefactor'] # this should execute lazily...
+                if 'offset' in atts and atts['offset'] != 0:
+                    var += atts['offset'] # this should execute lazily...
+            atts.pop('scalefactor',None)
+            attrs = var.attrs.copy()
+            attrs.update(atts)
+            var.attrs = attrs
+    # actually rename
+    if varmap is None:
+        varmap = dict()
+        for varname,atts in varatts.items():
+            if varname in xds and 'name' in atts: varmap[varname] = atts['name']  
+    elif not isinstance(varmap,dict): 
+        raise TypeError(varmap)
+    xds = xds.rename(varmap)
+    return xds
+
 
 def addGeoReference(xds, proj4_string=None, x_coords=None, y_coords=None):
     ''' helper function to add GDAL/rasterio-style georeferencing information to an xarray dataset;
