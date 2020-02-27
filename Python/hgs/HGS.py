@@ -110,7 +110,7 @@ binary_attributes_mms = dict(# 3D porous medium variables (scalar)
                              div_olf = dict(name='div_olf', units='m/s', atts=dict(long_name='Groundwater Divergence (OLF-based)', function='calculate_divergence_olf', 
                                                                                    dependencies=['ExchFlux_olf','ETPmEvap_olf','ETPmTranspire_olf']),),
                              dflx_olf = dict(name='dflx_olf', units='m^2/s', atts=dict(long_name='2D Groundwater Flux (PM-based)', function='calculate_2D_dflx', 
-                                                                                       dependencies=['q_pm','dz_elm','z_pm'], elemental=True, vector=True, pm=False),),
+                                                                                       dependencies=['q_pm','dz_elm','z_pm', 'layer'], elemental=True, vector=True, pm=False),),
                              )
 constant_attributes = dict(# variables that are not time-dependent (mostly coordinate variables)
                            vector = dict(name='vector', units='', dtype=np.int64, atts=dict(
@@ -637,7 +637,7 @@ def calculate_divergence_olf(ExchFlux_olf=None, ETPmEvap_olf=None, ETPmTranspire
     # assuming infiltration is equivalent to negative exchange flux and evapotranspiration is negative
     return divergence
   
-def calculate_2D_dflx(q_pm=None, dz_elm=None):
+def calculate_2D_dflx(q_pm=None, dz_elm=None, layer=None):
     ''' a function to calculate infiltration from the OLF domain into the PM domain '''
     if isinstance(q_pm, (pd.DataFrame,pd.Series)): q_pm = q_pm.values
     if isinstance(dz_elm, (pd.DataFrame,pd.Series)): dz_elm = dz_elm.values
@@ -646,13 +646,20 @@ def calculate_2D_dflx(q_pm=None, dz_elm=None):
     assert q_pm.ndim == 2, q_pm.shape
     assert dz_elm.ndim == 2, dz_elm.shape
     q_pm = q_pm.reshape(dz_elm.shape+(q_pm.shape[1],))
+    if layer:
+        # handle layer slicing before vertical integration
+        if isinstance(layer,int): l0 = layer-1; l1 = layer
+        elif isinstance(layer,tuple): l0 = layer[0]-1; l1 = layer[1]
+        else: raise TypeError(layer)
+        q_pm = q_pm[l0:l1,:,:]
+        dz_elm = dz_elm[l0:l1,:]
     dflx = q_pm[:,:,:2] # extract view to x & y components
     dflx_olf = np.zeros(((dz_elm.shape[1],3)), dtype=np.float32) # allocate results (single precision)
     # vertical integration
     dflx *= dz_elm.reshape(dz_elm.shape+(1,)) # broadcast last dimension
     np.sum(dflx, out=dflx_olf[:,:2], axis=0) # write sum to output array
-    # add z component (just flux at top layer)
-    dflx_olf[:,2] = q_pm[-1,:,2]
+    # add z component (flux difference between top and bottom layer)
+    dflx_olf[:,2] = q_pm[-1,:,2] - q_pm[0,:,2]
     return dflx_olf
 
   
@@ -952,6 +959,8 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
       all_deps['n_node'] = ne
       all_deps['n_sheet'] = se
       all_deps.update(var_opts) # options for groundwater table calculation
+      all_deps['layer'] = None
+      all_deps.update(kwargs) # kwargs are used for slicing
       for depvar in ['z_pm','z','z_pmelm','z_elm','dz_elm']:
           if depvar in all_deps:
               all_deps[depvar] = dataset[constatts[depvar]['name']][:] # these are just arrays
@@ -1140,7 +1149,7 @@ if __name__ == '__main__':
     # load dataset
     vecvar = 'dflx_olf'
     #hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_deep'
-    dataset = loadHGS(varlist=[vecvar,'z_elm','dz_elm'][:1], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
+    dataset = loadHGS(varlist=[vecvar,'z_elm','dz_elm'], EXP='g-ensemble', name='{EXP:s} ({BASIN:s})', 
                       lallelem=True, sheet=None, layer=None, season='MAM', tensor='z', vector=None, 
                       folder=hgs_folder, conservation_authority='GRCA', 
                       PRD='', DOM=2, CLIM='clim_15', BC='AABC_', #lgrid=True, griddef='grw2',
