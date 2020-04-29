@@ -204,8 +204,8 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
         station = getGageStation(basin=basin, station=station if WSC_station is None else WSC_station, 
                                  basin_list=basin_list) # only works with registered basins
         if long_name is None: long_name = station.name # backup, in case we don't have a HGS station name
-        metadata = station.getMetaData() # load station meta vardata
-        #if metadata is None: raise GageStationError(name)
+        metadata = station.getMetaData(lcheck=True) # load station meta vardata
+        if metadata is None: raise GageStationError(name)
   else: 
     if filename is None: raise ArgumentError
     long_name = None; name_tag = None; file_title = None; zone = None
