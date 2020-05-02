@@ -54,9 +54,11 @@ variable_attributes_mms = dict(# hydrograph variables
                                outerboundary = dict(name='outflow', units='m^3/s', atts=dict(long_name='Outer Boundary Flow', flip_sign=True)),
                                outer_edge = dict(name='outflow', units='m^3/s', atts=dict(long_name='Outer Boundary Flow', flip_sign=True)),
                                rainfall = dict(name='precip_tot', units='m^3/s', atts=dict(long_name='Basin-integrated Precipitation')),
+                               rain = dict(name='precip_sum', units='m^3/s', atts=dict(long_name='Basin-integrated Precipitation')),
                                pet_pet = dict(name='pet_pet', units='m^3/s', atts=dict(long_name='Basin-integrated Potential ET')),
-                               pet = dict(name='pet_tot', units='m^3/s', atts=dict(long_name='Basin-integrated Potential ET')),
+                               pet = dict(name='pet_sum', units='m^3/s', atts=dict(long_name='Basin-integrated Potential ET')),
                                tot_et = dict(name='et_tot', units='m^3/s', atts=dict(long_name='Basin-integrated Actual ET', flip_sign=True)),
+                               aet = dict(name='et_sum', units='m^3/s', atts=dict(long_name='Basin-integrated Actual ET', flip_sign=True)),
                                canopy_evap = dict(name='et_can', units='m^3/s', atts=dict(long_name='Basin-integrated Canopy Evaporation', flip_sign=True)),
                                surf_evap = dict(name='et_sfc', units='m^3/s', atts=dict(long_name='Basin-integrated Surface Evaporation', flip_sign=True)),
                                pm_evap = dict(name='evap_pm', units='m^3/s', atts=dict(long_name='Basin-integrated PM Evaporation', flip_sign=True)),
@@ -170,7 +172,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
                   folder=None, name=None, title=None, lcheckComplete=True, start_date=None, end_date=None, 
                   run_period=None, period=None, lskipNaN=False, basin=None, lkgs=False, z_axis='z', 
                   time_axis='simple', resample='M', llastIncl=False, WSC_station=None, Obs_well=None, 
-                  basin_list=None, filename=None, scalefactors=None, metadata=None, 
+                  basin_list=None, filename=None, scalefactors=None, metadata=None, lauto_sum=False,
                   z_aggregation=None, correct_z=20., conservation_authority=None, **kwargs):
   ''' Get a properly formatted WRF dataset with monthly time-series at station locations; as in
       the hgsrun module, the capitalized kwargs can be used to construct folders and/or names '''
@@ -316,14 +318,44 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
   elif well is not None: 
       offset = 0 # observation wells have different time stamps
   else: raise GageStationError(variable_order)
+  # preliminaries for auto-summing
+  auto_sum_varlist = dict()
+  # assemble varlist
   if isinstance(varlist,str) and varlist.lower() == 'all': 
       varlist = variable_order[:] # load all in the file
-  elif varlist is None or ( isinstance(varlist,str) and varlist.lower() == 'default' ): 
-      varlist = [varname for varname in variable_attributes_mms.keys() if varname in variable_order] # load all that are known
-      varlist += [varname for varname in constant_attributes.keys() if varname in variable_order] # load all constants
   else:
-      varlist = [hgs_varmap.get(varname,varname) for varname in varlist] # translate back to internal HGS names
-      if z_axis.lower() == 'z' and 'z' not in varlist: varlist.append('z') # needed for vertical coordinate
+      if varlist is None or ( isinstance(varlist,str) and varlist.lower() == 'default' ): 
+          varlist = [varname for varname in variable_attributes_mms.keys() if varname in variable_order] # load all that are known
+          varlist += [varname for varname in constant_attributes.keys() if varname in variable_order] # load all constants
+      else:
+          varlist = [hgs_varmap.get(varname,varname) for varname in varlist] # translate back to internal HGS names
+          if z_axis.lower() == 'z' and 'z' not in varlist: varlist.append('z') # needed for vertical coordinate
+  final_varlist = varlist
+  varlist = set(varlist)
+  # auto-detect components of auto-sum variables
+  if lauto_sum:        
+      if lauto_sum is True: lauto_sum = ('rain','aet','pet')
+      lrain = ( 'rain' in lauto_sum )
+      if lrain: auto_sum_varlist['rain'] = []
+      laet = ( 'aet' in lauto_sum )
+      if laet: auto_sum_varlist['aet'] = []
+      lpet = ( 'pet' in lauto_sum )
+      if lpet: auto_sum_varlist['pet'] = []
+      for varname in variable_order:
+          var_split = varname.split('_')
+          # this is a manually implemented list of variables and how to detect their components
+          # unfortunately this is quite specific to the ARB project...
+          if lrain and len(var_split)==4 and var_split[1] == 'rain': 
+              auto_sum_varlist['rain'].append(varname); varlist.add(varname)
+          elif laet and len(var_split)==5 and var_split[4] == 'aet' and var_split[1] == 'et': 
+              auto_sum_varlist['aet'].append(varname); varlist.add(varname)
+          elif lpet and len(var_split)==5 and var_split[4] == 'pet': 
+              auto_sum_varlist['pet'].append(varname); varlist.add(varname)
+      final_varlist += list(auto_sum_varlist.keys())
+#       for varname,sumlist in auto_sum_varlist.items():
+#           print(varname)
+#           print(sumlist)
+  # now use varlist to figure out file columns
   vardict = {v:i+offset for i,v in enumerate(variable_order)} # column mapping; +1 because time was removed
   variable_order = [v for v in variable_order if v in varlist or flow_to_flux.get(v,False) in varlist]
   constant_order = [v for v in variable_order if v in constant_attributes]
@@ -331,6 +363,10 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
   varcols = tuple(vardict[v] for v in variable_order) # variable columns that need to be loaded (except time, which is col 0)
   constcols = tuple(vardict[v] for v in constant_order) # constants columns that need to be loaded
   assert offset-1 not in varcols, varcols
+
+#   # time loading  
+#   from time import time as time_fct
+#   tic = time_fct()
   
   # load vardata as tab separated values
   if well:
@@ -389,12 +425,16 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
       assert data.shape == (len(time_series),len(varcols)), data.shape
       sheet = None # no sheet axis
   
+#   toc = time_fct()
+#   print("Loading file:",toc-tic)
+   
   # call function to interpolate irregular HGS timeseries to regular monthly timseries  
   data = interpolateIrregular(old_time=time_series, lkgs=lkgs, data=data, new_time=time_resampled, 
                               start_date=start_datetime, interp_kind='linear', 
                               lcheckComplete=lcheckComplete, usecols=varcols, fill_value=np.NaN)
   assert data.shape[0] == len(time), (data.shape,len(time),len(variable_order))
   
+#   print("Interpolating:",time_fct()-toc)  
   
   ## construct dataset
   dataset = Dataset(atts=metadata)
@@ -403,14 +443,14 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
   # unit options: cubic meters or kg
   if name_tag == 'newton_info' or well is not None:
     flow_units = None; flux_units = None; den = None
-    variable_attributes = variable_attributes_mms    
+    variable_attributes = variable_attributes_mms.copy()
   elif lkgs:
     flow_units = 'kg/s'; flux_units = 'kg/m^2/s'
-    variable_attributes = variable_attributes_kgs
+    variable_attributes = variable_attributes_kgs.copy()
     den = metadata.get('shp_area',None) 
   else:
     flow_units = 'm^3/s'; flux_units = 'mm/s'
-    variable_attributes = variable_attributes_mms
+    variable_attributes = variable_attributes_mms.copy()
     den = metadata['shp_area'] / 1000. if 'shp_area' in metadata else None
         
   # add constants to dataset (only for wells at the moment)
@@ -428,19 +468,36 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
       else: varatts = dict(name=varname, units=flow_units)
       dataset += Variable(data=vardata, axes=axes, plotatts_dict={}, **varatts) # add variable
   
+  # prepare auto-sum variables: get summation indices 
+  auto_sum_idxlist = dict()
+  for varname,sumlist in auto_sum_varlist.items():      
+      idxlist = [i for i,var in enumerate(variable_order) if var in sumlist]
+      auto_sum_idxlist[varname] = idxlist
+  
   # create variables
-  for i,varname in enumerate(variable_order):
-      if sheet: 
-        vardata = data[:,i,:]
-        axes = (time,sheet)
-      else: 
-        vardata = data[:,i]
-        axes = (time,)
+  lvo = len(variable_order)
+  for i,varname in enumerate(variable_order+list(auto_sum_varlist.keys())):
+      if i>=lvo:
+          # this is a combination variable
+          vardata = np.take(data, auto_sum_idxlist[varname], axis=1).sum(axis=1)
+          if sheet: 
+            assert vardata.shape==(len(time),len(sheet)), vardata.shape
+            axes = (time,sheet)
+          else: 
+            assert vardata.shape==(len(time),), vardata.shape
+            axes = (time,)
+      else:
+          if sheet: 
+            vardata = data[:,i,:]
+            axes = (time,sheet)
+          else: 
+            vardata = data[:,i]
+            axes = (time,)
       # process variable as is first 
       # N.B.: we need to check again, because sometimes we only want the flux variable
-      if varname in varlist:
+      if varname in final_varlist:
         if varname in variable_attributes: varatts = variable_attributes[varname]
-        else: varatts = dict(name=varname, units=flow_units)
+        else: varatts = dict(name=varname, units=flow_units, atts=dict())
         # convert variables and put into dataset (monthly time series)
         if flow_units and varatts['units'] != flow_units: 
           raise VariableError("Hydrograph vardata is read as kg/s; flow variable does not match.\n{}".format(varatts))
@@ -449,7 +506,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
         dataset += Variable(data=vardata, axes=axes, plotatts_dict={}, **varatts)
       # process possible flux variable
       fluxvar = flow_to_flux.get(varname,None)      
-      if ( fluxvar and fluxvar in varlist ) and ( den and den > 0 ):
+      if ( fluxvar and fluxvar in final_varlist ) and ( den and den > 0 ):
         # compute surface flux variable based on drainage area
         if fluxvar in variable_attributes: fluxatts = variable_attributes[fluxvar]
         else: fluxatts = dict(name=fluxvar, units=flux_units)
@@ -1081,34 +1138,78 @@ if __name__ == '__main__':
 
 #   from projects.WSC_basins import basin_list
   from datasets.WSC import BasinSet
-  basin_list = dict(GRW=BasinSet(name='GRW', long_name='Grand River Watershed', rivers=['Grand River'], 
-                                 data_source='Aquanty', stations={'Grand River':['Brantford']}, 
-                                 subbasins=['WholeGRW','UpperGRW','LowerGRW','NorthernGRW','SouthernGRW','WesternGRW']))
+  basin_list = dict()
+  basin_list['GRW'] = BasinSet(name='GRW', long_name='Grand River Watershed', rivers=['Grand River'], 
+                               data_source='Aquanty', stations={'Grand River':['Brantford']}, 
+                               subbasins=['WholeGRW','UpperGRW','LowerGRW','NorthernGRW','SouthernGRW','WesternGRW'])
+  basin_list['ARB'] = BasinSet(name='ARB', long_name='Athabasca River Basin', rivers=['Athabasca'], data_source='WSC',
+                               stations=dict(Athabasca=['EmbarrasAirport','FortMcMurray','Athabasca','Windfall','Hinton','Jasper']),
+                               subbasins=['WholeARB','UpperARB','LowerARB'])
 
   # settings
-  basin_name = 'GRW'
   hgs_well = hgs_station = WSC_station= None
+  basin_name = 'GRW'
   # V1 GRW model
 #   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run'
 #   hgs_station = 'Station_GR_Brantford'; WSC_station = 'Grand River_Brantford'
   # V3 GRW model
-  hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_v3_wrfpet'
+#   hgs_folder = '{ROOT_FOLDER:s}/GRW/grw2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_v3_wrfpet'
 #   hgs_station = '{WSC_ID0:s}'; WSC_station = 'Grand River_Brantford'
 #   hgs_station = 'water_balance'; WSC_station = None
 #   hgs_station = 'newton_info'; WSC_station = None
-  hgs_well = 'W0000347_3'
+#   hgs_well = 'W0000347_3'
+  # ARB model
+  basin_name = 'ARB'
+  wrf_exp = 'max-ctrl'; clim_mode = 'timeseries'; bc_method = 'MyBC_CRU_'
+  hgs_folder = '{ROOT_FOLDER:s}/ARB/arb2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_cosia_1/'
+#   hgs_station = '05_MCMURRAY'; WSC_station = 'FortMcMurray'
+  hgs_station = 'water_balance'
 
 
-
+  test_mode = 'station_dataset'
 #   test_mode = 'gage_station'
 #   test_mode = 'dataset_regrid'
-  test_mode = 'binary_dataset'
+#   test_mode = 'binary_dataset'
 #   test_mode = 'time_axis'
-#   test_mode = 'station_dataset'
+#   test_mode = 'well_dataset'
 #   test_mode = 'station_ensemble'
 
 
-  if test_mode == 'gage_station':
+  if test_mode == 'station_dataset':
+
+    # load dataset
+    lkgs = True
+    dataset = loadHGS_StnTS(station=hgs_station, conservation_authority=None, well=hgs_well, folder=hgs_folder, 
+                            start_date=1979, run_period=15, PRD='', DOM=2, CLIM=clim_mode, BC=bc_method, 
+                            basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, lkgs=lkgs,
+                            lskipNaN=True, lcheckComplete=True, varlist='default', scalefactors=1e-4,
+                            EXP=wrf_exp, name='{EXP:s} ({BASIN:s})',lauto_sum=True)
+    # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
+    # and print
+    print(dataset)
+    print('')
+    print((dataset.name))
+    print((dataset.prettyPrint(short=True)))
+    
+    # some common operations
+    print('')
+    clim = dataset.climMean()
+    print(clim)
+
+    if hgs_station == 'Station_GR_Brantford':
+        test_results = np.asarray([24793.523584608138, 25172.635322536684, 39248.71087752686, 73361.80217956303, 64505.67974315114, 
+                                   32456.80709658126, 18431.93890164255, 15018.095766333918, 16045.543845416256, 17636.665822798554,
+                                   18529.952477226405, 22288.711837028015])
+        if not lkgs: test_results /= 1000.
+        # test exact results
+        if dataset.name == 'erai-g (GRW)':
+            print((clim.discharge[:]))
+            assert np.allclose(clim.discharge[:], test_results)
+    #     print(clim.sfroff[:]*86400)
+
+
+
+  elif test_mode == 'gage_station':
     
     # load single dataset
     if WSC_station:
@@ -1219,7 +1320,7 @@ if __name__ == '__main__':
 #     print(clim)
 
 
-  elif test_mode == 'station_dataset':
+  elif test_mode == 'well_dataset':
 
     # load dataset
     lkgs = True
@@ -1247,17 +1348,6 @@ if __name__ == '__main__':
         assert dataset.z.units == 'm', dataset.z
         print(("Screen Interval: {}m - {}m".format(dataset.atts.z_b,dataset.atts.z_t)))
     
-    if hgs_station == 'Station_GR_Brantford':
-        test_results = np.asarray([24793.523584608138, 25172.635322536684, 39248.71087752686, 73361.80217956303, 64505.67974315114, 
-                                   32456.80709658126, 18431.93890164255, 15018.095766333918, 16045.543845416256, 17636.665822798554,
-                                   18529.952477226405, 22288.711837028015])
-        if not lkgs: test_results /= 1000.
-        # test exact results
-        if dataset.name == 'erai-g (GRW)':
-            print((clim.discharge[:]))
-            assert np.allclose(clim.discharge[:], test_results)
-    #     print(clim.sfroff[:]*86400)
-
     
   elif test_mode == 'station_ensemble':
     
