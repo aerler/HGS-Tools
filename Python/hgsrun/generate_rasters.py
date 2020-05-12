@@ -28,7 +28,7 @@ try:
     WindowsError
 except NameError:
     lWin = False
-    WindowsError = None
+    class WindowsError(BaseException): pass
 
 
 # write HGS include file
@@ -78,7 +78,6 @@ if __name__ == '__main__':
     start = time()
 
     loverwrite = True
-    source_grid = None
     lhourly = False
     time_chunks = 1 # typically not much speed-up beyond 8
     resampling = 'average'
@@ -89,6 +88,10 @@ if __name__ == '__main__':
 # #     start_date = None; end_date = None
 #     grid_name  = 'wc2_d01'    
 #     project = 'CMB'
+    project = 'ARB'
+#     start_date = None; end_date = None
+    start_date = '2014-01-01'; end_date = '2014-02-01'
+    grid_name  = 'arb2'    
     ## Fraser's Ontario domain
 #     project = 'WRF' # load grid from pickle
 # #     start_date = '2010-12-13'; end_date = None
@@ -102,7 +105,7 @@ if __name__ == '__main__':
 #     grid_name  = 'cmb1'    
 #     mode = 'NetCDF'
     ## generate a full SnoDAS raster
-#     project = 'SnoDAS'
+#     project = 'native'
 #     start_date = '2014-01-01'; end_date = '2014-01-05'
 #     grid_name  = 'native'
     ## fast test config
@@ -127,9 +130,9 @@ if __name__ == '__main__':
 #     start_date = '2011-01-01'; end_date = None
 #     grid_name  = 'son2'
     ## 
-    project = 'SNW'
-    start_date = '2017-09-11T12'; end_date = None
-    grid_name  = 'snw2'
+#     project = 'SNW'
+#     start_date = '2017-09-11T12'; end_date = None
+#     grid_name  = 'snw2'
     ## operational config for ASB2
 #     project = 'ASB'
 #     start_date = '2010-01-01'; end_date = None
@@ -145,8 +148,9 @@ if __name__ == '__main__':
         print(griddef)
         tgt_crs = genCRS(griddef.projection.ExportToProj4(), name=grid_name)
         tgt_geotrans = griddef.geotransform; tgt_size = griddef.size
-    elif project == 'SnoDAS':
-        tgt_crs = None # native grid
+    elif project == 'ARB':
+        # Projection for ARB model
+        tgt_crs = genCRS('+proj=laea +lat_0=45 +lon_0=-100 +x_0=0 +y_0=0 +ellps=sphere +units=m +no_defs', name=grid_name)
     elif project == 'Hugo':
         # Hugo's projection for Quebec
         tgt_crs = genCRS("+proj=lcc +ellps=NAD83 +datum=NAD83 +lat_0=44.0 +lat_1=46.0 +lat_2=60.0 +lon_0=-68.5  +x_0=0 +y_0=0 +units=m +no_defs", name=grid_name)
@@ -162,9 +166,14 @@ if __name__ == '__main__':
     elif project.upper() == 'ASB':
         # Assiniboin projection
         tgt_crs = genCRS("+proj=utm +zone=14 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs", name=grid_name)
+    else:
+        tgt_crs = None # native grid
     # grid definition (mostly UTM grids for HGS)
     if tgt_geotrans is not None and tgt_size is not None:
         pass # already assigned above
+    elif grid_name == 'arb2':
+        geotransform = [-1460500,5e3,0,810500,0,5e3]; size = (284,258)
+        resampling = 'average' # it's a fairly coarse grid...
     elif grid_name == 'hd1':
         tgt_size = (70,49) # lower resolution 5 km grid
         tgt_geotrans = (-479184.769227,5.e3,0,68508.4877898,0,5.e3) # 5 km
@@ -204,12 +213,17 @@ if __name__ == '__main__':
     
     
     ## define source data
-#     dataset = 'SnoDAS'
-    dataset = 'CaSPAr'; source_grid = 'lcc_snw'; lhourly = True
+    dataset_kwargs = dict(); bias_correction = None
+    dataset = 'SnoDAS'
+    #dataset = 'CaSPAr'; lhourly = True; dataset_kwargs = dict(grid='lcc_snw')
+    # WRF
+#     dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
+#     dataset_kwargs = dict(experiment='max-ctrl', domain=2, filetype='hydro')
+    # import dataset module
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
     
     ## bias correction
-    bias_correction = None
+#     bias_correction = None
 #     bias_correction = 'SMBC'
     bc_tag = bias_correction+'_' if bias_correction else ''
     bc_varmap = dict(liqprec='liqwatflx') # just for testing...
@@ -225,18 +239,19 @@ if __name__ == '__main__':
             bias_correction = pickle.load(filehandle) 
         
     ## define export parameters
-#     mode = 'NetCDF'
-    mode = 'raster2d'; #source_grid = grid_name
+    mode = 'NetCDF'
+#     mode = 'raster2d'; #source_grid = grid_name
     raster_format = None; scalefactor = 1.
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
-#         varlist = ['liqwatflx']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
-        varlist = ['pet']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
+        varlist = ['liqwatflx']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
+#         varlist = ['pet']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
         gridstr = dataset.lower() if grid_name.lower() == 'native' else grid_name.lower()
         time_interval = 'hourly' if lhourly else 'daily'
+        hgs_root = os.getenv('HGS_ROOT', os.getenv('DATA_ROOT')+'HGS/')
         target_folder = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/climate_forcing/'.format(
-                          root=os.getenv('HGS_ROOT'), proj=project, grid=gridstr, name=dataset, 
+                          root=hgs_root, proj=project, grid=gridstr, name=dataset, 
                           bc=bc_tag, int=time_interval)          
         raster_format = 'AAIGrid'
         raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
@@ -245,10 +260,10 @@ if __name__ == '__main__':
         print(("\n***   Exporting '{}' to raster format {}   ***\n".format(dataset,raster_format)))
     elif mode.upper() == 'NETCDF':
         # NetCDF output using netCDF4
-        varlist = ds_mod.netcdf_varlist # all primary and secondary variables, excluding coordinate variables
+#         varlist = ds_mod.netcdf_varlist # all primary and secondary variables, excluding coordinate variables
 #         varlist = ['liqwatflx', 'rho_snw', 'precip'] # derived variables
 #         varlist = ds_mod.binary_varlist
-#         varlist = ['snow']
+        varlist = ['snow']
         gridstr = '' if grid_name.lower() == 'native' else '_'+grid_name.lower()
         target_folder = osp.join(ds_mod.daily_folder,grid_name,resampling)
         filename_novar = ds_mod.netcdf_filename.format(bc_tag+'{var:s}'+gridstr)
@@ -260,9 +275,9 @@ if __name__ == '__main__':
     
     # lazily load dataset (assuming xarray)
     if lhourly:
-        xds = ds_mod.loadHourlyTimeSeries(varlist=varlist, time_chunks=time_chunks, grid=source_grid)
+        xds = ds_mod.loadHourlyTimeSeries(varlist=varlist, time_chunks=time_chunks, **dataset_kwargs)
     else:
-        xds = ds_mod.loadDailyTimeSeries(varlist=varlist, time_chunks=time_chunks, grid=source_grid)
+        xds = ds_mod.loadDailyTimeSeries(varlist=varlist, time_chunks=time_chunks, **dataset_kwargs)
     
     # get georeference
     src_crs = getCRS(xds)

@@ -333,8 +333,17 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
   final_varlist = varlist
   varlist = set(varlist)
   # auto-detect components of auto-sum variables
-  if lauto_sum:        
+  if lauto_sum:
+      lpeat = False; lnopeat = False
       if lauto_sum is True: lauto_sum = ('rain','aet','pet')
+      else:
+          for vartag in lauto_sum:
+              if vartag.startswith('peat'):
+                  lpeat = True
+                  ppco = int(vartag.split('_')[1]) # peat percentage cut-off
+              elif vartag.startswith('nopeat'):
+                  lnopeat = True
+                  ppco = int(vartag.split('_')[1]) # peat percentage cut-off
       lrain = ( 'rain' in lauto_sum )
       if lrain: auto_sum_varlist['rain'] = []
       laet = ( 'aet' in lauto_sum )
@@ -345,12 +354,30 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
           var_split = varname.split('_')
           # this is a manually implemented list of variables and how to detect their components
           # unfortunately this is quite specific to the ARB project...
-          if lrain and len(var_split)==4 and var_split[1] == 'rain': 
-              auto_sum_varlist['rain'].append(varname); varlist.add(varname)
-          elif laet and len(var_split)==5 and var_split[4] == 'aet' and var_split[1] == 'et': 
-              auto_sum_varlist['aet'].append(varname); varlist.add(varname)
-          elif lpet and len(var_split)==5 and var_split[4] == 'pet': 
-              auto_sum_varlist['pet'].append(varname); varlist.add(varname)
+          try:
+              section_id = int(var_split[0])
+              if section_id > 0 and section_id < 41 and len(var_split) > 3:
+                  if lrain and var_split[1] == 'rain':
+                      if lpeat and ( var_split[-1][2:] != 'pcnt' or int(var_split[-1][:2]) < ppco ): pass
+                      elif lnopeat and ( var_split[-1][2:] == 'pcnt' and int(var_split[-1][:2]) > ppco ): pass
+                      else:
+                          auto_sum_varlist['rain'].append(varname); varlist.add(varname)
+                          #print(varname)
+                  elif (laet or lpet) and len(var_split) > 4 and var_split[1] == 'et':
+                      if lpeat and ( var_split[-2][2:] != 'pcnt' or int(var_split[-2][:2]) < ppco ): pass
+                      elif lnopeat and ( var_split[-2][2:] == 'pcnt' and int(var_split[-2][:2]) > ppco ): pass
+                      elif laet and var_split[-1] == 'aet': 
+                          auto_sum_varlist['aet'].append(varname); varlist.add(varname)
+                          #print(varname)
+                      elif lpet and var_split[-1] == 'pet': 
+                          auto_sum_varlist['pet'].append(varname); varlist.add(varname)
+                          #print(varname)
+                  else:
+                      print("Unrecognized section term: "+varname)
+              else:
+                  print("Unrecognized section term: "+varname)
+          except:
+              pass
       final_varlist += list(auto_sum_varlist.keys())
 #       for varname,sumlist in auto_sum_varlist.items():
 #           print(varname)
@@ -1180,10 +1207,11 @@ if __name__ == '__main__':
     # load dataset
     lkgs = True
     dataset = loadHGS_StnTS(station=hgs_station, conservation_authority=None, well=hgs_well, folder=hgs_folder, 
-                            start_date=1979, run_period=15, PRD='', DOM=2, CLIM=clim_mode, BC=bc_method, 
+                            start_date=1979, run_period=5, PRD='', DOM=2, CLIM=clim_mode, BC=bc_method, 
                             basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, lkgs=lkgs,
+                            lauto_sum=('rain','aet','nopeat_50'),
                             lskipNaN=True, lcheckComplete=True, varlist='default', scalefactors=1e-4,
-                            EXP=wrf_exp, name='{EXP:s} ({BASIN:s})',lauto_sum=True)
+                            EXP=wrf_exp, name='{EXP:s} ({BASIN:s})')
     # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
     # and print
     print(dataset)
