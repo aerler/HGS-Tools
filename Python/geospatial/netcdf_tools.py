@@ -385,8 +385,10 @@ def createGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=N
     ds.setncattr_string('xlon',xlon)
     ds.setncattr_string('ylat',ylat)
     ds.setncattr_string('proj4',crs.to_string())
-    ds.setncattr_string('WKT',crs.to_wkt() if hasattr(crs,'to_wkt') else 'n/a')
-    ds.setncattr('EPSG',crs.to_epsg() if hasattr(crs,'to_epsg') else 'n/a')
+    wkt = crs.to_wkt() if hasattr(crs,'to_wkt') else 'n/a'
+    ds.setncattr_string('WKT',wkt if wkt else 'n/a')
+    epsg = crs.to_epsg() if hasattr(crs,'to_epsg') else 'n/a'
+    ds.setncattr('EPSG',epsg if epsg is not None else 'n/a')
     ds.setncattr('is_projected',int(lproj))
         
     # return modified dataset

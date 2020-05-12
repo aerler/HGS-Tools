@@ -90,7 +90,7 @@ if __name__ == '__main__':
 #     project = 'CMB'
     project = 'ARB'
 #     start_date = None; end_date = None
-    start_date = '2014-01-01'; end_date = '2014-02-01'
+    start_date = '2014-01-01'; end_date = '2014-04-01'
     grid_name  = 'arb2'    
     ## Fraser's Ontario domain
 #     project = 'WRF' # load grid from pickle
