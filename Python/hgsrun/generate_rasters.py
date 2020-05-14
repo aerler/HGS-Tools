@@ -161,7 +161,7 @@ if __name__ == '__main__':
         # South Nation projection
         tgt_crs = genCRS("+proj=utm +zone=18 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
     elif project.upper() == 'CMB':
-        # southern Ontario projection
+        # Columbia Mass Balance projection
         tgt_crs = genCRS("+proj=utm +zone=11 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
     elif project.upper() == 'ASB':
         # Assiniboin projection
@@ -172,7 +172,7 @@ if __name__ == '__main__':
     if tgt_geotrans is not None and tgt_size is not None:
         pass # already assigned above
     elif grid_name == 'arb2':
-        geotransform = [-1460500,5e3,0,810500,0,5e3]; size = (284,258)
+        tgt_geotrans = [-1460500,5e3,0,810500,0,5e3]; tgt_size = (284,258)
         resampling = 'average' # it's a fairly coarse grid...
     elif grid_name == 'hd1':
         tgt_size = (70,49) # lower resolution 5 km grid
@@ -213,15 +213,35 @@ if __name__ == '__main__':
     
     
     ## define source data
+    lexec = False
+    # some defaults for most datasets
+    time_chunks = 8 # typically not much speed-up beyond 8
     dataset_kwargs = dict(); bias_correction = None
-    dataset = 'SnoDAS'
+    target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/climate_forcing/'
+    target_folder_netcdf = '{daily:s}/{grid:s}/{smpl:s}/'        
+#     dataset = 'SnoDAS' # default...
     #dataset = 'CaSPAr'; lhourly = True; dataset_kwargs = dict(grid='lcc_snw')
-    # WRF
-#     dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
-#     dataset_kwargs = dict(experiment='max-ctrl', domain=2, filetype='hydro')
+    
+    ## WRF requires special treatment
+    dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
+    if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
+    else: from projects.GreatLakes import WRF_exps
+    exp_name = 'max-ctrl'; domain = 2
+    dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes='hydro', exps=WRF_exps)
+    start_date = '1979-01-01'; end_date = '1979-04-01'    
+    target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}transient_{int:s}/climate_forcing/'
+    target_folder_netcdf = '{exp_folder:s}/{grid:s}/{smpl:s}/'        
+    
     # import dataset module
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
     
+    # get some experiment info
+    if dataset == 'WRF':
+        exp_folder,exp,exp_name,domain = ds_mod.getFolderNameDomain(experiment=exp_name, domains=domain, exps=WRF_exps, lreduce=True)
+        print('{exp_name:s}_d{dom:0=2d}'.format(exp_name=exp_name,dom=domain))
+    else:
+        exp_folder = None; exp = None; exp_name = None; domain = None
+        
     ## bias correction
 #     bias_correction = None
 #     bias_correction = 'SMBC'
@@ -245,14 +265,13 @@ if __name__ == '__main__':
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
-        varlist = ['liqwatflx']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
-#         varlist = ['pet']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
+#         varlist = ['liqwatflx']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
+        varlist = ['pet','liqwatflx']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
         gridstr = dataset.lower() if grid_name.lower() == 'native' else grid_name.lower()
         time_interval = 'hourly' if lhourly else 'daily'
         hgs_root = os.getenv('HGS_ROOT', os.getenv('DATA_ROOT')+'HGS/')
-        target_folder = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/climate_forcing/'.format(
-                          root=hgs_root, proj=project, grid=gridstr, name=dataset, 
-                          bc=bc_tag, int=time_interval)          
+        target_folder = target_folder_ascii.format(root=hgs_root, proj=project, grid=gridstr, name=dataset, int=time_interval, 
+                                                   bc=bc_tag, exp_name=exp_name, dom=domain, exp_folder=exp_folder)          
         raster_format = 'AAIGrid'
         raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
         filename_novar = raster_name.format(dataset=dataset.lower(), variable='{var:s}',
@@ -265,7 +284,8 @@ if __name__ == '__main__':
 #         varlist = ds_mod.binary_varlist
         varlist = ['snow']
         gridstr = '' if grid_name.lower() == 'native' else '_'+grid_name.lower()
-        target_folder = osp.join(ds_mod.daily_folder,grid_name,resampling)
+        target_folder = target_folder_netcdf.format(daily=ds_mod.daily_folder,grid=grid_name,smpl=resampling,
+                                                    exp_name=exp_name, dom=domain, exp_folder=exp_folder)
         filename_novar = ds_mod.netcdf_filename.format(bc_tag+'{var:s}'+gridstr)
         print(("\n***   Regridding '{}' to '{}' (NetCDF format)   ***".format(dataset,grid_name)))
     else:
