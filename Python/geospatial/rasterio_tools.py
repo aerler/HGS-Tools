@@ -172,8 +172,8 @@ def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampli
     return tgt_data
 
 
-def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', missing_value=-9999, 
-                 missing_flag=None, lmask_invalid=True, lecho=True, loverwrite=True):
+def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', missing_value=-9999,
+                 missing_flag=None, lmask_invalid=True, lecho=True, loverwrite=True, **driver_args):
     ''' write an array to a raster '''
     if osp.exists(filename) and not loverwrite: 
         if lecho: print("Skipping existing file: {}".format(filename))
@@ -223,8 +223,8 @@ def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', mis
         
         # write data
         if missing_flag is None: missing_flag = missing_value
-        with rio.open(filename, mode='w', driver=driver, crs=crs, transform=transform,
-                      width=width, height=height, count=count, dtype=str(data.dtype), nodata=missing_flag) as dst:
+        with rio.open(filename, mode='w', driver=driver, crs=crs, transform=transform, width=width, height=height, 
+                      count=count, dtype=str(data.dtype), nodata=missing_flag, **driver_args) as dst:
             if count == 1:
                 dst.write(data,1) # GDAL/rasterio bands are one-based
             else:
@@ -236,8 +236,8 @@ def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', mis
     return None
   
     
-def write_time_rasters(filepath_pattern, xvar, time_coord=None, crs=None, transform=None, driver='AAIGrid', 
-                       time_fmt='%Y%m%d', missing_value=-9999, missing_flag=None, lecho=True, loverwrite=True):
+def write_time_rasters(filepath_pattern, xvar, time_coord=None, crs=None, transform=None, driver='AAIGrid',
+                       time_fmt='%Y%m%d', missing_value=-9999, missing_flag=None, lecho=True, loverwrite=True, **driver_args):
     ''' a wrapper that iterates over write_raster in order to write multi-dimensional arrays to 2D rasters; 
         note, however, that this loads all data into memory!
         also note that this implementation assumes iteration over a datetime axis and uses the date
@@ -257,8 +257,8 @@ def write_time_rasters(filepath_pattern, xvar, time_coord=None, crs=None, transf
         # use date to construct file name
         filepath = filepath_pattern.format(pd.to_datetime(date).strftime(time_fmt))
         # command to write raster
-        write_raster(filepath, xvar[i,:,:],crs=crs, transform=transform, driver=driver, 
-                     missing_value=missing_value, missing_flag=missing_flag, lecho=lecho, loverwrite=loverwrite)    
+        write_raster(filepath, xvar[i,:,:],crs=crs, transform=transform, driver=driver, missing_value=missing_value, 
+                     missing_flag=missing_flag, lecho=lecho, loverwrite=loverwrite, **driver_args)    
     # done...
     return None
 
@@ -268,7 +268,7 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
                       tgt_crs=None, tgt_geotrans=None, tgt_size=None, mode='raster2D', resampling='bilinear',
                       filepath=None, time_coord=None, driver='AAIGrid',missing_value=0., missing_flag=-9999.,
                       time_fmt='%Y%m%d', ncvar=None, bias_correction=None, bc_varname=None,
-                      lecho=True, loverwrite=True, return_dummy=dummy_array):
+                      lecho=True, loverwrite=True, return_dummy=dummy_array, **driver_args):
     ''' a function for use with Dask lazy execution that regrids an array and exports/writes the results 
         to either NetCDF or any GDAL/rasterio raster format; the array has to be chunked in a way that  
         full 2D horizontal surfaces are processed, otherwise regridding does not work '''
@@ -296,9 +296,9 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
         if not bias_correction:
             time_chunk = time_coord[ts:te] # chunk of time axis that corresponds to this chunk 
         #print(time_chunk)
-        write_time_rasters(filepath, data, time_coord=time_chunk, driver=driver, crs=tgt_crs, 
+        write_time_rasters(filepath, data, time_coord=time_chunk, driver=driver, crs=tgt_crs,
                            transform=tgt_geotrans, missing_value=missing_value, missing_flag=missing_flag, 
-                           time_fmt=time_fmt, lecho=lecho, loverwrite=loverwrite)
+                           time_fmt=time_fmt, lecho=lecho, loverwrite=loverwrite, **driver_args)
     elif mode.upper() == 'NETCDF':
         # append to existing NetCDF variable
         ncvar[ts:te,:,:] = data
@@ -313,7 +313,7 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
                                tgt_crs=None, tgt_geotrans=None, tgt_size=None, resampling='bilinear', 
                                driver='AAIGrid', missing_value=0., missing_flag=-9999., 
                                bias_correction=None, bc_varname=None, time_fmt='%Y%m%d',
-                               lecho=True, loverwrite=True,):
+                               lecho=True, loverwrite=True, **driver_args):
     ''' a function that returns another function, which is suitable for regridding and direct export to disk 
         using Dask lazy execution; some parameters can be inferred from xarray attributes '''
     
@@ -380,7 +380,7 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
                                  mode=mode, filepath=filepath, time_coord=time_coord, ncvar=ncvar,
                                  driver=driver,missing_value=missing_value, missing_flag=missing_flag, 
                                  bias_correction=bias_correction, bc_varname=bc_varname, time_fmt=time_fmt,                               
-                                 lecho=lecho, loverwrite=loverwrite, return_dummy=dummy_array)
+                                 lecho=lecho, loverwrite=loverwrite, return_dummy=dummy_array, **driver_args)
     
     # return function with dummy array (for measure)
     return dask_fct, dummy_array, dataset

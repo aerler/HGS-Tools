@@ -123,7 +123,7 @@ if __name__ == '__main__':
 #     grid_name  = 'grw1'
     ## test config for GRW
 #     project = 'GRW'
-#     start_date = '2011-01-01'; end_date = '2011-12-31'
+#     start_date = '2012-01-01'; end_date = '2012-03-01'
 #     grid_name  = 'grw2'; resampling = 'nearest'; #source_grid = 'grw1'
     ## operational config for SON2
 #     project = 'SON'
@@ -172,7 +172,8 @@ if __name__ == '__main__':
     if tgt_geotrans is not None and tgt_size is not None:
         pass # already assigned above
     elif grid_name == 'arb2':
-        tgt_geotrans = [-1460500,5e3,0,810500,0,5e3]; tgt_size = (284,258)
+        tgt_geotrans = [-1280e3,5e3,0,900e3,0,5e3]; tgt_size = (172,144)
+        #tgt_geotrans = [-1460500,5e3,0,810500,0,5e3]; tgt_size = (284,258)
         resampling = 'average' # it's a fairly coarse grid...
     elif grid_name == 'hd1':
         tgt_size = (70,49) # lower resolution 5 km grid
@@ -213,80 +214,86 @@ if __name__ == '__main__':
     
     
     ## define source data
-    lexec = False
+    lexec = True
+    loverwrite = True      
     # some defaults for most datasets
     time_chunks = 8 # typically not much speed-up beyond 8
-    dataset_kwargs = dict(); bias_correction = None
+    dataset_kwargs = dict(); bias_correction = None; bc_varmap = dict()
     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/climate_forcing/'
-    target_folder_netcdf = '{daily:s}/{grid:s}/{smpl:s}/'        
+    raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
+    target_folder_netcdf = '{daily:s}/{grid:s}/{smpl:s}/'
+    
+    ## SnoDAS        
 #     dataset = 'SnoDAS' # default...
+#     bias_correction = 'SMBC'; obs_name = 'NRCan' 
+#     bc_varmap = dict(liqprec='liqwatflx') # just for testing...
+    ## CaSPAr
     #dataset = 'CaSPAr'; lhourly = True; dataset_kwargs = dict(grid='lcc_snw')
     
     ## WRF requires special treatment
     dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
     if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
     else: from projects.GreatLakes import WRF_exps
-    exp_name = 'max-ctrl'; domain = 2
-    dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes='hydro', exps=WRF_exps)
+    exp_name = 'max-ctrl'; domain = 2; filetype = 'hydro'
+    dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps)
     start_date = '1979-01-01'; end_date = '1979-04-01'    
     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}transient_{int:s}/climate_forcing/'
-    target_folder_netcdf = '{exp_folder:s}/{grid:s}/{smpl:s}/'        
+    target_folder_netcdf = '{exp_folder:s}/{grid:s}/{smpl:s}/'  
+#     bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'
+#     bias_correction = 'AABC'; bc_varmap = dict(liqwatflx='liqprec'); obs_name = 'NRCan'
+    varlist = ['liqwatflx','pet',]
     
     # import dataset module
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
     
-    # get some experiment info
+    # get some experiment/dataset info
     if dataset == 'WRF':
         exp_folder,exp,exp_name,domain = ds_mod.getFolderNameDomain(experiment=exp_name, domains=domain, exps=WRF_exps, lreduce=True)
         print('{exp_name:s}_d{dom:0=2d}'.format(exp_name=exp_name,dom=domain))
+        netcdf_name = ds_mod.fileclasses[filetype].dailyfile.format(domain, '{grid:s}')
+        bc_folder = exp_folder
     else:
         exp_folder = None; exp = None; exp_name = None; domain = None
+        netcdf_name = ds_mod.netcdf_filename.format('{var_str:s}')
+        bc_folder = ds_mod.avgfolder
         
     ## bias correction
-#     bias_correction = None
-#     bias_correction = 'SMBC'
-    bc_tag = bias_correction+'_' if bias_correction else ''
-    bc_varmap = dict(liqprec='liqwatflx') # just for testing...
     if bias_correction:
-        import pickle, gzip
-        from processing.bc_methods import findPicklePath
-        # get pickle path (autodetect gzip)
-        picklepath = findPicklePath(method=bias_correction, obs_name='NRCan', gridstr=grid_name,
-                                    domain=None, folder=ds_mod.avgfolder)
         # load pickle from file
-        op = gzip.open if picklepath.endswith('.gz') else open
-        with op(picklepath, 'rb') as filehandle:
-            bias_correction = pickle.load(filehandle) 
+        from processing.bc_methods import loadBCpickle
+        bc_method = bias_correction
+        bias_correction = loadBCpickle(method=bias_correction, obs_name=obs_name, gridstr=grid_name, domain=domain, folder=bc_folder)
         
     ## define export parameters
+    driver_args = dict(); scalefactor = 1.; raster_format = None
     mode = 'NetCDF'
-#     mode = 'raster2d'; #source_grid = grid_name
-    raster_format = None; scalefactor = 1.
+#     mode = 'raster2d'
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
-#         varlist = ['liqwatflx']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
-        varlist = ['pet','liqwatflx']; scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
+        scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
         gridstr = dataset.lower() if grid_name.lower() == 'native' else grid_name.lower()
+        bc_str = bc_method+'_' if bias_correction else ''
         time_interval = 'hourly' if lhourly else 'daily'
         hgs_root = os.getenv('HGS_ROOT', os.getenv('DATA_ROOT')+'HGS/')
         target_folder = target_folder_ascii.format(root=hgs_root, proj=project, grid=gridstr, name=dataset, int=time_interval, 
-                                                   bc=bc_tag, exp_name=exp_name, dom=domain, exp_folder=exp_folder)          
-        raster_format = 'AAIGrid'
-        raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
+                                                   bc=bc_str, exp_name=exp_name, dom=domain, exp_folder=exp_folder)          
+        raster_format = 'AAIGrid'        
         filename_novar = raster_name.format(dataset=dataset.lower(), variable='{var:s}',
                                             grid=grid_name.lower(), date='{date:s}') # no date for now...
+        driver_args = dict(significant_digits=4)
         print(("\n***   Exporting '{}' to raster format {}   ***\n".format(dataset,raster_format)))
     elif mode.upper() == 'NETCDF':
         # NetCDF output using netCDF4
 #         varlist = ds_mod.netcdf_varlist # all primary and secondary variables, excluding coordinate variables
-#         varlist = ['liqwatflx', 'rho_snw', 'precip'] # derived variables
 #         varlist = ds_mod.binary_varlist
-        varlist = ['snow']
+#         varlist = ['liqwatflx','pet']
         gridstr = '' if grid_name.lower() == 'native' else '_'+grid_name.lower()
+        bc_str1 = bc_method+'_' if bias_correction else ''
+        bc_str2 = '_'+bc_method if bias_correction else ''
         target_folder = target_folder_netcdf.format(daily=ds_mod.daily_folder,grid=grid_name,smpl=resampling,
-                                                    exp_name=exp_name, dom=domain, exp_folder=exp_folder)
-        filename_novar = ds_mod.netcdf_filename.format(bc_tag+'{var:s}'+gridstr)
+                                                    exp_name=exp_name, dom=domain, exp_folder=exp_folder)        
+        filename_novar = netcdf_name.format(var_str1=bc_str1+'{var:s}'+gridstr, grid=bc_str2.lower()+gridstr,) # usually either var or grid
         print(("\n***   Regridding '{}' to '{}' (NetCDF format)   ***".format(dataset,grid_name)))
     else:
         raise NotImplementedError
@@ -381,15 +388,27 @@ if __name__ == '__main__':
         # N.B.: apply scalefactor 'in-place' so that xarray variable attributes 
         #       are preserved (it will still execute delayed); applying the scale-
         #       factor after regridding is slightly faster, but this is cleaner
-    
-       
+        
+        # Bias-correction parameters
+        if bias_correction:
+            bc_varname = bc_varmap.get(varname,varname)
+            bc_object = None if bc_varname is None else bias_correction
+        else:
+            bc_object = None; bc_varname = None 
+        
         # generate dask execution function
         dask_fct,dummy,dataset = generate_regrid_and_export(xvar, time_coord=time_coord,
                                                     tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
                                                     mode=mode, resampling=resampling, time_fmt=date_fmt,
                                                     folder=target_folder, filename=filename, driver=raster_format,
-                                                    bias_correction=bias_correction, bc_varname=bc_varmap.get(varname,varname),
-                                                    lecho=True, loverwrite=loverwrite,)
+                                                    bias_correction=bc_object, bc_varname=bc_varname,
+                                                    lecho=True, loverwrite=loverwrite, **driver_args)
+        
+        # switch of overwrite/deletion if filename is not variable-specific
+        if varname.lower() not in filename: 
+            loverwrite = False
+            assert mode.upper() == 'NETCDF' 
+        # N.B.: this allows writing of all variables in the varlist to a single file
                   
         # now map regridding operation to blocks
         n_loads = len(xvar.chunks[0])
@@ -405,7 +424,7 @@ if __name__ == '__main__':
         print(("Chunks (time only): {}".format(xvar.chunks[0])))
     
     #     with dask.set_options(scheduler='processes'):      
-        with dask.config.set(pool=ThreadPool(2)):    
+        with dask.config.set(pool=ThreadPool(1)):    
             dask.compute(*work_load)
             
         #print("\nDummy output:")
