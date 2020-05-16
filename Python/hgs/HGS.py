@@ -545,7 +545,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
         dataset += Variable(vardata=vardata, axes=axes, plotatts_dict={}, **fluxatts)
         
   # apply analysis period
-  if period is not None:
+  if period is not None and resample == 'M' and time_axis.lower() == 'simple': # only works with month
       dataset = dataset(years=period)
       
   # aggregate vertical axis
@@ -1188,9 +1188,10 @@ if __name__ == '__main__':
   # ARB model
   basin_name = 'ARB'
   wrf_exp = 'max-ctrl'; clim_mode = 'timeseries'; bc_method = 'MyBC_CRU_'
-  hgs_folder = '{ROOT_FOLDER:s}/ARB/arb2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_cosia_1/'
-#   hgs_station = '05_MCMURRAY'; WSC_station = 'FortMcMurray'
-  hgs_station = 'water_balance'
+#   hgs_folder = '{ROOT_FOLDER:s}/ARB/arb2/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_cosia_1/'
+  hgs_folder = '{ROOT_FOLDER:s}/ARB/arb3/{EXP:s}{PRD:s}_d{DOM:02d}/{BC:s}{CLIM:s}/hgs_run_cosia_1/'
+  hgs_station = '05_MCMURRAY'; WSC_station = 'FortMcMurray'
+#   hgs_station = 'water_balance'
 
 
   test_mode = 'station_dataset'
@@ -1206,12 +1207,16 @@ if __name__ == '__main__':
 
     # load dataset
     lkgs = True
-    dataset = loadHGS_StnTS(station=hgs_station, conservation_authority=None, well=hgs_well, folder=hgs_folder, 
-                            start_date=1979, run_period=5, PRD='', DOM=2, CLIM=clim_mode, BC=bc_method, 
-                            basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, lkgs=lkgs,
-                            lauto_sum=('rain','aet','nopeat_50'),
-                            lskipNaN=True, lcheckComplete=True, varlist='default', scalefactors=1e-4,
-                            EXP=wrf_exp, name='{EXP:s} ({BASIN:s})')
+#     dataset = loadHGS_StnTS(station=hgs_station, conservation_authority=None, well=hgs_well, folder=hgs_folder, 
+#                             start_date=1979, run_period=5, PRD='', DOM=2, CLIM=clim_mode, BC=bc_method, 
+#                             basin=basin_name, WSC_station=WSC_station, basin_list=basin_list, lkgs=lkgs,
+#                             lauto_sum=('rain','aet','nopeat_50'),
+#                             lskipNaN=True, lcheckComplete=True, varlist='default', scalefactors=1e-4,
+#                             EXP=wrf_exp, name='{EXP:s} ({BASIN:s})')
+    dataset = loadHGS_StnTS(EXP='max-ctrl', basin=basin_name, lkgs=False, folder=hgs_folder, basin_list=basin_list,
+                            station=hgs_station, WSC_station=WSC_station, lskipNaN=True, lcheckComplete=False, 
+                            start_date=1979, run_period=5, PRD='', DOM=2, CLIM='transient_daily', BC='', 
+                            name='{EXP:s} ({BASIN:s}, daily)', resample='D', time_axis='datetime')
     # N.B.: there is no record of actual calendar time in HGS, so periods are anchored through start_date/run_period
     # and print
     print(dataset)

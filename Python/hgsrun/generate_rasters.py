@@ -91,7 +91,7 @@ if __name__ == '__main__':
     project = 'ARB'
 #     start_date = None; end_date = None
     start_date = '2014-01-01'; end_date = '2014-04-01'
-    grid_name  = 'arb2'    
+    grid_name  = 'arb3'    
     ## Fraser's Ontario domain
 #     project = 'WRF' # load grid from pickle
 # #     start_date = '2010-12-13'; end_date = None
@@ -172,8 +172,10 @@ if __name__ == '__main__':
     if tgt_geotrans is not None and tgt_size is not None:
         pass # already assigned above
     elif grid_name == 'arb2':
+        tgt_geotrans = [-1460500,5e3,0,810500,0,5e3]; tgt_size = (284,258)
+        resampling = 'average' # it's a fairly coarse grid...
+    elif grid_name == 'arb3':
         tgt_geotrans = [-1280e3,5e3,0,900e3,0,5e3]; tgt_size = (172,144)
-        #tgt_geotrans = [-1460500,5e3,0,810500,0,5e3]; tgt_size = (284,258)
         resampling = 'average' # it's a fairly coarse grid...
     elif grid_name == 'hd1':
         tgt_size = (70,49) # lower resolution 5 km grid
@@ -240,7 +242,7 @@ if __name__ == '__main__':
     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}transient_{int:s}/climate_forcing/'
     target_folder_netcdf = '{exp_folder:s}/{grid:s}/{smpl:s}/'  
 #     bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'
-#     bias_correction = 'AABC'; bc_varmap = dict(liqwatflx='liqprec'); obs_name = 'NRCan'
+    bias_correction = 'AABC'; bc_varmap = dict(liqwatflx='precip'); obs_name = 'CRU'
     varlist = ['liqwatflx','pet',]
     
     # import dataset module
@@ -266,8 +268,8 @@ if __name__ == '__main__':
         
     ## define export parameters
     driver_args = dict(); scalefactor = 1.; raster_format = None
-    mode = 'NetCDF'
-#     mode = 'raster2d'
+#     mode = 'NetCDF'
+    mode = 'raster2d'
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
