@@ -238,7 +238,7 @@ if __name__ == '__main__':
     else: from projects.GreatLakes import WRF_exps
     exp_name = 'max-ctrl'; domain = 2; filetype = 'hydro'
     dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps)
-    start_date = '1979-01-01'; end_date = '1979-04-01'    
+    start_date = '1979-01-01'; end_date = '1980-01-01'    
     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}transient_{int:s}/climate_forcing/'
     target_folder_netcdf = '{exp_folder:s}/{grid:s}/{smpl:s}/'  
 #     bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'

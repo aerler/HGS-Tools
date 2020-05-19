@@ -274,7 +274,7 @@ def loadHGS_StnTS(station=None, well=None, varlist='default', layers=None, z_lay
   if time_axis.lower() == 'simple':
       start_time = 12*(start_year - 1979) + start_month -1
       end_time = 12*(end_year - 1979) + end_month -1
-      time = Axis(name='time', units='month', atts=dict(long_name='Month since 1979-01'), 
+      time = Axis(name='time', units='month', atts=dict(long_name='Months since 1979-01'), 
                   coord=np.arange(start_time, end_time)) # not including the last, e.g. 1979-01 to 1980-01 is 12 month
       assert len(time_resampled) == end_time-start_time+1
   elif time_axis.lower() == 'datetime':
