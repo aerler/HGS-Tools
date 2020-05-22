@@ -236,9 +236,12 @@ if __name__ == '__main__':
     dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
     if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
     else: from projects.GreatLakes import WRF_exps
-    exp_name = 'max-ctrl'; domain = 2; filetype = 'hydro'
+#     exp_name = 'max-ctrl'
+    exp_name = 'ctrl-1'  
+    domain = 2; filetype = 'hydro'
     dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps)
-    start_date = '1979-01-01'; end_date = '1980-01-01'    
+#     start_date = '1979-01-01'; end_date = '1980-01-01'
+    start_date = None; end_date = None    
     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}transient_{int:s}/climate_forcing/'
     target_folder_netcdf = '{exp_folder:s}/{grid:s}/{smpl:s}/'  
 #     bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'

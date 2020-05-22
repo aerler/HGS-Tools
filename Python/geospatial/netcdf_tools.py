@@ -345,11 +345,19 @@ def add_time_coord(dst, data, name=None, units='D', atts=None, ts_atts=None, dat
     # return dataset handle
     return dst
     
-def createGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=None, varatts=None, 
-                    zlib=True, lcoords=True, loverwrite=False):
+def createGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=None, griddef=None, 
+                       varatts=None, zlib=True, lcoords=True, loverwrite=False):
     ''' function to add georeferencing information based on rasterio/GDAL info to existing netCDF4 Dataset;
         this can include adding new axes, but does not modify existing variables '''
     from geospatial.rasterio_tools import genCRS, constructCoords
+
+    # interpret GridDefinition object (defined in geodata.gdal, but not imported to avoid dependencies)
+    if griddef:
+        crs = griddef.projection.ExportToProj4() # for some reason, rasterio does not understand WKT...
+        geotrans = griddef.geotransform
+        size = griddef.size
+        xlon = griddef.xlon.name
+        ylat = griddef.ylat.name
 
     # determine type of coordinate reference system   
     if crs is None:
@@ -378,9 +386,14 @@ def createGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=N
           add_coord(ds, xname, data=xlon_coord, length=size[0], atts=xatts, dtype=dtype, zlib=zlib)
     
     ## save attributes, including georeferencing information
-    dx = abs(geotrans.a); dy = abs(geotrans.e) # I'm never sure if I got this right...
-    gdal_geotran = geotrans.to_gdal()
-    assert (abs(gdal_geotran[1]),abs(gdal_geotran[5])) == (dx,dy), gdal_geotran 
+    if isinstance(geotrans,(list,tuple)):
+        assert len(geotrans)==6, geotrans
+        dx,dy = abs(geotrans[1]), abs(geotrans[5])
+    else:
+        # probably rio.transform.Affine
+        dx = abs(geotrans.a); dy = abs(geotrans.e) # I'm never sure if I got this right...
+        gdal_geotrans = geotrans.to_gdal()
+        assert (abs(gdal_geotrans[1]),abs(gdal_geotrans[5])) == (dx,dy), gdal_geotrans
     ds.setncattr('dx',dx); ds.setncattr('dy',dy)
     ds.setncattr_string('xlon',xlon)
     ds.setncattr_string('ylat',ylat)
@@ -405,7 +418,7 @@ default_varatts = dict( # attributed for coordinate variables
                        time_stamp = dict(name='time_stamp', units='', long_name='Human-readable Time Stamp'),) # readable time stamp (string)
 
 def createGeoNetCDF(filename, atts=None, folder=None, xlon=None, ylat=None, time=None, 
-                    time_args=None, varatts=None, crs=None, geotrans=None, size=None, 
+                    time_args=None, varatts=None, crs=None, geotrans=None, size=None, griddef=None,
                     nc_format='NETCDF4', zlib=True, loverwrite=True):
     ''' create a NetCDF-4 file, create dimensions and geographic coordinates, and set attributes '''
         
@@ -450,7 +463,7 @@ def createGeoNetCDF(filename, atts=None, folder=None, xlon=None, ylat=None, time
             add_time_coord(ds, time_coord, **kwargs)
         
     ## construct geographic coordinate axes from xarray or GDAL/rasterio georeference
-    ds = createGeoReference(ds, crs=crs, geotrans=geotrans, size=size, xlon=xlon, ylat=ylat, 
+    ds = createGeoReference(ds, crs=crs, geotrans=geotrans, size=size, xlon=xlon, ylat=ylat, griddef=griddef,
                             varatts=varatts, zlib=zlib, lcoords=True, loverwrite=loverwrite)    
     
     # return dataset object
