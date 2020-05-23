@@ -386,14 +386,14 @@ def createGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=N
           add_coord(ds, xname, data=xlon_coord, length=size[0], atts=xatts, dtype=dtype, zlib=zlib)
     
     ## save attributes, including georeferencing information
-    if isinstance(geotrans,(list,tuple)):
-        assert len(geotrans)==6, geotrans
-        dx,dy = abs(geotrans[1]), abs(geotrans[5])
-    else:
+    if isinstance(geotrans,tuple) and hasattr(geotrans,'to_gdal'):
         # probably rio.transform.Affine
         dx = abs(geotrans.a); dy = abs(geotrans.e) # I'm never sure if I got this right...
         gdal_geotrans = geotrans.to_gdal()
         assert (abs(gdal_geotrans[1]),abs(gdal_geotrans[5])) == (dx,dy), gdal_geotrans
+    else:
+        assert len(geotrans)==6, geotrans
+        dx,dy = abs(geotrans[1]), abs(geotrans[5])
     ds.setncattr('dx',dx); ds.setncattr('dy',dy)
     ds.setncattr_string('xlon',xlon)
     ds.setncattr_string('ylat',ylat)
