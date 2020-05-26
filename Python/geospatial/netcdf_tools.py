@@ -122,11 +122,12 @@ def add_coord(dst, name, data=None, length=None, atts=None, dtype=None, zlib=Tru
     
     # check input
     if length is None:
-        pass # that means unlimited record dimensions (can only have one of these)
-    elif length is not None:
-        if isinstance(length,(int,np.integer)): length=(length,)
-    elif data is not None and data.ndim == 1:
-        length=data.shape
+        # that means unlimited record dimensions (can only have one of these)
+        dst.createDimension(name, size=None) # need to create here, or add_var will assign a size
+    if isinstance(length,(int,np.integer)): 
+        length=(length,)
+    if data is not None and data.ndim == 1:
+        if length is None: length = data.shape
     else: 
         raise NCDataError(data)
     
@@ -171,7 +172,7 @@ def add_var(dst, name, dims, data=None, shape=None, atts=None, dtype=None, zlib=
           if shape[i] is None: 
               shape[i] = len(dst.dimensions[dim])
           else: 
-              if shape[i] != len(dst.dimensions[dim]): 
+              if shape[i] != len(dst.dimensions[dim]) and len(dst.dimensions[dim]) > 0: 
                   raise NCAxisError('Size of dimension {:s} does not match records! {:d} != {:d}'.format(dim,shape[i],len(dst.dimensions[dim])))
         else: 
             dst.createDimension(dim, size=shape[i])
@@ -330,7 +331,7 @@ def add_time_coord(dst, data, name=None, units='D', atts=None, ts_atts=None, dat
     atts['units'] = '{} since {}'.format(unit_name.lower(), start_date) 
     coord = (data - data[0]) / np.timedelta64(1, dt_code)
     if dtype is None: dtype = np.dtype('i4') # 32 bit int
-    add_coord(dst, name, data=coord, length=len(data), atts=atts, dtype=dtype, zlib=zlib, **kwargs)
+    add_coord(dst, name, data=coord, length=None, atts=atts, dtype=dtype, zlib=zlib, **kwargs) # record dim
     
     # also add a time-stamp variable
     if ltimestamp:
