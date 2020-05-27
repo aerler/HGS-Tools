@@ -88,10 +88,10 @@ if __name__ == '__main__':
 # #     start_date = None; end_date = None
 #     grid_name  = 'wc2_d01'    
 #     project = 'CMB'
-    project = 'ARB'
+#     project = 'ARB'
 #     start_date = None; end_date = None
-    start_date = '2014-01-01'; end_date = '2014-04-01'
-    grid_name  = 'arb3'    
+#     start_date = '2014-01-01'; end_date = '2014-04-01'
+#     grid_name  = 'arb3'    
     ## Fraser's Ontario domain
 #     project = 'WRF' # load grid from pickle
 # #     start_date = '2010-12-13'; end_date = None
@@ -99,6 +99,7 @@ if __name__ == '__main__':
 #     start_date = None; end_date = None
 #     grid_name = 'glb1_d01'    
 #     start_date = '2010-12-13'; end_date = None
+#     project = 'Geo'
 #     grid_name = 'on1'
 # #     start_date = '2014-01-01'; end_date = '2014-02-01'
 #     start_date = None; end_date = None
@@ -126,9 +127,9 @@ if __name__ == '__main__':
 #     start_date = '2012-01-01'; end_date = '2012-03-01'
 #     grid_name  = 'grw2'; resampling = 'nearest'; #source_grid = 'grw1'
     ## operational config for SON2
-#     project = 'SON'
-#     start_date = '2011-01-01'; end_date = None
-#     grid_name  = 'son2'
+    project = 'SON'
+    start_date = '2011-01-01'; end_date = None
+    grid_name  = 'son2'
     ## 
 #     project = 'SNW'
 #     start_date = '2017-09-11T12'; end_date = None
@@ -148,12 +149,16 @@ if __name__ == '__main__':
         print(griddef)
         tgt_crs = genCRS(griddef.projection.ExportToProj4(), name=grid_name)
         tgt_geotrans = griddef.geotransform; tgt_size = griddef.size
+    elif project == 'Geo':
+        # generic geographic lat/lon
+        tgt_crs = genCRS(name=grid_name)
     elif project == 'ARB':
         # Projection for ARB model
         tgt_crs = genCRS('+proj=laea +lat_0=45 +lon_0=-100 +x_0=0 +y_0=0 +ellps=sphere +units=m +no_defs', name=grid_name)
     elif project == 'Hugo':
         # Hugo's projection for Quebec
         tgt_crs = genCRS("+proj=lcc +ellps=NAD83 +datum=NAD83 +lat_0=44.0 +lat_1=46.0 +lat_2=60.0 +lon_0=-68.5  +x_0=0 +y_0=0 +units=m +no_defs", name=grid_name)
+        # N.B.: something seems to be wrong with this... rasterio can't read it...
     elif project.upper() in ('SON','GRW'):
         # southern Ontario projection
         tgt_crs = genCRS("+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
@@ -171,6 +176,9 @@ if __name__ == '__main__':
     # grid definition (mostly UTM grids for HGS)
     if tgt_geotrans is not None and tgt_size is not None:
         pass # already assigned above
+    elif grid_name == 'on1':
+        tgt_geotrans = [-87.87916564941406,0.008331298828125,0.0,41.995832443237305,0.0,0.008335113525390625,]
+        resampling = 'cubic_spline'
     elif grid_name == 'arb2':
         tgt_geotrans = [-1460500,5e3,0,810500,0,5e3]; tgt_size = (284,258)
         resampling = 'average' # it's a fairly coarse grid...
@@ -220,33 +228,44 @@ if __name__ == '__main__':
     loverwrite = True      
     # some defaults for most datasets
     time_chunks = 8 # typically not much speed-up beyond 8
-    dataset_kwargs = dict(); bias_correction = None; bc_varmap = dict()
+    dataset_kwargs = dict(); subdataset = None 
+    bias_correction = None; bc_varmap = dict(); obs_name = None
     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/climate_forcing/'
     raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
     target_folder_netcdf = '{daily:s}/{grid:s}/{smpl:s}/'
     
+    # dummy variables for WRF
+    exp_name = None; exp_folder = None; domain = None; WRF_exps = None; filetype = None
+    
     ## SnoDAS        
-#     dataset = 'SnoDAS' # default...
+    dataset = 'SnoDAS' # default...
 #     bias_correction = 'SMBC'; obs_name = 'NRCan' 
-#     bc_varmap = dict(liqprec='liqwatflx') # just for testing...
+    bc_varmap = dict(liqprec='liqwatflx') # just for testing...
+    dataset_kwargs = dict(grid='on1', bias_correction='rfbc'); varlist = ['snow']
+    resampling = 'nearest'
     ## CaSPAr
     #dataset = 'CaSPAr'; lhourly = True; dataset_kwargs = dict(grid='lcc_snw')
+    ## MergedForcing
+#     dataset = 'MergedForcing'
+#     dataset_kwargs = dict(resolution='CA12'); resampling = 'cubic_spline'
+#     subdataset = 'NRCan'; varlist = ['precip','Tmin','Tmax',]
+#     start_date = '2011-01-01'; end_date = '2011-02-01'
     
     ## WRF requires special treatment
-    dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
-    if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
-    else: from projects.GreatLakes import WRF_exps
-    exp_name = 'max-ctrl'
-#     exp_name = 'ctrl-1'  
-    domain = 2; filetype = 'hydro'
-    dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps)
-    start_date = '1979-01-01'; end_date = '1979-12-31'
-#     start_date = None; end_date = None    
-    target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}transient_{int:s}/climate_forcing/'
-    target_folder_netcdf = '{exp_folder:s}/{grid:s}/{smpl:s}/'  
-#     bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'
-    bias_correction = 'AABC'; bc_varmap = dict(liqwatflx='precip'); obs_name = 'CRU'
-    varlist = ['liqwatflx','pet',]
+#     dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
+#     if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
+#     else: from projects.GreatLakes import WRF_exps
+#     exp_name = 'max-ctrl'
+# #     exp_name = 'ctrl-1'  
+#     domain = 2; filetype = 'hydro'
+#     dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps)
+#     start_date = '1979-01-01'; end_date = '1979-12-31'
+# #     start_date = None; end_date = None    
+#     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}transient_{int:s}/climate_forcing/'
+#     target_folder_netcdf = '{exp_folder:s}/{grid:s}/{smpl:s}/'  
+# #     bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'
+#     bias_correction = 'AABC'; bc_varmap = dict(liqwatflx='precip'); obs_name = 'CRU'
+#     varlist = ['liqwatflx','pet',]
     
     # import dataset module
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
@@ -257,10 +276,17 @@ if __name__ == '__main__':
         print('{exp_name:s}_d{dom:0=2d}'.format(exp_name=exp_name,dom=domain))
         netcdf_name = ds_mod.fileclasses[filetype].dailyfile.format(domain, '{grid:s}')
         bc_folder = exp_folder
+        daily_folder = ds_mod.daily_folder
+    elif dataset == 'MergedForcing':
+        bc_folder = None
+        netcdf_name = '{}_{}_{{var_str:s}}_daily.nc'.format(subdataset,dataset_kwargs['resolution']).lower() # should be lower case
+        sub_mod = import_module('datasets.{0:s}'.format(subdataset))
+        daily_folder = sub_mod.daily_folder
     else:
         exp_folder = None; exp = None; exp_name = None; domain = None
-        netcdf_name = ds_mod.netcdf_filename.format('{var_str:s}')
+        netcdf_name = ds_mod.netcdf_filename.format('{var_str:s}', VAR='{var_str:s}')
         bc_folder = ds_mod.avgfolder
+        daily_folder = ds_mod.daily_folder
         
     ## bias correction
     if bias_correction:
@@ -296,9 +322,9 @@ if __name__ == '__main__':
         gridstr = '' if grid_name.lower() == 'native' else '_'+grid_name.lower()
         bc_str1 = bc_method+'_' if bias_correction else ''
         bc_str2 = '_'+bc_method if bias_correction else ''
-        target_folder = target_folder_netcdf.format(daily=ds_mod.daily_folder,grid=grid_name,smpl=resampling,
+        target_folder = target_folder_netcdf.format(daily=daily_folder,grid=grid_name,smpl=resampling,
                                                     exp_name=exp_name, dom=domain, exp_folder=exp_folder)        
-        filename_novar = netcdf_name.format(var_str1=bc_str1+'{var:s}'+gridstr, grid=bc_str2.lower()+gridstr,) # usually either var or grid
+        filename_novar = netcdf_name.format(var_str=bc_str1+'{var:s}'+gridstr, grid=bc_str2.lower()+gridstr,) # usually either var or grid
         print(("\n***   Regridding '{}' to '{}' (NetCDF format)   ***".format(dataset,grid_name)))
     else:
         raise NotImplementedError
@@ -306,7 +332,9 @@ if __name__ == '__main__':
     
     
     # lazily load dataset (assuming xarray)
-    if lhourly:
+    if dataset == 'MergedForcing':
+        xds = getattr(ds_mod,'load{}_Daily'.format(subdataset))(varlist=varlist, **dataset_kwargs)
+    elif lhourly:
         xds = ds_mod.loadHourlyTimeSeries(varlist=varlist, time_chunks=time_chunks, **dataset_kwargs)
     else:
         xds = ds_mod.loadDailyTimeSeries(varlist=varlist, time_chunks=time_chunks, **dataset_kwargs)

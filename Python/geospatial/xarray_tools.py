@@ -247,11 +247,11 @@ def getCRS(xvar, lraise=True):
     # search for EPSG number
     if crs is None:
         for key,value in atts.items():
-            if key.upper() == 'EPSG': crs = genCRS(value); break    
+            if key.upper() == 'EPSG' and value != 'n/a': crs = genCRS(value); break    
     # search for Proj4 string
     if crs is None:
         for key,value in atts.items():
-            if key.lower() == 'proj4': crs = genCRS(value); break    
+            if key.lower() == 'proj4' and value != 'n/a': crs = genCRS(value); break    
     # check for simple geographic lat/lon system
     if crs is None:
         if isGeoCRS(xvar, lraise=False): # error will be raised below (if desired)
@@ -380,6 +380,62 @@ def rechunkTo2Dslices(xvar):
     xlon = xvar.coords[xvar.attrs['xlon']]; ylat = xvar.coords[xvar.attrs['ylat']]
     return xvar.chunk(chunks={xlon.name:len(xlon),ylat.name:len(ylat)}) # rechunk x/lon and y/lat
          
+         
+def loadXArray(varname=None, varlist=None, folder=None, grid=None, biascorrection=None, resolution=None, 
+               filename_pattern=None, default_varlist=None, resampling=None,
+               lgeoref=True, geoargs=None, chunks=None, time_chunks=8, netcdf_settings=None, **kwargs):
+    ''' function to open a dataset where variables are stored in separate files and non-native grids are stored in subfolders;
+        this mainly applies to high-resolution, high-frequency (daily) observations (e.g. SnoDAS); datasets are opened using xarray '''
+    if chunks is None and grid is None and netcdf_settings and 'chunksizes' in netcdf_settings:
+        cks = netcdf_settings['chunksizes']
+        # use default netCDF chunks or user chunks, but multiply time by time_chunks
+        chunks = dict(time=time_chunks,lat=cks[1],lon=cks[2])
+    if grid: folder = '{}/{}'.format(folder,grid) # non-native grids are stored in sub-folders
+    if resampling: 
+        folder = '{}/{}'.format(folder,resampling) # different resampling options are stored in subfolders
+        # could auto-detect resampling folders at a later point...        
+    # load variables
+    if biascorrection is None and 'resolution' in kwargs: biascorrection = kwargs['resolution'] # allow backdoor
+    if varname and varlist: raise ValueError(varname,varlist)
+    elif varname:
+        # load a single variable
+        if grid: varname = '{}_{}'.format(varname,grid) # also append non-native grid name to varname
+        if biascorrection: varname = '{}_{}'.format(biascorrection,varname) # prepend bias correction method
+        filepath = '{}/{}'.format(folder,filename_pattern.format(VAR=varname, RES=resolution).lower())
+        xds = xr.open_dataset(filepath, chunks=chunks, **kwargs)
+    else:
+        if varlist is None: varlist = default_varlist
+        if grid: # also append non-native grid name to varnames
+            varlist = ['{}_{}'.format(varname,grid) for varname in varlist]
+        if biascorrection: # prepend bias correction method to varnames
+            varlist = ['{}_{}'.format(biascorrection,varname) for varname in varlist]
+        # load multifile dataset (variables are in different files
+        filepaths = ['{}/{}'.format(folder,filename_pattern.format(VAR=varname, RES=resolution).lower()) for varname in varlist]
+        xds = xr.open_mfdataset(filepaths, chunks=chunks, **kwargs)
+        #xds = xr.merge([xr.open_dataset(fp, chunks=chunks, **kwargs) for fp in filepaths])    
+    # add projection info
+    if lgeoref:
+        if geoargs is not None:
+            # check
+            if 'proj4' in xds.attrs and 'proj4' in geoargs:
+                if xds.attrs['proj4'] != geoargs['proj4']:
+                    raise ValueError(xds.attrs['proj4'])
+            # custom options 
+            xds = addGeoReference(xds, **geoargs)
+        # default options            
+        elif 'proj4' in xds.attrs: 
+            # read projection string
+            xds = addGeoReference(xds, proj4_string=xds.attrs['proj4'])
+        elif grid:
+            # load griddef from pickle
+            from geodata.gdal import loadPickledGridDef
+            griddef = loadPickledGridDef(grid=grid)
+            xds = addGeoReference(xds, proj4_string=griddef.projection.ExportToProj4(),) 
+        else: 
+            # use default lat/lon, if it works...
+            xds = addGeoReference(xds,) 
+    return xds
+
 
 if __name__ == '__main__':
     pass
