@@ -238,18 +238,18 @@ if __name__ == '__main__':
     exp_name = None; exp_folder = None; domain = None; WRF_exps = None; filetype = None
     
     ## SnoDAS        
-    dataset = 'SnoDAS' # default...
-#     bias_correction = 'SMBC'; obs_name = 'NRCan' 
-    bc_varmap = dict(liqprec='liqwatflx') # just for testing...
-    dataset_kwargs = dict(grid='on1', bias_correction='rfbc'); varlist = ['snow']
-    resampling = 'nearest'
+#     dataset = 'SnoDAS' # default...
+# #     bias_correction = 'SMBC'; obs_name = 'NRCan' 
+#     bc_varmap = dict(liqprec='liqwatflx') # just for testing...
+#     dataset_kwargs = dict(grid='on1', bias_correction='rfbc'); varlist = ['snow']
+#     resampling = 'nearest'
     ## CaSPAr
     #dataset = 'CaSPAr'; lhourly = True; dataset_kwargs = dict(grid='lcc_snw')
     ## MergedForcing
-#     dataset = 'MergedForcing'
-#     dataset_kwargs = dict(resolution='CA12'); resampling = 'cubic_spline'
-#     subdataset = 'NRCan'; varlist = ['precip','Tmin','Tmax',]
-#     start_date = '2011-01-01'; end_date = '2011-02-01'
+    dataset = 'MergedForcing'
+    dataset_kwargs = dict(resolution='CA12'); resampling = 'cubic_spline'; subdataset = 'NRCan'
+#     start_date = '2011-01-01'; end_date = '2018-01-01'; varlist = ['precip','Tmin','Tmax',]
+    start_date = '2011-01-01'; end_date = '2011-01-08'; varlist = ['precip',]
     
     ## WRF requires special treatment
 #     dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
@@ -312,7 +312,7 @@ if __name__ == '__main__':
         raster_format = 'AAIGrid'        
         filename_novar = raster_name.format(dataset=dataset.lower(), variable='{var:s}',
                                             grid=grid_name.lower(), date='{date:s}') # no date for now...
-        driver_args = dict(significant_digits=4)
+        driver_args = dict(significant_digits=4, fill_value=0., nodata_flag=-9999.)
         print(("\n***   Exporting '{}' to raster format {}   ***\n".format(dataset,raster_format)))
     elif mode.upper() == 'NETCDF':
         # NetCDF output using netCDF4
@@ -412,7 +412,8 @@ if __name__ == '__main__':
             print(("Output folder: '{:s}'\nRaster pattern: '{:s}'".format(target_folder,filename)))
         elif mode.upper() == 'NETCDF':
             print(("NetCDF file: '{:s}'".format(osp.join(target_folder,filename))))        
-         
+        
+        
         # explicitly determine chunking to get complete 2D lat/lon slices
         xvar = rechunkTo2Dslices(xvar)    
           
@@ -428,6 +429,8 @@ if __name__ == '__main__':
             bc_object = None if bc_varname is None else bias_correction
         else:
             bc_object = None; bc_varname = None 
+        
+        
         
         # generate dask execution function
         dask_fct,dummy,dataset = generate_regrid_and_export(xvar, time_coord=time_coord,

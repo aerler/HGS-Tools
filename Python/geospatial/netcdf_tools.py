@@ -193,13 +193,14 @@ def add_var(dst, name, dims, data=None, shape=None, atts=None, dtype=None, zlib=
         if data is not None and isinstance(data,ma.MaskedArray): data._fill_value = fillValue 
     # make sure fillValue is OK (there have been problems...)    
     fillValue = checkFillValue(fillValue, dtype)
-    if fillValue is not None:
-      atts['missing_value'] = fillValue # I use fillValue and missing_value the same way
     
     # create netcdf variable  
     var = dst.createVariable(name, dtype, dims, fill_value=fillValue, **varargs)
     # add attributes
-    if atts: var.setncatts(coerceAtts(atts))
+    if atts: 
+        var.setncatts(coerceAtts(atts))
+        if fillValue is not None: 
+            var.setncattr('missing_value',fillValue) # coerceAtts removes this one... but I prefer it to _FillValue
     # assign coordinate data if given
     if data is not None: var[:] = data   
   

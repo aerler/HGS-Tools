@@ -113,23 +113,30 @@ def projectGeoTrans(src_crs=None, tgt_crs=None, src_transform=None, src_size=Non
 
 ## functions for Dask execution
 
-def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampling='bilinear', 
+def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampling='bilinear', fill_value=None,
                  src_crs=None, src_transform=None, src_size=None, lxarray=False, **kwargs):
     ''' a function to regrid/reproject a data array to a new grid; src attributes can be inferred from xarray '''
     
     # infer source attributes
+    if src_transform is None:
+        src_transform, size = getTransform(data,)
+    else: size = (data.shape[-1],data.shape[-2])
+    if src_size and src_size != size: raise ValueError(src_size,size)
+    else: src_size = size
     if isinstance(data,(DataArray,Variable)):
-        if src_transform is None:
-            src_transform, size = getTransform(data,)
-        else: size = (data.shape[-1],data.shape[-2])
-        if src_size and src_size != size: raise ValueError(src_size,size)
-        else: src_size = size
         if src_crs is None: src_crs = getCRS(data, lraise=True)
         if data.attrs.get('dim_order',None) is False:
             raise NotImplementedError("The x/lon and y/lat axes of this xarray have to be swapped:\n {}".format(data))
-        if isinstance(data,DataArray): data = data.data
+        if isinstance(data,DataArray): data = data.values # don't want dask array anymore...
         else: data = data[:]
-    
+    # fill masked arrays
+    if isinstance(data,np.ma.MaskedArray):
+        if fill_value is not None:
+            data = data.filled(fill_value)
+        elif np.issubdtype(data.dtype, np.inexact):
+            data = data.filled(np.NaN)
+        else:
+            raise NotImplementedError("Regridding of masked integer fields is not yet implemented; conversion to float may be necessary.")
     # N.B.: GDAL convention for data arrays is band,y/lat,x/lon,
     #       but the GDAL size tuple is stored as (x/lon,y/lat)
     if src_size: 
@@ -172,8 +179,8 @@ def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampli
     return tgt_data
 
 
-def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', missing_value=-9999,
-                 missing_flag=None, lmask_invalid=True, lecho=True, loverwrite=True, **driver_args):
+def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', fill_value=-9999,
+                 nodata_flag=None, lmask_invalid=True, lecho=True, loverwrite=True, **driver_args):
     ''' write an array to a raster '''
     if osp.exists(filename) and not loverwrite: 
         if lecho: print("Skipping existing file: {}".format(filename))
@@ -205,12 +212,12 @@ def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', mis
             raise ValueError("Can only infer grid/projection from xarray DataArray.")
           
         if isinstance(data,np.ma.MaskedArray): 
-            data = data.filled(missing_value)
+            data = data.filled(fill_value)
         elif not isinstance(data,np.ndarray): 
             raise TypeError(data)
         
         if lmask_invalid: 
-            data[~np.isfinite(data)] = missing_value
+            data[~np.isfinite(data)] = fill_value # xarray sets missing values to NaN
         
         # fix transform
         if transform.e > 0:
@@ -222,9 +229,9 @@ def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', mis
             data = np.flip(data, axis=-2) # and now flip data along y-axis!
         
         # write data
-        if missing_flag is None: missing_flag = missing_value
+        if nodata_flag is None: nodata_flag = fill_value
         with rio.open(filename, mode='w', driver=driver, crs=crs, transform=transform, width=width, height=height, 
-                      count=count, dtype=str(data.dtype), nodata=missing_flag, **driver_args) as dst:
+                      count=count, dtype=str(data.dtype), nodata=nodata_flag, **driver_args) as dst:
             if count == 1:
                 dst.write(data,1) # GDAL/rasterio bands are one-based
             else:
@@ -237,7 +244,7 @@ def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', mis
   
     
 def write_time_rasters(filepath_pattern, xvar, time_coord=None, crs=None, transform=None, driver='AAIGrid',
-                       time_fmt='%Y%m%d', missing_value=-9999, missing_flag=None, lecho=True, loverwrite=True, **driver_args):
+                       time_fmt='%Y%m%d', fill_value=-9999, nodata_flag=None, lecho=True, loverwrite=True, **driver_args):
     ''' a wrapper that iterates over write_raster in order to write multi-dimensional arrays to 2D rasters; 
         note, however, that this loads all data into memory!
         also note that this implementation assumes iteration over a datetime axis and uses the date
@@ -257,8 +264,8 @@ def write_time_rasters(filepath_pattern, xvar, time_coord=None, crs=None, transf
         # use date to construct file name
         filepath = filepath_pattern.format(pd.to_datetime(date).strftime(time_fmt))
         # command to write raster
-        write_raster(filepath, xvar[i,:,:],crs=crs, transform=transform, driver=driver, missing_value=missing_value, 
-                     missing_flag=missing_flag, lecho=lecho, loverwrite=loverwrite, **driver_args)    
+        write_raster(filepath, xvar[i,:,:],crs=crs, transform=transform, driver=driver, nodata_flag=nodata_flag, 
+                     fill_value=fill_value, lecho=lecho, loverwrite=loverwrite, **driver_args)    
     # done...
     return None
 
@@ -266,7 +273,7 @@ def write_time_rasters(filepath_pattern, xvar, time_coord=None, crs=None, transf
 dummy_array = np.zeros((1,1,1), dtype=np.int8)
 def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_geotrans=None, src_size=None, 
                       tgt_crs=None, tgt_geotrans=None, tgt_size=None, mode='raster2D', resampling='bilinear',
-                      filepath=None, time_coord=None, driver='AAIGrid',missing_value=0., missing_flag=-9999.,
+                      filepath=None, time_coord=None, driver='AAIGrid',fill_value=0., nodata_flag=None,
                       time_fmt='%Y%m%d', ncvar=None, bias_correction=None, bc_varname=None,
                       lecho=True, loverwrite=True, return_dummy=dummy_array, **driver_args):
     ''' a function for use with Dask lazy execution that regrids an array and exports/writes the results 
@@ -297,7 +304,7 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
             time_chunk = time_coord[ts:te] # chunk of time axis that corresponds to this chunk 
         #print(time_chunk)
         write_time_rasters(filepath, data, time_coord=time_chunk, driver=driver, crs=tgt_crs,
-                           transform=tgt_geotrans, missing_value=missing_value, missing_flag=missing_flag, 
+                           transform=tgt_geotrans, fill_value=fill_value, nodata_flag=nodata_flag, 
                            time_fmt=time_fmt, lecho=lecho, loverwrite=loverwrite, **driver_args)
     elif mode.upper() == 'NETCDF':
         # append to existing NetCDF variable
@@ -311,7 +318,7 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
 
 def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=None, filename=None,
                                tgt_crs=None, tgt_geotrans=None, tgt_size=None, resampling='bilinear', 
-                               driver='AAIGrid', missing_value=0., missing_flag=-9999., 
+                               driver='AAIGrid', fill_value=0., nodata_flag=None, 
                                bias_correction=None, bc_varname=None, time_fmt='%Y%m%d',
                                lecho=True, loverwrite=True, **driver_args):
     ''' a function that returns another function, which is suitable for regridding and direct export to disk 
@@ -364,9 +371,22 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
         else:
             dims = xvar.dims[:-2]+(ncds.ylat,ncds.xlon) # geographic dimensions need to be replaced
             shp = xvar.shape[:-2]+tgt_size[::-1]
+            atts = xvar.attrs.copy() # need to update georefs
+            for geoatt in ('xlon','ylat','dx','dy','proj4','WKT','EPSG','is_projected'):
+                atts[geoatt] = ncds.getncattr(geoatt) # created by createGeoNetCDF, so should exist
+            if 'missing_value' in xvar.encoding: 
+                if np.issubdtype(xvar.dtype, np.inexact):
+                    atts['missing_value'] = np.NaN # xarray replaces missing values with NaN, which works well for regridding
+                else:
+                    raise NotImplementedError("WARNING: Regridding of masked integer arrays has not been implemented and may not work yet.")
+                    # N.B.: the code below may be enough to make it work... not sure or we need to recast as float...
+                    atts['missing_value'] = xvar.encoding['missing_value']
+            atts['resampling'] = resampling
             ncvar = add_var(ncds, name=xvar.name, dims=dims, data=None, shape=shp, 
-                            atts=xvar.attrs.copy(), dtype=xvar.dtype, zlib=True,)
-        dataset = ncds 
+                            atts=atts, dtype=xvar.dtype, zlib=True,)
+        
+        dataset = ncds
+        
     else:
         ncvar = None
         dataset = folder
@@ -378,7 +398,7 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
                                  src_crs=src_crs, src_geotrans=src_geotrans, src_size=src_size, 
                                  tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
                                  mode=mode, filepath=filepath, time_coord=time_coord, ncvar=ncvar,
-                                 driver=driver,missing_value=missing_value, missing_flag=missing_flag, 
+                                 driver=driver,fill_value=fill_value, nodata_flag=nodata_flag, 
                                  bias_correction=bias_correction, bc_varname=bc_varname, time_fmt=time_fmt,                               
                                  lecho=lecho, loverwrite=loverwrite, return_dummy=dummy_array, **driver_args)
     

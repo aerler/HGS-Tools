@@ -382,7 +382,7 @@ def rechunkTo2Dslices(xvar):
          
          
 def loadXArray(varname=None, varlist=None, folder=None, grid=None, biascorrection=None, resolution=None, 
-               filename_pattern=None, default_varlist=None, resampling=None,
+               filename_pattern=None, default_varlist=None, resampling=None, mask_and_scale=True,
                lgeoref=True, geoargs=None, chunks=None, time_chunks=8, netcdf_settings=None, **kwargs):
     ''' function to open a dataset where variables are stored in separate files and non-native grids are stored in subfolders;
         this mainly applies to high-resolution, high-frequency (daily) observations (e.g. SnoDAS); datasets are opened using xarray '''
@@ -402,7 +402,7 @@ def loadXArray(varname=None, varlist=None, folder=None, grid=None, biascorrectio
         if grid: varname = '{}_{}'.format(varname,grid) # also append non-native grid name to varname
         if biascorrection: varname = '{}_{}'.format(biascorrection,varname) # prepend bias correction method
         filepath = '{}/{}'.format(folder,filename_pattern.format(VAR=varname, RES=resolution).lower())
-        xds = xr.open_dataset(filepath, chunks=chunks, **kwargs)
+        xds = xr.open_dataset(filepath, chunks=chunks, mask_and_scale=mask_and_scale, **kwargs)
     else:
         if varlist is None: varlist = default_varlist
         if grid: # also append non-native grid name to varnames
@@ -411,7 +411,7 @@ def loadXArray(varname=None, varlist=None, folder=None, grid=None, biascorrectio
             varlist = ['{}_{}'.format(biascorrection,varname) for varname in varlist]
         # load multifile dataset (variables are in different files
         filepaths = ['{}/{}'.format(folder,filename_pattern.format(VAR=varname, RES=resolution).lower()) for varname in varlist]
-        xds = xr.open_mfdataset(filepaths, chunks=chunks, **kwargs)
+        xds = xr.open_mfdataset(filepaths, chunks=chunks, mask_and_scale=mask_and_scale, **kwargs)
         #xds = xr.merge([xr.open_dataset(fp, chunks=chunks, **kwargs) for fp in filepaths])    
     # add projection info
     if lgeoref:
