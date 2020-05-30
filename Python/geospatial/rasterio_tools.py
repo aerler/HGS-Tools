@@ -383,7 +383,7 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
                     atts['missing_value'] = xvar.encoding['missing_value']
             atts['resampling'] = resampling
             ncvar = add_var(ncds, name=xvar.name, dims=dims, data=None, shape=shp, 
-                            atts=atts, dtype=xvar.dtype, zlib=True,)
+                            atts=atts, dtype=xvar.dtype, zlib=True, **driver_args)
         
         dataset = ncds
         

@@ -369,50 +369,75 @@ def addGeoReference(xds, proj4_string=None, x_coords=None, y_coords=None):
     return xds
 
 
-def rechunkTo2Dslices(xvar):
+def rechunkTo2Dslices(xvar, **other_chunks):
     ''' convenience function to rechunk an xarray so that the horizontal dimensions are contiguous (not chunked)
         N.B.: rechunking in a way that does not simply combine existing chunks seems to cause all chunks/data
               to be loaded into memory (we want to avoid that); also, chunks are defined by their size, not by 
               their number, i.e. the definition for one large 2D chunk is (len(y),len(x)) and *not* (1,1) '''
     if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
         raise TypeError(xvar)
-    # find horizontal/map dimentions
-    xlon = xvar.coords[xvar.attrs['xlon']]; ylat = xvar.coords[xvar.attrs['ylat']]
-    return xvar.chunk(chunks={xlon.name:len(xlon),ylat.name:len(ylat)}) # rechunk x/lon and y/lat
+    # old chunk sizes
+    chunks = {dim:cs for dim,cs in zip(xvar.sizes,xvar.encoding['chunksizes'])}
+    chunks.update(other_chunks)
+    # find horizontal/map dimensions
+    xlon = xvar.attrs['xlon']; ylat = xvar.attrs['ylat'] 
+    chunks[xlon] = xvar.sizes[xlon]; chunks[ylat] = xvar.sizes[ylat]
+    return xvar.chunk(chunks=chunks) # rechunk x/lon and y/lat
+  
+def autoChunkXArray(xds, **kwargs):
+    ''' apply auto-chunking to an xarray object, like a Dataset or DataArray '''
+    from geospatial.netcdf_tools import autoChunk
+    dims = ('time', xds.attrs.get('ylat','y'), xds.attrs.get('xlon','x'))
+    dims = [dim for dim in dims if dim in xds.sizes]
+    shape = [xds.sizes[dim] for dim in dims]
+    chunks = autoChunk(shape, **kwargs)
+    chunks = {dim:c for dim,c in zip(dims,chunks)}
+    return xds.chunk(chunks=chunks)
          
          
-def loadXArray(varname=None, varlist=None, folder=None, grid=None, biascorrection=None, resolution=None, 
-               filename_pattern=None, default_varlist=None, resampling=None, mask_and_scale=True,
-               lgeoref=True, geoargs=None, chunks=None, time_chunks=8, netcdf_settings=None, **kwargs):
+def loadXArray(varname=None, varlist=None, folder=None, grid=None, bias_correction=None, resolution=None, varatts=None, 
+               filename_pattern=None, default_varlist=None, resampling=None, mask_and_scale=True, varmap=None,
+               lgeoref=True, geoargs=None, chunks=None, lautoChunk=False, **kwargs):
     ''' function to open a dataset where variables are stored in separate files and non-native grids are stored in subfolders;
         this mainly applies to high-resolution, high-frequency (daily) observations (e.g. SnoDAS); datasets are opened using xarray '''
-    if chunks is None and grid is None and netcdf_settings and 'chunksizes' in netcdf_settings:
-        cks = netcdf_settings['chunksizes']
-        # use default netCDF chunks or user chunks, but multiply time by time_chunks
-        chunks = dict(time=time_chunks,lat=cks[1],lon=cks[2])
-    if grid: folder = '{}/{}'.format(folder,grid) # non-native grids are stored in sub-folders
-    if resampling: 
-        folder = '{}/{}'.format(folder,resampling) # different resampling options are stored in subfolders
-        # could auto-detect resampling folders at a later point...        
+    if grid: 
+        folder = '{}/{}'.format(folder,grid) # non-native grids are stored in sub-folders
+        if resampling: 
+            folder = '{}/{}'.format(folder,resampling) # different resampling options are stored in subfolders
+            # could auto-detect resampling folders at a later point...        
     # load variables
-    if biascorrection is None and 'resolution' in kwargs: biascorrection = kwargs['resolution'] # allow backdoor
+    if bias_correction is None and 'resolution' in kwargs: bias_correction = kwargs['resolution'] # allow backdoor
     if varname and varlist: raise ValueError(varname,varlist)
     elif varname:
-        # load a single variable
+        varlist = [varname] # load a single variable
+    elif varlist is None:
+        varlist = default_varlist
+    # apply varmap in reverse to varlist
+    if varmap is None and varatts is not None:
+        varmap = {name:atts.get('name',name) for name,atts in varatts.items()}
+    if varmap is not None:
+        ravmap = {value:key for key,value in varmap.items()}
+        varlist = [ravmap.get(varname,varname) for varname in varlist]
+    # construct dataset
+    xds = None
+    for varname in varlist:
         if grid: varname = '{}_{}'.format(varname,grid) # also append non-native grid name to varname
-        if biascorrection: varname = '{}_{}'.format(biascorrection,varname) # prepend bias correction method
+        if bias_correction: varname = '{}_{}'.format(bias_correction,varname) # prepend bias correction method
         filepath = '{}/{}'.format(folder,filename_pattern.format(VAR=varname, RES=resolution).lower())
-        xds = xr.open_dataset(filepath, chunks=chunks, mask_and_scale=mask_and_scale, **kwargs)
-    else:
-        if varlist is None: varlist = default_varlist
-        if grid: # also append non-native grid name to varnames
-            varlist = ['{}_{}'.format(varname,grid) for varname in varlist]
-        if biascorrection: # prepend bias correction method to varnames
-            varlist = ['{}_{}'.format(biascorrection,varname) for varname in varlist]
-        # load multifile dataset (variables are in different files
-        filepaths = ['{}/{}'.format(folder,filename_pattern.format(VAR=varname, RES=resolution).lower()) for varname in varlist]
-        xds = xr.open_mfdataset(filepaths, chunks=chunks, mask_and_scale=mask_and_scale, **kwargs)
-        #xds = xr.merge([xr.open_dataset(fp, chunks=chunks, **kwargs) for fp in filepaths])    
+        ds = xr.open_dataset(filepath, chunks=chunks, mask_and_scale=mask_and_scale, **kwargs)
+        # N.B.: the use of open_mfdataset is problematic, because it does not play nicely with chunking - 
+        #       by default it loads everything as one chunk, and it only respects chunking, if chunks are 
+        #       specified explicitly at the initial load time (later chunking seems to have no effect!)
+        # merge into new dataset
+        if xds is None: xds = ds
+        else: xds.update(ds)
+    #xds = xr.merge([xr.open_dataset(fp, chunks=chunks, **kwargs) for fp in filepaths]) 
+    # rewrite chunking, if desired (this happens here, so we can infer chunking from dimension sizes)
+    if lautoChunk:
+        xds = autoChunkXArray(xds)
+    # rename and apply attributes
+    if varatts or varmap:
+        xds = updateVariableAttrs(xds, varatts=varatts, varmap=varmap)
     # add projection info
     if lgeoref:
         if geoargs is not None:

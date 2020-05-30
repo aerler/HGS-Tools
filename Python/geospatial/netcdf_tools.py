@@ -44,6 +44,30 @@ except:
 
 ## helper functions
 
+# def autoChunk(shape, min_tiles=8, tile_size=256, total_size=524288):
+# def autoChunk(shape, min_tiles=8, tile_size=128, total_size=65536):
+def autoChunk(shape, min_tiles=16, tile_size=64, total_size=32768):
+    ''' function to find good chunks based on simple heuristics 
+        This could be revised using the script linked here:
+        https://www.unidata.ucar.edu/blogs/developer/en/entry/chunking_data_choosing_shapes
+    '''
+    ndim = len(shape) 
+    if ndim == 2: shp_2d = shape
+    elif ndim == 3: shp_2d = shape[1:] # assuming time is the outermost...
+    else:
+        raise NotImplementedError(shape)
+    chunks = (1,1); cs = tile_size*2
+    # find smaller decomposition, so we have at least 8 tiles
+    while np.prod(chunks) < min_tiles:
+        cs /= 2 
+        chunks = [int(np.ceil(s/np.ceil(s/cs))) for s in shp_2d]
+    if ndim == 3:
+        chunks = [int(total_size/np.prod(chunks))] + chunks # assign remaining size to time dimension
+    elif ndim > 3:
+        raise NotImplementedError(shape)      
+    return chunks
+  
+    
 def checkFillValue(fillValue, dtype):
     ''' check a fill value and either return a valid value or raise an exception '''
     
@@ -139,7 +163,7 @@ def add_coord(dst, name, data=None, length=None, atts=None, dtype=None, zlib=Tru
     return coord
 
 
-def add_var(dst, name, dims, data=None, shape=None, atts=None, dtype=None, zlib=True, fillValue=None, **kwargs):
+def add_var(dst, name, dims, data=None, shape=None, atts=None, dtype=None, zlib=True, smart_chunks=True, fillValue=None, **kwargs):
     ''' function to add a Variable to a NetCDF Dataset; returns the Variable reference; 
         all remaining kwargs are passed on to dst.createVariable() '''
     
@@ -193,6 +217,10 @@ def add_var(dst, name, dims, data=None, shape=None, atts=None, dtype=None, zlib=
         if data is not None and isinstance(data,ma.MaskedArray): data._fill_value = fillValue 
     # make sure fillValue is OK (there have been problems...)    
     fillValue = checkFillValue(fillValue, dtype)
+    
+    # set chunks based on reasonable division of domain
+    if smart_chunks and len(dims) > 1 and 'chunksizes' not in varargs:
+        varargs['chunksizes'] = autoChunk(shape)
     
     # create netcdf variable  
     var = dst.createVariable(name, dtype, dims, fill_value=fillValue, **varargs)

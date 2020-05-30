@@ -90,7 +90,7 @@ if __name__ == '__main__':
 #     project = 'CMB'
 #     project = 'ARB'
 #     start_date = None; end_date = None
-#     start_date = '2014-01-01'; end_date = '2014-04-01'
+# #     start_date = '2014-01-01'; end_date = '2014-04-01'
 #     grid_name  = 'arb3'    
     ## Fraser's Ontario domain
 #     project = 'WRF' # load grid from pickle
@@ -229,7 +229,7 @@ if __name__ == '__main__':
     # some defaults for most datasets
     time_chunks = 8 # typically not much speed-up beyond 8
     dataset_kwargs = dict(); subdataset = None 
-    bias_correction = None; bc_varmap = dict(); obs_name = None
+    bias_correction = None; bc_varmap = dict(); obs_name = None; bc_method = None
     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/climate_forcing/'
     raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
     target_folder_netcdf = '{daily:s}/{grid:s}/{smpl:s}/'
@@ -238,29 +238,33 @@ if __name__ == '__main__':
     exp_name = None; exp_folder = None; domain = None; WRF_exps = None; filetype = None
     
     ## SnoDAS        
-#     dataset = 'SnoDAS' # default...
-# #     bias_correction = 'SMBC'; obs_name = 'NRCan' 
-#     bc_varmap = dict(liqprec='liqwatflx') # just for testing...
-#     dataset_kwargs = dict(grid='on1', bias_correction='rfbc'); varlist = ['snow']
-#     resampling = 'nearest'
+    dataset = 'SnoDAS' # default...
+#     bias_correction = 'SMBC'; obs_name = 'NRCan' 
+    bc_varmap = dict(liqprec='liqwatflx') # just for testing...
+    varlist = ['snow']; bc_method = 'rfbc'
+    dataset_kwargs = dict(grid='on1', bias_correction=bc_method)
+    resampling = 'bilinear'
+#     end_date = '2011-02-01'
     ## CaSPAr
     #dataset = 'CaSPAr'; lhourly = True; dataset_kwargs = dict(grid='lcc_snw')
     ## MergedForcing
-    dataset = 'MergedForcing'
-    dataset_kwargs = dict(resolution='CA12'); resampling = 'cubic_spline'; subdataset = 'NRCan'
-#     start_date = '2011-01-01'; end_date = '2018-01-01'; varlist = ['precip','Tmin','Tmax',]
-    start_date = '2011-01-01'; end_date = '2011-01-08'; varlist = ['precip',]
+#     dataset = 'MergedForcing'
+#     dataset_kwargs = dict(resolution='CA12'); resampling = 'cubic_spline'; subdataset = 'NRCan'
+# #     start_date = '2000-01-01'; end_date = '2018-01-01'; varlist = ['precip','Tmin','Tmax',]    
+# #     start_date = '2011-01-01'; end_date = '2018-01-01'; varlist = ['precip','Tmin','Tmax',]
+#     start_date = '2011-01-01'; end_date = '2011-02-01'; varlist = ['precip',]
     
     ## WRF requires special treatment
 #     dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
 #     if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
 #     else: from projects.GreatLakes import WRF_exps
+# #     exp_name = os.getenv('WRFEXP')
 #     exp_name = 'max-ctrl'
 # #     exp_name = 'ctrl-1'  
 #     domain = 2; filetype = 'hydro'
 #     dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps)
-#     start_date = '1979-01-01'; end_date = '1979-12-31'
-# #     start_date = None; end_date = None    
+# #     start_date = '1979-01-01'; end_date = '1979-12-31'
+#     start_date = None; end_date = None    
 #     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}transient_{int:s}/climate_forcing/'
 #     target_folder_netcdf = '{exp_folder:s}/{grid:s}/{smpl:s}/'  
 # #     bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'
@@ -290,6 +294,7 @@ if __name__ == '__main__':
         
     ## bias correction
     if bias_correction:
+        assert bc_method is None, "'bc_method' can only be set manually as a varname extension,  if no explicit bias_correction is applied"
         # load pickle from file
         from processing.bc_methods import loadBCpickle
         bc_method = bias_correction
@@ -304,7 +309,7 @@ if __name__ == '__main__':
         # raster output using rasterio
         scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
         gridstr = dataset.lower() if grid_name.lower() == 'native' else grid_name.lower()
-        bc_str = bc_method+'_' if bias_correction else ''
+        bc_str = bc_method+'_' if bc_method else ''
         time_interval = 'hourly' if lhourly else 'daily'
         hgs_root = os.getenv('HGS_ROOT', os.getenv('DATA_ROOT')+'HGS/')
         target_folder = target_folder_ascii.format(root=hgs_root, proj=project, grid=gridstr, name=dataset, int=time_interval, 
@@ -320,11 +325,12 @@ if __name__ == '__main__':
 #         varlist = ds_mod.binary_varlist
 #         varlist = ['liqwatflx','pet']
         gridstr = '' if grid_name.lower() == 'native' else '_'+grid_name.lower()
-        bc_str1 = bc_method+'_' if bias_correction else ''
-        bc_str2 = '_'+bc_method if bias_correction else ''
+        bc_str1 = bc_method+'_' if bc_method else ''
+        bc_str2 = '_'+bc_method if bc_method else ''
         target_folder = target_folder_netcdf.format(daily=daily_folder,grid=grid_name,smpl=resampling,
                                                     exp_name=exp_name, dom=domain, exp_folder=exp_folder)        
         filename_novar = netcdf_name.format(var_str=bc_str1+'{var:s}'+gridstr, grid=bc_str2.lower()+gridstr,) # usually either var or grid
+        #driver_args = dict(least_significant_digit=4)
         print(("\n***   Regridding '{}' to '{}' (NetCDF format)   ***".format(dataset,grid_name)))
     else:
         raise NotImplementedError
@@ -415,7 +421,7 @@ if __name__ == '__main__':
         
         
         # explicitly determine chunking to get complete 2D lat/lon slices
-        xvar = rechunkTo2Dslices(xvar)    
+        xvar = rechunkTo2Dslices(xvar, time=time_chunks)    
           
         # apply a scaling factor
         xvar /= scalefactor
@@ -460,7 +466,7 @@ if __name__ == '__main__':
         print(("Chunks (time only): {}".format(xvar.chunks[0])))
     
     #     with dask.set_options(scheduler='processes'):      
-        with dask.config.set(pool=ThreadPool(1)):    
+        with dask.config.set(pool=ThreadPool(4)):    
             dask.compute(*work_load)
             
         #print("\nDummy output:")
