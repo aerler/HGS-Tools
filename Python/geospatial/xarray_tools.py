@@ -8,6 +8,7 @@ Utility functions to extract data from xarray Dataset or DataArray classes.
 
 from warnings import warn
 
+import os
 import numpy as np
 import xarray as xr
 import netCDF4 as nc
@@ -402,9 +403,28 @@ def loadXArray(varname=None, varlist=None, folder=None, grid=None, bias_correcti
         this mainly applies to high-resolution, high-frequency (daily) observations (e.g. SnoDAS); datasets are opened using xarray '''
     if grid: 
         folder = '{}/{}'.format(folder,grid) # non-native grids are stored in sub-folders
+        # auto-detect resampling folders 
+        if resampling is None:
+            old_folder = os.getcwd()
+            os.chdir(folder)
+            # inspect folder
+            nc_file = False; default_folder = None; folder_list = []
+            for item in os.listdir():
+                if os.path.isfile(item):
+                    if item.endswith('.nc'): nc_file = True
+                elif os.path.isdir(item):
+                    if item.lower() == 'default': default_folder = item
+                    folder_list.append(item)
+                else:
+                    raise IOError(item)
+            os.chdir(old_folder) # return
+            # evaluate findings
+            if nc_file: resampling = None
+            elif default_folder: resampling = default_folder
+            elif len(folder_list) == 1: resampling = folder_list[0]
         if resampling: 
             folder = '{}/{}'.format(folder,resampling) # different resampling options are stored in subfolders
-            # could auto-detect resampling folders at a later point...        
+            #             
     # load variables
     if bias_correction is None and 'resolution' in kwargs: bias_correction = kwargs['resolution'] # allow backdoor
     if varname and varlist: raise ValueError(varname,varlist)
