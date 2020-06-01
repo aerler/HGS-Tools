@@ -80,7 +80,7 @@ if __name__ == '__main__':
     loverwrite = True
     lhourly = False
     time_chunks = 1 # typically not much speed-up beyond 8
-    resampling = 'average'
+    resampling = 'bilinear'
     lexec = True # actually write rasters or just include file
     ## WRF grids
 #     project = 'WRF'
@@ -238,21 +238,21 @@ if __name__ == '__main__':
     exp_name = None; exp_folder = None; domain = None; WRF_exps = None; filetype = None
     
     ## SnoDAS        
-    dataset = 'SnoDAS' # default...
-#     bias_correction = 'SMBC'; obs_name = 'NRCan' 
-    bc_varmap = dict(liqprec='liqwatflx') # just for testing...
-    varlist = ['snow']; bc_method = 'rfbc'
-    dataset_kwargs = dict(grid='on1', bias_correction=bc_method)
-    resampling = 'bilinear'
+#     dataset = 'SnoDAS' # default...
+# #     bias_correction = 'SMBC'; obs_name = 'NRCan' 
+#     bc_varmap = dict(liqprec='liqwatflx') # just for testing...
+#     varlist = ['snow']; bc_method = 'rfbc'
+#     dataset_kwargs = dict(grid='on1', bias_correction=bc_method)
+#     resampling = 'bilinear'
 #     end_date = '2011-02-01'
     ## CaSPAr
     #dataset = 'CaSPAr'; lhourly = True; dataset_kwargs = dict(grid='lcc_snw')
     ## MergedForcing
-#     dataset = 'MergedForcing'
-#     dataset_kwargs = dict(resolution='CA12'); resampling = 'cubic_spline'; subdataset = 'NRCan'
-# #     start_date = '2000-01-01'; end_date = '2018-01-01'; varlist = ['precip','Tmin','Tmax',]    
-# #     start_date = '2011-01-01'; end_date = '2018-01-01'; varlist = ['precip','Tmin','Tmax',]
-#     start_date = '2011-01-01'; end_date = '2011-02-01'; varlist = ['precip',]
+    dataset = 'MergedForcing'; subdataset = dataset; dataset_kwargs = dict(grid='son2')
+    #dataset_kwargs = dict(resolution='CA12'); resampling = 'cubic_spline'; subdataset = 'NRCan'
+#     start_date = '2000-01-01'; end_date = '2018-01-01'; varlist = ['precip','Tmin','Tmax',]    
+    start_date = '2011-01-01'; end_date = '2017-12-13'; varlist = ['liqwatflx',]
+#     start_date = '2011-01-01'; end_date = '2011-02-01'; varlist = ['liqwatflx',]
     
     ## WRF requires special treatment
 #     dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
@@ -275,6 +275,7 @@ if __name__ == '__main__':
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
     
     # get some experiment/dataset info
+    exp_folder = None; exp = None; exp_name = None; domain = None; bc_folder = None
     if dataset == 'WRF':
         exp_folder,exp,exp_name,domain = ds_mod.getFolderNameDomain(experiment=exp_name, domains=domain, exps=WRF_exps, lreduce=True)
         print('{exp_name:s}_d{dom:0=2d}'.format(exp_name=exp_name,dom=domain))
@@ -282,12 +283,9 @@ if __name__ == '__main__':
         bc_folder = exp_folder
         daily_folder = ds_mod.daily_folder
     elif dataset == 'MergedForcing':
-        bc_folder = None
-        netcdf_name = '{}_{}_{{var_str:s}}_daily.nc'.format(subdataset,dataset_kwargs['resolution']).lower() # should be lower case
-        sub_mod = import_module('datasets.{0:s}'.format(subdataset))
-        daily_folder = sub_mod.daily_folder
+        daily_folder,netcdf_name =ds_mod.getFolderFileName(varname='{var_str:s}', dataset=subdataset, resolution=dataset_kwargs.get('resolution',None))
+        print(daily_folder,netcdf_name)
     else:
-        exp_folder = None; exp = None; exp_name = None; domain = None
         netcdf_name = ds_mod.netcdf_filename.format('{var_str:s}', VAR='{var_str:s}')
         bc_folder = ds_mod.avgfolder
         daily_folder = ds_mod.daily_folder
@@ -302,8 +300,8 @@ if __name__ == '__main__':
         
     ## define export parameters
     driver_args = dict(); scalefactor = 1.; raster_format = None
-    mode = 'NetCDF'
-#     mode = 'raster2d'
+#     mode = 'NetCDF'
+    mode = 'raster2d'
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
