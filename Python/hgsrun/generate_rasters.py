@@ -473,6 +473,7 @@ if __name__ == '__main__':
     
         if mode.upper() == 'NETCDF':
             dataset.setncattr('resampling',resampling)
+            for var in dataset.data_vars.values(): var.attrs['resampling'] = resampling
             dataset.close()
         
         end_var = time()

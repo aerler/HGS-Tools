@@ -385,15 +385,16 @@ def rechunkTo2Dslices(xvar, **other_chunks):
     chunks[xlon] = xvar.sizes[xlon]; chunks[ylat] = xvar.sizes[ylat]
     return xvar.chunk(chunks=chunks) # rechunk x/lon and y/lat
   
-def autoChunkXArray(xds, **kwargs):
-    ''' apply auto-chunking to an xarray object, like a Dataset or DataArray '''
+def autoChunkXArray(xds, chunks=None, **kwargs):
+    ''' apply auto-chunking to an xarray object, like a Dataset or DataArray (chunks kw arg can override) '''
     from geospatial.netcdf_tools import autoChunk
     dims = ('time', xds.attrs.get('ylat','y'), xds.attrs.get('xlon','x'))
     dims = [dim for dim in dims if dim in xds.sizes]
     shape = [xds.sizes[dim] for dim in dims]
-    chunks = autoChunk(shape, **kwargs)
-    chunks = {dim:c for dim,c in zip(dims,chunks)}
-    return xds.chunk(chunks=chunks)
+    cks = autoChunk(shape, **kwargs)
+    cks = {dim:c for dim,c in zip(dims,cks)}
+    if chunks: cks.update(chunks) # manually/explicitly specified chunks override 
+    return xds.chunk(chunks=cks)
          
          
 def loadXArray(varname=None, varlist=None, folder=None, grid=None, bias_correction=None, resolution=None, varatts=None, 
@@ -454,7 +455,7 @@ def loadXArray(varname=None, varlist=None, folder=None, grid=None, bias_correcti
     #xds = xr.merge([xr.open_dataset(fp, chunks=chunks, **kwargs) for fp in filepaths]) 
     # rewrite chunking, if desired (this happens here, so we can infer chunking from dimension sizes)
     if lautoChunk:
-        xds = autoChunkXArray(xds)
+        xds = autoChunkXArray(xds, chunks=chunks)
     # rename and apply attributes
     if varatts or varmap:
         xds = updateVariableAttrs(xds, varatts=varatts, varmap=varmap)
