@@ -12,6 +12,7 @@ and Python 3 compatible.
 import os
 import os.path as osp
 import netCDF4 as nc # netCDF4-python module: Dataset is probably all we need
+import pandas as pd
 # N.B.: most of the functions simply take a Dataset object as the first argument
 from six import string_types # for testing string in Python 2 and 3
 import collections as col
@@ -331,6 +332,21 @@ def interprete_time_units(units):
     # return various translations
     return unit_name,units,dt_code,date_fmt
 
+def addTimeStamps(dataset, time='time', units=None, atts=None):
+    ''' add human-readable time-stamps to NetCDF dataset based on datetime64 axis'''
+    # settings
+    if atts is None: atts = dict(name=time+'_stamp', units='', long_name='Time Stamp')
+    # load existing time coordinate
+    nc_unit_str = dataset.variables[time].getncattr('units')
+    dt_coord = nc.num2date(dataset.variables[time][:], units=nc_unit_str) # load as datetime64
+    # figure out target format
+    if units is None: units = nc_unit_str.split()[0]
+    unit_name,units,ts_dt_code,date_fmt = interprete_time_units(units); del unit_name, date_fmt
+    tsdata = np.stack([str(t) for t in dt_coord.astype('datetime64[{}]'.format(ts_dt_code))], axis=0)          
+    # create NC variable
+    tsnc = add_var(dataset, atts['name'], dims=('time',), data=tsdata, atts=atts, zlib=True, ) # daily time-stamp
+    # add time-stamps
+    return tsnc
 
 def add_time_coord(dst, data, name=None, units='D', atts=None, ts_atts=None, date_fmt=None, 
                    dtype=None,ltimestamp=True, zlib=True, **kwargs):

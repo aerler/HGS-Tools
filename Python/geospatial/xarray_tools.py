@@ -399,7 +399,7 @@ def autoChunkXArray(xds, chunks=None, **kwargs):
          
 def loadXArray(varname=None, varlist=None, folder=None, grid=None, bias_correction=None, resolution=None, varatts=None, 
                filename_pattern=None, default_varlist=None, resampling=None, mask_and_scale=True, varmap=None,
-               lgeoref=True, geoargs=None, chunks=None, lautoChunk=False, **kwargs):
+               lgeoref=True, geoargs=None, chunks=None, lautoChunk=False, lskip=False, **kwargs):
     ''' function to open a dataset where variables are stored in separate files and non-native grids are stored in subfolders;
         this mainly applies to high-resolution, high-frequency (daily) observations (e.g. SnoDAS); datasets are opened using xarray '''
     if grid: 
@@ -444,15 +444,19 @@ def loadXArray(varname=None, varlist=None, folder=None, grid=None, bias_correcti
     for varname in varlist:
         if grid: varname = '{}_{}'.format(varname,grid) # also append non-native grid name to varname
         if bias_correction: varname = '{}_{}'.format(bias_correction,varname) # prepend bias correction method
-        filepath = '{}/{}'.format(folder,filename_pattern.format(VAR=varname, RES=resolution).lower())
-        ds = xr.open_dataset(filepath, chunks=chunks, mask_and_scale=mask_and_scale, **kwargs)
-        # N.B.: the use of open_mfdataset is problematic, because it does not play nicely with chunking - 
-        #       by default it loads everything as one chunk, and it only respects chunking, if chunks are 
-        #       specified explicitly at the initial load time (later chunking seems to have no effect!)
-        # merge into new dataset
-        if xds is None: xds = ds
-        else: xds.update(ds)
-    #xds = xr.merge([xr.open_dataset(fp, chunks=chunks, **kwargs) for fp in filepaths]) 
+        filename = filename_pattern.format(VAR=varname, RES=resolution).lower()
+        filepath = '{}/{}'.format(folder,filename)
+        if os.path.exists(filepath):
+            # load dataset
+            ds = xr.open_dataset(filepath, chunks=chunks, mask_and_scale=mask_and_scale, **kwargs)
+            # N.B.: the use of open_mfdataset is problematic, because it does not play nicely with chunking - 
+            #       by default it loads everything as one chunk, and it only respects chunking, if chunks are 
+            #       specified explicitly at the initial load time (later chunking seems to have no effect!)
+            # merge into new dataset
+            if xds is None: xds = ds
+            else: xds.update(ds)
+        elif not lskip:
+            raise IOError("The dataset file '{}' was not found in folder:\n '{}".format(filename,folder))
     # rewrite chunking, if desired (this happens here, so we can infer chunking from dimension sizes)
     if lautoChunk:
         xds = autoChunkXArray(xds, chunks=chunks)
