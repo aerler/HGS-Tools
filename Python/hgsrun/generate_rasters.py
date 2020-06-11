@@ -82,61 +82,46 @@ if __name__ == '__main__':
     time_chunks = 1 # typically not much speed-up beyond 8
     resampling = 'bilinear'
     lexec = True # actually write rasters or just include file
-    ## WRF grids
-#     project = 'WRF'
-#     start_date = '2010-08-01'; end_date = '2015-07-31'
-# #     start_date = None; end_date = None
-#     grid_name  = 'wc2_d01'    
-#     project = 'CMB'
-#     project = 'ARB'
-#     start_date = None; end_date = None
-# #     start_date = '2014-01-01'; end_date = '2014-04-01'
-#     grid_name  = 'arb3'    
+   # WRF grids
+    project = 'WRF'
+    #grid_name  = 'wc2_d01'    
+    #project = 'CMB'
+    project = 'ARB'
+    grid_name  = 'arb3'    
     ## Fraser's Ontario domain
 #     project = 'WRF' # load grid from pickle
-# #     start_date = '2010-12-13'; end_date = None
 # #     grid_name = 'glb1_d02'    
 #     start_date = None; end_date = None
 #     grid_name = 'glb1_d01'    
-#     start_date = '2010-12-13'; end_date = None
 #     project = 'Geo'
 #     grid_name = 'on1'
-# #     start_date = '2014-01-01'; end_date = '2014-02-01'
 #     start_date = None; end_date = None
 #     grid_name  = 'cmb1'    
 #     mode = 'NetCDF'
     ## generate a full SnoDAS raster
 #     project = 'native'
-#     start_date = '2014-01-01'; end_date = '2014-01-05'
 #     grid_name  = 'native'
     ## fast test config
 #     project = 'SON'
-#     start_date = '2013-01-01'; end_date = '2013-01-31'
 #     grid_name  = 'son1'
     ## config for Hugo's domain in Quebec
 #     project = 'Hugo'
-#     start_date = '2011-01-01'; end_date = '2018-12-31'
 #     grid_name = 'hd1'
 #     mode = 'NetCDF'
     ## operational config for GRW
 #     project = 'GRW'
-#     start_date = '2011-01-01'; end_date = '2018-12-31'
 #     grid_name  = 'grw1'
     ## test config for GRW
 #     project = 'GRW'
-#     start_date = '2012-01-01'; end_date = '2012-03-01'
 #     grid_name  = 'grw2'; resampling = 'nearest'; #source_grid = 'grw1'
     ## operational config for SON2
-    project = 'SON'
-    start_date = '2011-01-01'; end_date = None
-    grid_name  = 'son2'
+#     project = 'SON'
+#     grid_name  = 'son2'
     ## 
 #     project = 'SNW'
-#     start_date = '2017-09-11T12'; end_date = None
 #     grid_name  = 'snw2'
     ## operational config for ASB2
 #     project = 'ASB'
-#     start_date = '2010-01-01'; end_date = None
 #     grid_name  = 'asb2'
 
     ## define target grid/projection
@@ -235,7 +220,7 @@ if __name__ == '__main__':
     target_folder_netcdf = '{daily:s}/{grid:s}/{smpl:s}/'
     
     # dummy variables for WRF
-    exp_name = None; exp_folder = None; domain = None; WRF_exps = None; filetype = None
+    exp_name = None; domain = None; WRF_exps = None; filetype = None
     
     ## SnoDAS        
 #     dataset = 'SnoDAS' # default...
@@ -248,34 +233,34 @@ if __name__ == '__main__':
     ## CaSPAr
     #dataset = 'CaSPAr'; lhourly = True; dataset_kwargs = dict(grid='lcc_snw')
     ## MergedForcing
-    dataset = 'MergedForcing'; subdataset = dataset; dataset_kwargs = dict(grid='son2')
-    #dataset_kwargs = dict(resolution='CA12'); resampling = 'cubic_spline'; subdataset = 'NRCan'
-#     start_date = '2000-01-01'; end_date = '2018-01-01'; varlist = ['precip','Tmin','Tmax',]    
-    start_date = '2011-01-01'; end_date = '2017-12-13'; varlist = ['liqwatflx',]
-#     start_date = '2011-01-01'; end_date = '2011-02-01'; varlist = ['liqwatflx',]
+#     dataset = 'MergedForcing'; subdataset = dataset; dataset_kwargs = dict(grid='son2')
+#     #dataset_kwargs = dict(resolution='CA12'); resampling = 'cubic_spline'; subdataset = 'NRCan'
+# #     start_date = '2000-01-01'; end_date = '2018-01-01'; varlist = ['precip','Tmin','Tmax',]    
+#     start_date = '2011-01-01'; end_date = '2017-12-13'; varlist = ['liqwatflx',]
+# #     start_date = '2011-01-01'; end_date = '2011-02-01'; varlist = ['liqwatflx',]
     
     ## WRF requires special treatment
-#     dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
-#     if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
-#     else: from projects.GreatLakes import WRF_exps
-# #     exp_name = os.getenv('WRFEXP')
+    dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
+    if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
+    else: from projects.GreatLakes import WRF_exps
+    exp_name = os.getenv('WRFEXP')
 #     exp_name = 'max-ctrl'
-# #     exp_name = 'ctrl-1'  
-#     domain = 2; filetype = 'hydro'
-#     dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps)
-# #     start_date = '1979-01-01'; end_date = '1979-12-31'
-#     start_date = None; end_date = None    
-#     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}transient_{int:s}/climate_forcing/'
-#     target_folder_netcdf = '{exp_folder:s}/{grid:s}/{smpl:s}/'  
-# #     bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'
-#     bias_correction = 'AABC'; bc_varmap = dict(liqwatflx='precip'); obs_name = 'CRU'
-#     varlist = ['liqwatflx','pet',]
+#     exp_name = 'ctrl-1'  
+    domain = 2; filetype = 'hydro'
+    dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps)
+#     start_date = '1979-01-01'; end_date = '1979-12-31'
+    start_date = None; end_date = None    
+    target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}transient_{int:s}/climate_forcing/'
+    target_folder_netcdf = '{exp_folder:s}/{grid:s}/{smpl:s}/'  
+#     bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'
+    bias_correction = 'AABC'; bc_varmap = dict(liqwatflx='precip'); obs_name = 'CRU'
+    varlist = ['liqwatflx','pet',]
     
     # import dataset module
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
     
     # get some experiment/dataset info
-    exp_folder = None; exp = None; exp_name = None; domain = None; bc_folder = None
+    exp_folder = None; exp = None; bc_folder = None
     if dataset == 'WRF':
         exp_folder,exp,exp_name,domain = ds_mod.getFolderNameDomain(experiment=exp_name, domains=domain, exps=WRF_exps, lreduce=True)
         print('{exp_name:s}_d{dom:0=2d}'.format(exp_name=exp_name,dom=domain))
@@ -300,8 +285,8 @@ if __name__ == '__main__':
         
     ## define export parameters
     driver_args = dict(); scalefactor = 1.; raster_format = None
-#     mode = 'NetCDF'
-    mode = 'raster2d'
+    mode = 'NetCDF'
+#     mode = 'raster2d'
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
@@ -319,9 +304,6 @@ if __name__ == '__main__':
         print(("\n***   Exporting '{}' to raster format {}   ***\n".format(dataset,raster_format)))
     elif mode.upper() == 'NETCDF':
         # NetCDF output using netCDF4
-#         varlist = ds_mod.netcdf_varlist # all primary and secondary variables, excluding coordinate variables
-#         varlist = ds_mod.binary_varlist
-#         varlist = ['liqwatflx','pet']
         gridstr = '' if grid_name.lower() == 'native' else '_'+grid_name.lower()
         bc_str1 = bc_method+'_' if bc_method else ''
         bc_str2 = '_'+bc_method if bc_method else ''
@@ -443,6 +425,7 @@ if __name__ == '__main__':
                                                     folder=target_folder, filename=filename, driver=raster_format,
                                                     bias_correction=bc_object, bc_varname=bc_varname,
                                                     lecho=True, loverwrite=loverwrite, **driver_args)
+        # N.B.: the dataset returned here is a NetCDF dataset, not a xarray dataset!
         
         # switch of overwrite/deletion if filename is not variable-specific
         if varname.lower() not in filename: 
@@ -472,8 +455,12 @@ if __name__ == '__main__':
         print(("\nDummy Size in memory: {:f} MB".format(dummy_output.nbytes/1024./1024.)))
     
         if mode.upper() == 'NETCDF':
-            dataset.setncattr('resampling',resampling)
-            for var in dataset.data_vars.values(): var.attrs['resampling'] = resampling
+            dataset.setncattr('resampling',resampling) # netCDF4 dataset, not xarray
+            xlon = dataset.getncattr('xlon')
+            ylat = dataset.getncattr('ylat')
+            for var in dataset.variables.values():
+                if  xlon in var.dimensions and ylat in var.dimensions:
+                    var.setncattr('resampling',resampling)
             dataset.close()
         
         end_var = time()
