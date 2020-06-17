@@ -285,8 +285,8 @@ if __name__ == '__main__':
         
     ## define export parameters
     driver_args = dict(); scalefactor = 1.; raster_format = None
-    mode = 'NetCDF'
-#     mode = 'raster2d'
+#     mode = 'NetCDF'
+    mode = 'raster2d'
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio

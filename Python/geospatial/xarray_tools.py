@@ -409,7 +409,7 @@ def loadXArray(varname=None, varlist=None, folder=None, grid=None, bias_correcti
             old_folder = os.getcwd()
             os.chdir(folder)
             # inspect folder
-            nc_file = False; default_folder = None; folder_list = []
+            nc_file = False; default_folder = False; folder_list = []
             for item in os.listdir():
                 if os.path.isfile(item):
                     if item.endswith('.nc'): nc_file = True
@@ -456,7 +456,7 @@ def loadXArray(varname=None, varlist=None, folder=None, grid=None, bias_correcti
             if xds is None: xds = ds
             else: xds.update(ds)
         elif not lskip:
-            raise IOError("The dataset file '{}' was not found in folder:\n '{}".format(filename,folder))
+            raise IOError("The dataset file '{}' was not found in folder:\n '{}'".format(filename,folder))
     # rewrite chunking, if desired (this happens here, so we can infer chunking from dimension sizes)
     if lautoChunk:
         xds = autoChunkXArray(xds, chunks=chunks)
