@@ -315,7 +315,7 @@ def inferGeoInfo(xvar, varname=None, crs=None, transform=None, size=None, lraise
 
 ## functions that modify a dataset
 
-def updateVariableAttrs(xds, varatts=None, varmap=None, **kwargs):
+def updateVariableAttrs(xds, varatts=None, varmap=None, varlist=None, **kwargs):
     ''' a helper function to update variable attributes, rename variables, and apply scaling factors '''
     if varatts is None: 
         varatts = dict()
@@ -324,6 +324,20 @@ def updateVariableAttrs(xds, varatts=None, varmap=None, **kwargs):
     else: 
         raise TypeError(varatts)
     varatts.update(kwargs) # add kwargs
+    # generate var map
+    if varmap is None:
+        varmap = dict()
+        for varname,atts in varatts.items():
+            if varname in xds and 'name' in atts: varmap[varname] = atts['name']  
+    elif not isinstance(varmap,dict): 
+        raise TypeError(varmap)
+    # drop variables
+    if varlist is not None:
+        drop_list = []
+        for varname in xds.data_vars.keys():
+            name = varmap.get(varname,varname)
+            if name not in varlist: drop_list.append(varname)
+        xds = xds.drop_vars(drop_list)                    
     # update attributes (using old names)
     for varname,atts in varatts.items():
         if varname in xds.variables:
@@ -343,12 +357,6 @@ def updateVariableAttrs(xds, varatts=None, varmap=None, **kwargs):
             attrs.update(atts)
             var.attrs = attrs
     # actually rename
-    if varmap is None:
-        varmap = dict()
-        for varname,atts in varatts.items():
-            if varname in xds and 'name' in atts: varmap[varname] = atts['name']  
-    elif not isinstance(varmap,dict): 
-        raise TypeError(varmap)
     xds = xds.rename(varmap)
     return xds
 
@@ -395,7 +403,40 @@ def autoChunkXArray(xds, chunks=None, **kwargs):
     cks = {dim:c for dim,c in zip(dims,cks)}
     if chunks: cks.update(chunks) # manually/explicitly specified chunks override 
     return xds.chunk(chunks=cks)
+
+
+def computeNormals(xds, aggregation='month', time_stamp='time_stamp'):
+    ''' function invoking lazy groupby() call and replacing the resulting time axis with a new time axis '''  
+    import pandas as pd
+    
+    # time stamp variable for meta data
+    ts_var = ts_var = xds[time_stamp].load()
+    period = (pd.to_datetime(ts_var.data[0]).year, (pd.to_datetime(ts_var.data[-1])+pd.Timedelta(31, unit='D')).year)
+    prdstr = '{:04d}-{:04d}'.format(*period)
+    
+    # compute monthly normals
+    cds = xds.groupby('time.'+aggregation).mean('time')
+    assert len(cds['month'])==12, cds
+    
+    # convert time axis
+    cds = cds.rename({aggregation:'time'}) # the new time axis is named 'month'
+    tm = cds['time']
+    tm.attrs['name']       = 'time'
+    tm.attrs['long_name']  = 'Calendar Month'
+    tm.attrs['units']      = aggregation
+    tm.attrs['start_date'] = str(ts_var.data[0])
+    tm.attrs['end_date']   = str(ts_var.data[-1])
+    tm.attrs['period']     = prdstr
+    # add attributes to dataset
+    cds.attrs['start_date'] = str(ts_var.data[0])
+    cds.attrs['end_date']   = str(ts_var.data[-1])
+    cds.attrs['period']     = prdstr
+    
+    # return formatted climatology dataset      
+    return cds         
          
+         
+## function to load a dataset         
          
 def loadXArray(varname=None, varlist=None, folder=None, grid=None, bias_correction=None, resolution=None, varatts=None, 
                filename_pattern=None, default_varlist=None, resampling=None, mask_and_scale=True, varmap=None,

@@ -313,7 +313,6 @@ def copy_dims(dst, src, dimlist=None, namemap=None, copy_coords=True, **kwargs):
 
 ## function to create a geo-referenced NetCDF dataset
 
-
 def interprete_time_units(units):
     ''' homogenize various time formats... '''
     
@@ -390,6 +389,28 @@ def add_time_coord(dst, data, name=None, units='D', atts=None, ts_atts=None, dat
         
     # return dataset handle
     return dst
+
+
+# default attributes for month meta data variables
+default_mon_name_atts = dict(name='name_of_month', units='', long_name='Name of the Month')
+default_mon_len_atts = dict(name='length_of_month', units='days',long_name='Length of Month')
+
+def addNameLengthMonth(ds, time_dim='time', mon_name_atts=default_mon_name_atts, mon_len_atts=default_mon_len_atts):
+    ''' add name and length of month to monthly normals '''
+    from datasets.common import name_of_month, days_per_month
+    assert len(ds.dimensions[time_dim]) == 12, ds.dimensions[time_dim] 
+    # name of month
+    varnc = add_var(ds, mon_name_atts['name'], dims=('time',), data=None, shape=(None,), 
+                    atts=mon_name_atts, dtype=str, zlib=True, fillValue=None) # string variable
+    varnc[:] = np.stack(name_of_month, axis=0)
+    # length of month
+    varnc = add_var(ds, mon_len_atts['name'], dims=('time',), data=None, shape=(None,), 
+                    atts=mon_len_atts, dtype=np.dtype('float32'), zlib=True, fillValue=None,) # float variable
+    varnc[:] = np.stack(days_per_month, axis=0)
+    # sync and return dataset with new variables
+    ds.sync()
+    return ds
+    
     
 def createGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=None, griddef=None, 
                        varatts=None, zlib=True, lcoords=True, loverwrite=False):
@@ -452,6 +473,7 @@ def createGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=N
         
     # return modified dataset
     return ds    
+
 
 nc_coord_dtype  = np.dtype('<f8') # little-endian 64-bit float, otherwise errors in geotransform accumulate
 netcdf_dtype    = np.dtype('<f4') # little-endian 32-bit float, to save space...
