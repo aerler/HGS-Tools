@@ -83,11 +83,11 @@ if __name__ == '__main__':
     resampling = 'bilinear'
     lexec = True # actually write rasters or just include file
    # WRF grids
-    project = 'WRF'
-    #grid_name  = 'wc2_d01'    
-    #project = 'CMB'
-    project = 'ARB'
-    grid_name  = 'arb3'    
+#     project = 'WRF'
+#     #grid_name  = 'wc2_d01'    
+#     #project = 'CMB'
+#     project = 'ARB'
+#     grid_name  = 'arb3'    
     ## Fraser's Ontario domain
 #     project = 'WRF' # load grid from pickle
 # #     grid_name = 'glb1_d02'    
@@ -115,8 +115,8 @@ if __name__ == '__main__':
 #     project = 'GRW'
 #     grid_name  = 'grw2'; resampling = 'nearest'; #source_grid = 'grw1'
     ## operational config for SON2
-#     project = 'SON'
-#     grid_name  = 'son2'
+    project = 'SON'
+    grid_name  = 'son2'
     ## 
 #     project = 'SNW'
 #     grid_name  = 'snw2'
@@ -212,7 +212,7 @@ if __name__ == '__main__':
     lexec = True
     loverwrite = True      
     # some defaults for most datasets
-    time_chunks = 8 # typically not much speed-up beyond 8
+    time_chunks = 8 # SnoDAS & CaSPAr only! typically not much speed-up beyond 8
     dataset_kwargs = dict(); subdataset = None 
     bias_correction = None; bc_varmap = dict(); obs_name = None; bc_method = None
     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/climate_forcing/'
@@ -233,28 +233,32 @@ if __name__ == '__main__':
     ## CaSPAr
     #dataset = 'CaSPAr'; lhourly = True; dataset_kwargs = dict(grid='lcc_snw')
     ## MergedForcing
-#     dataset = 'MergedForcing'; subdataset = dataset; dataset_kwargs = dict(grid='son2')
-#     #dataset_kwargs = dict(resolution='CA12'); resampling = 'cubic_spline'; subdataset = 'NRCan'
-# #     start_date = '2000-01-01'; end_date = '2018-01-01'; varlist = ['precip','Tmin','Tmax',]    
-#     start_date = '2011-01-01'; end_date = '2017-12-13'; varlist = ['liqwatflx',]
-# #     start_date = '2011-01-01'; end_date = '2011-02-01'; varlist = ['liqwatflx',]
+    dataset = 'MergedForcing'
+#     subdataset = dataset; varlist = ['liqwatflx',]
+    subdataset = 'NRCan'; varlist = ['precip','Tmin','Tmax','T2',]
+#     subdataset = 'NRCan'; varlist = ['Tmax',]; #dataset_kwargs['grid'] = 'son2'
+    dataset_kwargs['resolution'] = 'CA12'; resampling = 'cubic_spline'
+#     start_date = '2000-01-01'; end_date = '2018-01-01'
+#     start_date = '2011-01-01'; end_date = '2011-02-01'    
+    start_date = '2011-01-01'; end_date = '2017-12-31'
+#     start_date = '2011-01-01'; end_date = '2011-02-01'
     
     ## WRF requires special treatment
-    dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
-    if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
-    else: from projects.GreatLakes import WRF_exps
-    exp_name = os.getenv('WRFEXP')
-#     exp_name = 'max-ctrl'
-#     exp_name = 'ctrl-1'  
-    domain = 2; filetype = 'hydro'
-    dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps)
-#     start_date = '1979-01-01'; end_date = '1979-12-31'
-    start_date = None; end_date = None    
-    target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}transient_{int:s}/climate_forcing/'
-    target_folder_netcdf = '{exp_folder:s}/{grid:s}/{smpl:s}/'  
-#     bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'
-    bias_correction = 'AABC'; bc_varmap = dict(liqwatflx='precip'); obs_name = 'CRU'
-    varlist = ['liqwatflx','pet',]
+#     dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
+#     if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
+#     else: from projects.GreatLakes import WRF_exps
+#     exp_name = os.getenv('WRFEXP')
+# #     exp_name = 'max-ctrl'
+# #     exp_name = 'ctrl-1'  
+#     domain = 2; filetype = 'hydro'
+#     dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps)
+# #     start_date = '1979-01-01'; end_date = '1979-12-31'
+#     start_date = None; end_date = None    
+#     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}transient_{int:s}/climate_forcing/'
+#     target_folder_netcdf = '{exp_folder:s}/{grid:s}/{smpl:s}/'  
+# #     bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'
+#     bias_correction = 'AABC'; bc_varmap = dict(liqwatflx='precip'); obs_name = 'CRU'
+#     varlist = ['liqwatflx','pet',]
     
     # import dataset module
     ds_mod = import_module('datasets.{0:s}'.format(dataset))
@@ -285,8 +289,8 @@ if __name__ == '__main__':
         
     ## define export parameters
     driver_args = dict(); scalefactor = 1.; raster_format = None
-#     mode = 'NetCDF'
-    mode = 'raster2d'
+    mode = 'NetCDF'
+#     mode = 'raster2d'; dataset_kwargs['grid'] = grid_name
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
@@ -318,12 +322,14 @@ if __name__ == '__main__':
     
     
     # lazily load dataset (assuming xarray)
-    if dataset == 'MergedForcing':
-        xds = getattr(ds_mod,'load{}_Daily'.format(subdataset))(varlist=varlist, **dataset_kwargs)
+#     if dataset == 'MergedForcing':
+#         xds = getattr(ds_mod,'load{}_Daily'.format(subdataset))(varlist=varlist, **dataset_kwargs)
+    if dataset == 'SnoDAS':
+        xds = ds_mod.loadDailyTimeSeries(varlist=varlist, time_chunks=time_chunks, **dataset_kwargs)
     elif lhourly:
         xds = ds_mod.loadHourlyTimeSeries(varlist=varlist, time_chunks=time_chunks, **dataset_kwargs)
     else:
-        xds = ds_mod.loadDailyTimeSeries(varlist=varlist, time_chunks=time_chunks, **dataset_kwargs)
+        xds = ds_mod.loadDailyTimeSeries(varlist=varlist, **dataset_kwargs)
     
     # get georeference
     src_crs = getCRS(xds)

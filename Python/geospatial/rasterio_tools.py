@@ -114,7 +114,7 @@ def projectGeoTrans(src_crs=None, tgt_crs=None, src_transform=None, src_size=Non
 ## functions for Dask execution
 
 def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampling='bilinear', fill_value=None,
-                 src_crs=None, src_transform=None, src_size=None, lxarray=False, **kwargs):
+                 nodata_flag=None, src_crs=None, src_transform=None, src_size=None, lxarray=False, **kwargs):
     ''' a function to regrid/reproject a data array to a new grid; src attributes can be inferred from xarray '''
     
     # infer source attributes
@@ -130,13 +130,13 @@ def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampli
         if isinstance(data,DataArray): data = data.values # don't want dask array anymore...
         else: data = data[:]
     # fill masked arrays
-    if isinstance(data,np.ma.MaskedArray):
-        if fill_value is not None:
-            data = data.filled(fill_value)
-        elif np.issubdtype(data.dtype, np.inexact):
-            data = data.filled(np.NaN)
+    if fill_value is None:
+        if np.issubdtype(data.dtype, np.inexact):
+            fill_value  = np.NaN 
         else:
             raise NotImplementedError("Regridding of masked integer fields is not yet implemented; conversion to float may be necessary.")
+    if isinstance(data,np.ma.MaskedArray):
+        data = data.filled(fill_value)
     # N.B.: GDAL convention for data arrays is band,y/lat,x/lon,
     #       but the GDAL size tuple is stored as (x/lon,y/lat)
     if src_size: 
@@ -154,16 +154,19 @@ def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampli
     if len(src_shp) > 3:
         bnds = np.prod(src_shp[:-2])
         src_data = data.reshape((bnds,)+src_shp[-2:])
-        tgt_data = np.zeros((bnds,)+tgt_shp[-2:])
+        tgt_data = np.empty((bnds,)+tgt_shp[-2:])
     else:
         src_data = data
-        tgt_data = np.zeros(tgt_shp)
+        tgt_data = np.empty(tgt_shp)
+    # prefill with missing values, so as to avoid orphaned zeroes
+    tgt_data[:] = nodata_flag
     
     # prepare reprojection
     if isinstance(resampling,string_types):
         resampling = getattr(Resampling,resampling)
     # do GDAL reprojection
     reproject(src_data, tgt_data, src_transform=src_transform, src_crs=src_crs,
+              src_nodate=fill_value, dst_nodata=nodata_flag,
               dst_transform=tgt_transform, dst_crs=tgt_crs, resampling=resampling, **kwargs)
     
     # restore shape
@@ -280,11 +283,19 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
         to either NetCDF or any GDAL/rasterio raster format; the array has to be chunked in a way that  
         full 2D horizontal surfaces are processed, otherwise regridding does not work '''
     
+    # missing values
+    if nodata_flag is None:
+        if mode.lower() == 'raster2d': nodata_flag = fill_value
+        elif mode.upper() == 'NETCDF': nodata_flag = np.NaN # xarray convention
+        else:
+            raise NotImplementedError(mode)
+    
     # regrid array
     if tgt_crs != src_crs or tgt_geotrans != src_geotrans or tgt_size != src_size:
         # reproject data
         data = regrid_array(data, tgt_crs=tgt_crs, tgt_transform=tgt_geotrans, tgt_size=tgt_size, 
-                            src_crs=src_crs, src_transform=src_geotrans, src_size=src_size, 
+                            src_crs=src_crs, src_transform=src_geotrans, src_size=src_size,
+                            fill_value=None, nodata_flag=nodata_flag, 
                             resampling=resampling, lxarray=False)
 
     # figure out time coordinates/dates
