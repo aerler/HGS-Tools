@@ -405,33 +405,45 @@ def autoChunkXArray(xds, chunks=None, **kwargs):
     return xds.chunk(chunks=cks)
 
 
-def computeNormals(xds, aggregation='month', time_stamp='time_stamp'):
+def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=False, time_name='time'):
     ''' function invoking lazy groupby() call and replacing the resulting time axis with a new time axis '''  
-    import pandas as pd
     
+    lts = time_stamp and time_stamp in xds
     # time stamp variable for meta data
-    ts_var = ts_var = xds[time_stamp].load()
-    period = (pd.to_datetime(ts_var.data[0]).year, (pd.to_datetime(ts_var.data[-1])+pd.Timedelta(31, unit='D')).year)
-    prdstr = '{:04d}-{:04d}'.format(*period)
+    if lts:
+        import pandas as pd
+        ts_var = xds[time_stamp].load()
+        period = (pd.to_datetime(ts_var.data[0]).year, (pd.to_datetime(ts_var.data[-1])+pd.Timedelta(31, unit='D')).year)
+        prdstr = '{:04d}-{:04d}'.format(*period)
+    
+    # resample data to aggregation interval
+    if lresample:
+        if aggregation.lower() == 'month': rsi = 'MS'
+        else:
+            raise NotImplementedError(aggregation)
+        xds = xds.resample(time=rsi,skipna=True,).mean()
+    # N.B.: I am not sure to which extent resampling is necessary
     
     # compute monthly normals
     cds = xds.groupby('time.'+aggregation).mean('time')
     assert len(cds['month'])==12, cds
     
     # convert time axis
-    cds = cds.rename({aggregation:'time'}) # the new time axis is named 'month'
-    tm = cds['time']
-    tm.attrs['name']       = 'time'
-    tm.attrs['long_name']  = 'Calendar Month'
+    cds = cds.rename({aggregation:time_name}) # the new time axis is named 'month'
+    tm = cds.coords[time_name]
+    tm.attrs['name']       = time_name
+    tm.attrs['long_name']  = 'Calendar '+aggregation.title()
     tm.attrs['units']      = aggregation
-    tm.attrs['start_date'] = str(ts_var.data[0])
-    tm.attrs['end_date']   = str(ts_var.data[-1])
-    tm.attrs['period']     = prdstr
-    # add attributes to dataset
-    cds.attrs['start_date'] = str(ts_var.data[0])
-    cds.attrs['end_date']   = str(ts_var.data[-1])
-    cds.attrs['period']     = prdstr
-    
+    # add period info for quick identification
+    if lts:        
+        tm.attrs['start_date'] = str(ts_var.data[0])
+        tm.attrs['end_date']   = str(ts_var.data[-1])
+        tm.attrs['period']     = prdstr
+        # add attributes to dataset
+        cds.attrs['start_date'] = str(ts_var.data[0])
+        cds.attrs['end_date']   = str(ts_var.data[-1])
+        cds.attrs['period']     = prdstr    
+        
     # return formatted climatology dataset      
     return cds         
          
