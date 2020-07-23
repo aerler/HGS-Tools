@@ -82,7 +82,7 @@ if __name__ == '__main__':
     time_chunks = 1 # typically not much speed-up beyond 8
     resampling = 'bilinear'
     lexec = True # actually write rasters or just include file
-   # WRF grids
+    # WRF grids
 #     project = 'WRF'
 #     #grid_name  = 'wc2_d01'    
 #     #project = 'CMB'
@@ -235,9 +235,10 @@ if __name__ == '__main__':
     ## MergedForcing
     dataset = 'MergedForcing'
 #     subdataset = dataset; varlist = ['liqwatflx',]
-    subdataset = 'NRCan'; varlist = ['precip','Tmin','Tmax','T2',]
+    subdataset = dataset; varlist = ['pet_haa',] # PET based on Hargreaves' method with Allen's correction
+#     subdataset = 'NRCan'; varlist = ['precip','Tmin','Tmax','T2',]
 #     subdataset = 'NRCan'; varlist = ['Tmax',]; #dataset_kwargs['grid'] = 'son2'
-    dataset_kwargs['resolution'] = 'CA12'; resampling = 'cubic_spline'
+#     dataset_kwargs['resolution'] = 'CA12'; resampling = 'cubic_spline'
 #     start_date = '2000-01-01'; end_date = '2018-01-01'
 #     start_date = '2011-01-01'; end_date = '2011-02-01'    
     start_date = '2011-01-01'; end_date = '2017-12-31'
@@ -289,8 +290,8 @@ if __name__ == '__main__':
         
     ## define export parameters
     driver_args = dict(); scalefactor = 1.; raster_format = None
-    mode = 'NetCDF'
-#     mode = 'raster2d'; dataset_kwargs['grid'] = grid_name
+#     mode = 'NetCDF'
+    mode = 'raster2d'; dataset_kwargs['grid'] = grid_name
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
