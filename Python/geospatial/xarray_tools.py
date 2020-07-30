@@ -354,8 +354,8 @@ def updateVariableAttrs(xds, varatts=None, varmap=None, varlist=None, **kwargs):
                     var += atts['offset'] # this should execute lazily...
             atts.pop('scalefactor',None)
             attrs = var.attrs.copy()
-            attrs.update(atts)
-            var.attrs = attrs
+            atts.update(attrs)
+            var.attrs = atts
     # actually rename
     xds = xds.rename(varmap)
     return xds

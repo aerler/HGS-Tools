@@ -235,7 +235,8 @@ if __name__ == '__main__':
     ## MergedForcing
     dataset = 'MergedForcing'
 #     subdataset = dataset; varlist = ['liqwatflx',]
-    subdataset = dataset; varlist = ['pet_haa',] # PET based on Hargreaves' method with Allen's correction
+#     subdataset = dataset; varlist = ['pet_har',] # PET based on Hargreaves' method with Allen's correction
+    subdataset = dataset; varlist = ['pet_pts',] # PET based on Hargreaves' method with Allen's correction
 #     subdataset = 'NRCan'; varlist = ['precip','Tmin','Tmax','T2',]
 #     subdataset = 'NRCan'; varlist = ['Tmax',]; #dataset_kwargs['grid'] = 'son2'
 #     dataset_kwargs['resolution'] = 'CA12'; resampling = 'cubic_spline'
