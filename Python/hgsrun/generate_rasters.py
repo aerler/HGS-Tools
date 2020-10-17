@@ -236,10 +236,16 @@ if __name__ == '__main__':
     dataset = 'MergedForcing'
 #     subdataset = dataset; varlist = ['liqwatflx',]
 #     subdataset = dataset; varlist = ['pet_har',] # PET based on Hargreaves' method with Allen's correction
-    subdataset = dataset; varlist = ['pet_pts',] # PET based on Hargreaves' method with Allen's correction
+#     subdataset = dataset; varlist = ['pet_pts',] # PET based on Priestley-Taylor with solar radiation only
+#     subdataset = dataset; varlist = ['pet_hog',] # PET based on simple Hogg method
+    subdataset = dataset; varlist = ['liqwatflx','pet_hog','pet_har','pet_pts',] # assorted forcing
 #     subdataset = 'NRCan'; varlist = ['precip','Tmin','Tmax','T2',]
+#     subdataset = 'NRCan'; varlist = ['precip_adj',]
 #     subdataset = 'NRCan'; varlist = ['Tmax',]; #dataset_kwargs['grid'] = 'son2'
 #     dataset_kwargs['resolution'] = 'CA12'; resampling = 'cubic_spline'
+    dataset_kwargs['resolution'] = 'SON60'; resampling = 'bilinear'
+    dataset_kwargs['grid'] = 'son2'; resampling = None
+#     start_date = '1997-01-01'; end_date = '2017-12-31'
 #     start_date = '2000-01-01'; end_date = '2018-01-01'
 #     start_date = '2011-01-01'; end_date = '2011-02-01'    
     start_date = '2011-01-01'; end_date = '2017-12-31'

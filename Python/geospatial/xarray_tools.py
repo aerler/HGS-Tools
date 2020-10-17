@@ -481,7 +481,8 @@ def loadXArray(varname=None, varlist=None, folder=None, grid=None, bias_correcti
             #             
     # load variables
     if bias_correction is None and 'resolution' in kwargs: bias_correction = kwargs['resolution'] # allow backdoor
-    if varname and varlist: raise ValueError(varname,varlist)
+    if varname and varlist: 
+        raise ValueError(varname,varlist)
     elif varname:
         varlist = [varname] # load a single variable
     elif varlist is None:
