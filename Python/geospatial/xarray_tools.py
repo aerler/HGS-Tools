@@ -509,8 +509,12 @@ def loadXArray(varname=None, varlist=None, folder=None, grid=None, bias_correcti
             # merge into new dataset
             if xds is None: xds = ds
             else: xds.update(ds)
-        elif not lskip:
-            raise IOError("The dataset file '{}' was not found in folder:\n '{}'".format(filename,folder))
+        else:
+            if lskip:
+                print("Skipping missing dataset file '{}' ('{}')".format(filename,folder))
+            else:
+                raise IOError("The dataset file '{}' was not found in folder:\n '{}'".format(filename,folder))
+    assert xds is not None, "Dataset is empty - aborting"
     # rewrite chunking, if desired (this happens here, so we can infer chunking from dimension sizes)
     if lautoChunk:
         xds = autoChunkXArray(xds, chunks=chunks)
