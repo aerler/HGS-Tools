@@ -115,11 +115,11 @@ if __name__ == '__main__':
 #     project = 'GRW'
 #     grid_name  = 'grw2'; resampling = 'nearest'; #source_grid = 'grw1'
     ## operational config for SON2
-    project = 'SON'
-    grid_name  = 'son2'
+#     project = 'SON'
+#     grid_name  = 'son2'
     ## 
-#     project = 'SNW'
-#     grid_name  = 'snw2'
+    project = 'SNW'
+    grid_name  = 'snw2'
     ## operational config for ASB2
 #     project = 'ASB'
 #     grid_name  = 'asb2'
@@ -238,6 +238,7 @@ if __name__ == '__main__':
 #     subdataset = dataset; varlist = ['liqwatflx',]
 #     subdataset = dataset; varlist = ['pet_pts',] # PET based on Priestley-Taylor with solar radiation only
 #     subdataset = dataset; varlist = ['liqwatflx','pet_pts',] # assorted forcing
+#     subdataset = 'NRCan'; varlist += ['precip',] # base variables
     subdataset = 'NRCan'; varlist += ['precip','Tmin','Tmax','T2',] # base variables
     subdataset = 'NRCan'; varlist += ['precip_adj',] # adjusted precip data (up to 2016)
     subdataset = 'NRCan'; varlist += ['pet_har',] # PET based on Hargreaves' method

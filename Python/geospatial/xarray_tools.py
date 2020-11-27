@@ -7,7 +7,7 @@ Utility functions to extract data from xarray Dataset or DataArray classes.
 '''
 
 from warnings import warn
-
+from datetime import datetime
 import os
 import numpy as np
 import xarray as xr
@@ -339,25 +339,31 @@ def updateVariableAttrs(xds, varatts=None, varmap=None, varlist=None, **kwargs):
             if name not in varlist: drop_list.append(varname)
         xds = xds.drop_vars(drop_list)                    
     # update attributes (using old names)
+    date_str = datetime.today().strftime('%Y%m%d')
     for varname,atts in varatts.items():
         if varname in xds.variables:
             if varname == 'time':
                 warn("The 'time' coordinate is handled automatically by xarray using numpy datetime64; "
                       + "changing attributes can break this functionality when the dataset is saved to file. ")
             var = xds.variables[varname]
-            atts = atts.copy() # because we will pop scalefactor...
-            if 'units' in atts:
-              if 'units' not in var.attrs or var.attrs['units'] != atts['units']:
-                if 'scalefactor' in atts and atts['scalefactor'] != 1:
-                    var *= atts['scalefactor'] # this should execute lazily...
-                if 'offset' in atts and atts['offset'] != 0:
-                    var += atts['offset'] # this should execute lazily...
-            atts.pop('scalefactor',None)
             attrs = var.attrs.copy()
-            atts.update(attrs)
-            var.attrs = atts
-    # actually rename
-    xds = xds.rename(varmap)
+            if 'updated' not in attrs:
+                if 'units' in atts:
+                  if 'units' not in attrs or attrs['units'] != atts['units']:
+                    if 'scalefactor' in atts and atts['scalefactor'] != 1:
+                        var *= atts['scalefactor'] # this should execute lazily...
+                    if 'offset' in atts and atts['offset'] != 0:
+                        var += atts['offset'] # this should execute lazily...
+                # transfer attributes
+                for key,value in atts.items():
+                    if key not in ('scalefactor','offset'):
+                        if key in attrs: attrs['old_'+key] = attrs[key]
+                        attrs[key] = value
+                attrs['updated'] = date_str # indicate we have updated with date string
+                var.attrs = attrs
+    # actually rename (but only vars that are present and need to be renamed...)
+    xds = xds.rename({key:val for key,val in varmap.items() if key in xds and key != val})
+    xds.attrs['updated'] = date_str
     return xds
 
 
@@ -450,37 +456,11 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
          
 ## function to load a dataset         
          
-def loadXArray(varname=None, varlist=None, folder=None, grid=None, bias_correction=None, resolution=None, varatts=None, 
-               filename_pattern=None, default_varlist=None, resampling=None, mask_and_scale=True, varmap=None,
-               lgeoref=True, geoargs=None, chunks=None, lautoChunk=False, lskip=False, **kwargs):
-    ''' function to open a dataset where variables are stored in separate files and non-native grids are stored in subfolders;
-        this mainly applies to high-resolution, high-frequency (daily) observations (e.g. SnoDAS); datasets are opened using xarray '''
-    if grid: 
-        folder = '{}/{}'.format(folder,grid) # non-native grids are stored in sub-folders
-        # auto-detect resampling folders 
-        if resampling is None:
-            old_folder = os.getcwd()
-            os.chdir(folder)
-            # inspect folder
-            nc_file = False; default_folder = False; folder_list = []
-            for item in os.listdir():
-                if os.path.isfile(item):
-                    if item.endswith('.nc'): nc_file = True
-                elif os.path.isdir(item):
-                    if item.lower() == 'default': default_folder = item
-                    folder_list.append(item)
-                else:
-                    raise IOError(item)
-            os.chdir(old_folder) # return
-            # evaluate findings
-            if nc_file: resampling = None
-            elif default_folder: resampling = default_folder
-            elif len(folder_list) == 1: resampling = folder_list[0]
-        if resampling: 
-            folder = '{}/{}'.format(folder,resampling) # different resampling options are stored in subfolders
-            #             
+def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_pattern=None, default_varlist=None, varmap=None, 
+               mask_and_scale=True, grid=None, lgeoref=True, geoargs=None, chunks=None, lautoChunk=False, lskip=False, **kwargs):
+    ''' function to open a dataset where variables are stored in separate files (but in the same folder); this mainly applies 
+        to high-resolution, high-frequency (daily) observations (e.g. SnoDAS); datasets are opened using xarray '''
     # load variables
-    if bias_correction is None and 'resolution' in kwargs: bias_correction = kwargs['resolution'] # allow backdoor
     if varname and varlist: 
         raise ValueError(varname,varlist)
     elif varname:
@@ -496,9 +476,7 @@ def loadXArray(varname=None, varlist=None, folder=None, grid=None, bias_correcti
     # construct dataset
     xds = None
     for varname in varlist:
-        if grid: varname = '{}_{}'.format(varname,grid) # also append non-native grid name to varname
-        if bias_correction: varname = '{}_{}'.format(bias_correction,varname) # prepend bias correction method
-        filename = filename_pattern.format(VAR=varname, RES=resolution).lower()
+        filename = filename_pattern.lower().format(var=varname.lower()) # all lower case
         filepath = '{}/{}'.format(folder,filename)
         if os.path.exists(filepath):
             # load dataset
