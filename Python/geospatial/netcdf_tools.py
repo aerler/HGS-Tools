@@ -12,7 +12,6 @@ and Python 3 compatible.
 import os
 import os.path as osp
 import netCDF4 as nc # netCDF4-python module: Dataset is probably all we need
-import pandas as pd
 # N.B.: most of the functions simply take a Dataset object as the first argument
 from six import string_types # for testing string in Python 2 and 3
 import collections as col
@@ -87,7 +86,7 @@ def checkFillValue(fillValue, dtype):
 
 
 def coerceAtts(atts):
-    ''' Convert an attribute dictionary to a NetCDF compatible format. '''
+    ''' Convert an attribute dictionary to a NetCDF compatible format (creates a new copy). '''
     
     if not isinstance(atts,dict): raise TypeError(atts)
     ncatts = dict()

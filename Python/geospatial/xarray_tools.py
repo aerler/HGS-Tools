@@ -22,6 +22,7 @@ xr.set_options(keep_attrs=True)
 # names of valid geographic/projected coordinates
 default_x_coords = dict(geo=('lon','long','longitude',), proj=('x','easting') )
 default_y_coords = dict(geo=('lat','latitude',),         proj=('y','northing'))
+default_lon_coords = default_x_coords['geo']; default_lat_coords = default_y_coords['geo']
 
 
 ## helper functions
@@ -97,7 +98,7 @@ def isGeoVar(xvar, x_coords=None, y_coords=None, lraise=True):
     elif isinstance(xvar,(nc.Dataset,nc.Variable)):
         dims = xvar.dimensions
     elif lraise:
-        raise TypeError("Can only infer coordinate system from xarray or netCDF4- not from {}".format(xvar.__class__))
+        raise TypeError("Can only infer coordinate system from xarray or netCDF4 - not from {}".format(xvar.__class__))
     else:
         return None # evaluates as False, but allows checking
         
@@ -370,10 +371,18 @@ def updateVariableAttrs(xds, varatts=None, varmap=None, varlist=None, **kwargs):
 def addGeoReference(xds, proj4_string=None, x_coords=None, y_coords=None):
     ''' helper function to add GDAL/rasterio-style georeferencing information to an xarray dataset;
         note that this only refers to attributed, not axes, but also includes variables '''
-    xds.attrs['proj4'] = proj4_string
     xlon,ylat = getGeoCoords(xds, x_coords=x_coords, y_coords=y_coords, lvars=False)
     xds.attrs['xlon'] = xlon
     xds.attrs['ylat'] = ylat
+    if proj4_string is None:
+        if isGeoVar(xds, x_coords, y_coords, lraise=True):
+            proj4_string = '+proj=longlat +lon_0=0 +lat_0=0 +ellps=WGS84 +datum=WGS84' # default geographic, also EPSG 4326
+        else:
+            raise ValueError("Cannot infer projection - need to provide proj4 string!")
+    elif isinstance(proj4_string,str):
+        xds.attrs['proj4'] = proj4_string
+    else:
+        raise TypeError("Cannot infer projection - need to provide proj4 string!")
     for xvar in list(xds.data_vars.values()): 
         if isGeoVar(xvar):
             xvar.attrs['proj4'] = proj4_string
@@ -392,7 +401,9 @@ def rechunkTo2Dslices(xvar, **other_chunks):
     if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
         raise TypeError(xvar)
     # old chunk sizes
-    chunks = {dim:cs for dim,cs in zip(xvar.sizes,xvar.encoding['chunksizes'])}
+    if 'chunksizes' in xvar.encoding:
+        chunks = {dim:cs for dim,cs in zip(xvar.sizes,xvar.encoding['chunksizes'])}
+    else: chunks = dict()
     chunks.update(other_chunks)
     # find horizontal/map dimensions
     xlon = xvar.attrs['xlon']; ylat = xvar.attrs['ylat'] 

@@ -166,7 +166,7 @@ def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampli
         resampling = getattr(Resampling,resampling)
     # do GDAL reprojection
     reproject(src_data, tgt_data, src_transform=src_transform, src_crs=src_crs,
-              src_nodate=fill_value, dst_nodata=nodata_flag,
+              src_nodata=fill_value, dst_nodata=nodata_flag,
               dst_transform=tgt_transform, dst_crs=tgt_crs, resampling=resampling, **kwargs)
     
     # restore shape
@@ -277,7 +277,7 @@ dummy_array = np.zeros((1,1,1), dtype=np.int8)
 def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_geotrans=None, src_size=None, 
                       tgt_crs=None, tgt_geotrans=None, tgt_size=None, mode='raster2D', resampling='bilinear',
                       filepath=None, time_coord=None, driver='AAIGrid',fill_value=0., nodata_flag=None,
-                      time_fmt='%Y%m%d', ncvar=None, bias_correction=None, bc_varname=None,
+                      time_fmt='%Y%m%d', ncvar=None, bias_correction=None, bc_varname=None, lwarp=True,
                       lecho=True, loverwrite=True, return_dummy=dummy_array, **driver_args):
     ''' a function for use with Dask lazy execution that regrids an array and exports/writes the results 
         to either NetCDF or any GDAL/rasterio raster format; the array has to be chunked in a way that  
@@ -291,7 +291,7 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
             raise NotImplementedError(mode)
     
     # regrid array
-    if tgt_crs != src_crs or tgt_geotrans != src_geotrans or tgt_size != src_size:
+    if lwarp and ( tgt_crs != src_crs or tgt_geotrans != src_geotrans or tgt_size != src_size ): 
         # reproject data
         data = regrid_array(data, tgt_crs=tgt_crs, tgt_transform=tgt_geotrans, tgt_size=tgt_size, 
                             src_crs=src_crs, src_transform=src_geotrans, src_size=src_size,
@@ -329,7 +329,7 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
 
 def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=None, filename=None,
                                tgt_crs=None, tgt_geotrans=None, tgt_size=None, resampling='bilinear', 
-                               driver='AAIGrid', fill_value=0., nodata_flag=None, 
+                               driver='AAIGrid', fill_value=0., nodata_flag=None, lwarp=True,
                                bias_correction=None, bc_varname=None, time_fmt='%Y%m%d',
                                lecho=True, loverwrite=True, **driver_args):
     ''' a function that returns another function, which is suitable for regridding and direct export to disk 
@@ -405,7 +405,7 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
     # define options for dask execution
     time_chunks = np.concatenate([[0],np.cumsum(xvar.chunks[0][:-1], dtype=np.int)])
     dummy_array = np.zeros((1,1,1), dtype=np.int8)
-    dask_fct = functools.partial(regrid_and_export, time_chunks=time_chunks, resampling=resampling,   
+    dask_fct = functools.partial(regrid_and_export, time_chunks=time_chunks, resampling=resampling, lwarp=lwarp,
                                  src_crs=src_crs, src_geotrans=src_geotrans, src_size=src_size, 
                                  tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
                                  mode=mode, filepath=filepath, time_coord=time_coord, ncvar=ncvar,

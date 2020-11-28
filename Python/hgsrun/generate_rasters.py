@@ -210,7 +210,8 @@ if __name__ == '__main__':
     
     ## define source data
     lexec = True
-    loverwrite = True      
+    loverwrite = True  
+    lwarp = True # set False to suppress reprojection    
     # some defaults for most datasets
     time_chunks = 8 # SnoDAS & CaSPAr only! typically not much speed-up beyond 8
     dataset_kwargs = dict(); subdataset = None 
@@ -238,21 +239,31 @@ if __name__ == '__main__':
 #     subdataset = dataset; varlist = ['liqwatflx',]
 #     subdataset = dataset; varlist = ['pet_pts',] # PET based on Priestley-Taylor with solar radiation only
 #     subdataset = dataset; varlist = ['liqwatflx','pet_pts',] # assorted forcing
-#     subdataset = 'NRCan'; varlist += ['precip',] # base variables
-    subdataset = 'NRCan'; varlist += ['precip','Tmin','Tmax','T2',] # base variables
-    subdataset = 'NRCan'; varlist += ['precip_adj',] # adjusted precip data (up to 2016)
+#     subdataset = 'NRCan'; varlist += ['Tmin',] # base variables
+#     subdataset = 'NRCan'; varlist += ['precip','Tmin','Tmax','T2',] # base variables
+#     subdataset = 'NRCan'; varlist += ['precip_adj',] # adjusted precip data (up to 2016)
     subdataset = 'NRCan'; varlist += ['pet_har',] # PET based on Hargreaves' method
-    subdataset = 'NRCan'; varlist += ['pet_haa',] # PET based on Hargreaves' with Allen's correction
-    subdataset = 'NRCan'; varlist += ['pet_th',] # PET based on Thornthwaite method
+#     subdataset = 'NRCan'; varlist += ['pet_haa',] # PET based on Hargreaves' with Allen's correction
+#     subdataset = 'NRCan'; varlist += ['pet_th',] # PET based on Thornthwaite method
     subdataset = 'NRCan'; varlist += ['pet_hog',] # PET based on simple Hogg method
+    dataset_kwargs = dict(dataset=subdataset)
 #     dataset_kwargs['resolution'] = 'CA12'; resampling = 'cubic_spline'
     dataset_kwargs['resolution'] = 'SON60'; resampling = 'bilinear'
 #     dataset_kwargs['grid'] = 'son2'; resampling = None
-    start_date = '1997-01-01'; end_date = '2017-12-31'
+    dataset_kwargs['grid'] = 'snw2'; resampling = None; lwarp = False
+    ## ERA5
+#     dataset = 'ERA5'; subdataset = 'ERA5L'
+#     varlist = ['dswe','snow']
+#     dataset_kwargs = dict(filetype=subdataset,)
+#     dataset_kwargs['resolution'] = 'SON10'; resampling = 'cubic_spline'
+
+    start_date = '1997-01-01'; end_date = '2017-12-31' # SON/SNW full period
 #     start_date = '2000-01-01'; end_date = '2018-01-01'
-#     start_date = '2011-01-01'; end_date = '2011-02-01'    
+#     start_date = '2011-01-01'; end_date = '2017-12-31' # combined NRCan-SnoDAS period
 #     start_date = '2016-01-01'; end_date = '2017-12-31'
-#     start_date = '2011-01-01'; end_date = '2011-02-01'
+#     start_date = '2016-01-01'; end_date = '2016-01-31' # for testing NRCan
+#     start_date = '1997-01-01'; end_date = '1997-02-01' # for testing...
+#     resampling = 'nearest'
     
     ## WRF requires special treatment
 #     dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
@@ -283,12 +294,15 @@ if __name__ == '__main__':
         bc_folder = exp_folder
         daily_folder = ds_mod.daily_folder
     elif dataset == 'MergedForcing':
-        daily_folder,netcdf_name =ds_mod.getFolderFileName(varname='{var_str:s}', dataset=subdataset, resolution=dataset_kwargs.get('resolution',None))
+        daily_folder,netcdf_name =ds_mod.getFolderFileName(varname='{var_str:s}', **dataset_kwargs)
         print(daily_folder,netcdf_name)
     else:
-        netcdf_name = ds_mod.netcdf_filename.format('{var_str:s}', VAR='{var_str:s}')
+        if hasattr(ds_mod,'getFolderFileName',):
+            daily_folder,netcdf_name =ds_mod.getFolderFileName(varname='{var_str:s}', dataset=dataset, **dataset_kwargs)
+        else: 
+            netcdf_name = ds_mod.netcdf_filename.format('{var_str:s}', VAR='{var_str:s}')
+            daily_folder = ds_mod.daily_folder
         bc_folder = ds_mod.avgfolder
-        daily_folder = ds_mod.daily_folder
         
     ## bias correction
     if bias_correction:
@@ -300,8 +314,8 @@ if __name__ == '__main__':
         
     ## define export parameters
     driver_args = dict(); scalefactor = 1.; raster_format = None
-    mode = 'NetCDF'
-#     mode = 'raster2d'
+#     mode = 'NetCDF'
+    mode = 'raster2d'
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
@@ -344,6 +358,7 @@ if __name__ == '__main__':
     
     # get georeference
     src_crs = getCRS(xds)
+    src_geotrans,src_size = getTransform(xds)
     if tgt_crs is None: tgt_crs = src_crs
     # figure out bounds for clipping
     if tgt_geotrans is not None and tgt_size is not None:
@@ -354,8 +369,9 @@ if __name__ == '__main__':
             trans, w,h = calculate_default_transform(src_crs=tgt_crs, dst_crs=src_crs, 
                                                      width=tgt_size[0], height=tgt_size[1], 
                                                      left=left, bottom=bottom, right=right, top=top,)
-            left,top = trans*(0,0); right,bottom = trans*(w,h)
+            left,top = trans*(-1,-1); right,bottom = trans*(w+1,h+1) # need some padding to avoid margins 
         # clip source data
+        if src_geotrans.e < 0: bottom,top = top,bottom
         space_slice = {xds.attrs['xlon']:slice(left,right), xds.attrs['ylat']:slice(bottom,top)}
         print(space_slice)
         xds = xds.loc[space_slice]
@@ -364,7 +380,7 @@ if __name__ == '__main__':
         time_slice = {'time':slice(start_date,end_date)}
         xds = xds.loc[time_slice]
     print(xds)
-    src_geotrans,src_size = getTransform(xds)
+    src_geotrans,src_size = getTransform(xds) # recalculate after clipping
     if tgt_geotrans is None: tgt_geotrans = src_geotrans
     if tgt_size is None: tgt_size = src_size
     time_coord = xds.coords['time'].data
@@ -436,7 +452,7 @@ if __name__ == '__main__':
         
         
         # generate dask execution function
-        dask_fct,dummy,dataset = generate_regrid_and_export(xvar, time_coord=time_coord,
+        dask_fct,dummy,dataset = generate_regrid_and_export(xvar, time_coord=time_coord, lwarp=lwarp,
                                                     tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
                                                     mode=mode, resampling=resampling, time_fmt=date_fmt,
                                                     folder=target_folder, filename=filename, driver=raster_format,
