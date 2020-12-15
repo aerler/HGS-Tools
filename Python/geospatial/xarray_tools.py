@@ -410,10 +410,12 @@ def rechunkTo2Dslices(xvar, **other_chunks):
     chunks[xlon] = xvar.sizes[xlon]; chunks[ylat] = xvar.sizes[ylat]
     return xvar.chunk(chunks=chunks) # rechunk x/lon and y/lat
   
-def autoChunkXArray(xds, chunks=None, **kwargs):
+def autoChunkXArray(xds, chunks=None, dims=None, **kwargs):
     ''' apply auto-chunking to an xarray object, like a Dataset or DataArray (chunks kw arg can override) '''
     from geospatial.netcdf_tools import autoChunk
-    dims = ('time', xds.attrs.get('ylat','y'), xds.attrs.get('xlon','x'))
+    if dims is None:
+        xlon,ylat = getGeoCoords(xds)
+        dims = ('time', ylat.name, xlon.name)
     dims = [dim for dim in dims if dim in xds.sizes]
     shape = [xds.sizes[dim] for dim in dims]
     cks = autoChunk(shape, **kwargs)
@@ -443,7 +445,7 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
     
     # compute monthly normals
     cds = xds.groupby('time.'+aggregation).mean('time')
-    assert len(cds['month'])==12, cds
+    assert len(cds['month']) == 12, cds
     
     # convert time axis
     cds = cds.rename({aggregation:time_name}) # the new time axis is named 'month'
@@ -468,7 +470,7 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
 ## function to load a dataset         
          
 def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_pattern=None, default_varlist=None, varmap=None, 
-               mask_and_scale=True, grid=None, lgeoref=True, geoargs=None, chunks=None, lautoChunk=False, lskip=False, **kwargs):
+               mask_and_scale=True, grid=None, lgeoref=True, geoargs=None, chunks=True, lautoChunk=False, lskip=False, **kwargs):
     ''' function to open a dataset where variables are stored in separate files (but in the same folder); this mainly applies 
         to high-resolution, high-frequency (daily) observations (e.g. SnoDAS); datasets are opened using xarray '''
     # load variables
@@ -491,10 +493,16 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
         filepath = '{}/{}'.format(folder,filename)
         if os.path.exists(filepath):
             # load dataset
-            ds = xr.open_dataset(filepath, chunks=chunks, mask_and_scale=mask_and_scale, **kwargs)
+            cks = {} if chunks is True else chunks
+            ds = xr.open_dataset(filepath, chunks=cks, mask_and_scale=mask_and_scale, **kwargs)
             # N.B.: the use of open_mfdataset is problematic, because it does not play nicely with chunking - 
             #       by default it loads everything as one chunk, and it only respects chunking, if chunks are 
             #       specified explicitly at the initial load time (later chunking seems to have no effect!)
+            if chunks is True:
+                # apply chunks from NetCDF-4 file (not sure why xarray doesn't do this automatically...)
+                tmpvar = ds[varname]
+                warn("Post-hoc chunking does not seem to work properly!")
+                ds[varname] = tmpvar.chunk(chunks=tmpvar.encoding['chunksizes'])
             # merge into new dataset
             if xds is None: xds = ds
             else: xds.update(ds)
@@ -504,9 +512,10 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
             else:
                 raise IOError("The dataset file '{}' was not found in folder:\n '{}'".format(filename,folder))
     assert xds is not None, "Dataset is empty - aborting"
-    # rewrite chunking, if desired (this happens here, so we can infer chunking from dimension sizes)
+    # rewrite chunking, if desired
     if lautoChunk:
-        xds = autoChunkXArray(xds, chunks=chunks)
+        cks = None if not isinstance(chunks, dict) else chunks
+        xds = autoChunkXArray(xds, chunks=cks)
     # rename and apply attributes
     if varatts or varmap:
         xds = updateVariableAttrs(xds, varatts=varatts, varmap=varmap)

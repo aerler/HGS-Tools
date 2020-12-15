@@ -72,7 +72,8 @@ def writeIncFile(filepath, time_coord, filename_pattern, time_fmt='{:15.0f}', da
 if __name__ == '__main__':
 
     import dask
-    from multiprocessing.pool import ThreadPool
+    # N.B.: it seems dask multi-processing is prone to memory leaks...
+    #from multiprocessing.pool import ThreadPool
     from time import time
     
     start = time()
@@ -235,29 +236,32 @@ if __name__ == '__main__':
     #dataset = 'CaSPAr'; lhourly = True; dataset_kwargs = dict(grid='lcc_snw')
     ## MergedForcing
     varlist = []
-    dataset = 'MergedForcing'
-#     subdataset = dataset; varlist = ['liqwatflx',]
-#     subdataset = dataset; varlist = ['pet_pts',] # PET based on Priestley-Taylor with solar radiation only
-#     subdataset = dataset; varlist = ['liqwatflx','pet_pts',] # assorted forcing
-#     subdataset = 'NRCan'; varlist += ['Tmin',] # base variables
-#     subdataset = 'NRCan'; varlist += ['precip','Tmin','Tmax','T2',] # base variables
-#     subdataset = 'NRCan'; varlist += ['precip_adj',] # adjusted precip data (up to 2016)
-    subdataset = 'NRCan'; varlist += ['pet_har',] # PET based on Hargreaves' method
-#     subdataset = 'NRCan'; varlist += ['pet_haa',] # PET based on Hargreaves' with Allen's correction
-#     subdataset = 'NRCan'; varlist += ['pet_th',] # PET based on Thornthwaite method
-    subdataset = 'NRCan'; varlist += ['pet_hog',] # PET based on simple Hogg method
-    dataset_kwargs = dict(dataset=subdataset)
-#     dataset_kwargs['resolution'] = 'CA12'; resampling = 'cubic_spline'
-    dataset_kwargs['resolution'] = 'SON60'; resampling = 'bilinear'
-#     dataset_kwargs['grid'] = 'son2'; resampling = None
-    dataset_kwargs['grid'] = 'snw2'; resampling = None; lwarp = False
+#     dataset = 'MergedForcing'
+# #     subdataset = dataset; varlist = ['liqwatflx',]
+# #     subdataset = dataset; varlist = ['pet_pts',] # PET based on Priestley-Taylor with solar radiation only
+# #     subdataset = dataset; varlist = ['liqwatflx','pet_pts',] # assorted forcing
+# #     subdataset = 'NRCan'; varlist += ['Tmin',] # base variables
+# #     subdataset = 'NRCan'; varlist += ['precip','Tmin','Tmax','T2',] # base variables
+# #     subdataset = 'NRCan'; varlist += ['precip_adj',] # adjusted precip data (up to 2016)
+#     subdataset = 'NRCan'; varlist += ['pet_har',] # PET based on Hargreaves' method
+# #     subdataset = 'NRCan'; varlist += ['pet_haa',] # PET based on Hargreaves' with Allen's correction
+# #     subdataset = 'NRCan'; varlist += ['pet_th',] # PET based on Thornthwaite method
+#     subdataset = 'NRCan'; varlist += ['pet_hog',] # PET based on simple Hogg method
+#     dataset_kwargs = dict(dataset=subdataset)
+# #     dataset_kwargs['resolution'] = 'CA12'; resampling = 'cubic_spline'
+#     dataset_kwargs['resolution'] = 'SON60'; resampling = 'bilinear'
+# #     dataset_kwargs['grid'] = 'son2'; resampling = None
+#     dataset_kwargs['grid'] = 'snw2'; resampling = None; lwarp = False
     ## ERA5
-#     dataset = 'ERA5'; subdataset = 'ERA5L'
-#     varlist = ['dswe','snow']
-#     dataset_kwargs = dict(filetype=subdataset,)
-#     dataset_kwargs['resolution'] = 'SON10'; resampling = 'cubic_spline'
+    dataset = 'ERA5'; subdataset = 'ERA5L'
+    varlist = ['dswe',]
+    dataset_kwargs = dict(filetype=subdataset)
+    dataset_kwargs['resolution'] = 'NA10'; resampling = 'cubic_spline'
+    dataset_kwargs['chunks'] = dict(time=8,latitude=61,longitude=62) # apparently we need to pre-chunk or there is a memory leak..
+    
 
-    start_date = '1997-01-01'; end_date = '2017-12-31' # SON/SNW full period
+    #start_date = '1997-01-01'; end_date = '2017-12-31' # SON/SNW full period
+    start_date = '1981-01-01'; end_date = '2017-12-31' # SON/SNW full period
 #     start_date = '2000-01-01'; end_date = '2018-01-01'
 #     start_date = '2011-01-01'; end_date = '2017-12-31' # combined NRCan-SnoDAS period
 #     start_date = '2016-01-01'; end_date = '2017-12-31'
@@ -314,8 +318,8 @@ if __name__ == '__main__':
         
     ## define export parameters
     driver_args = dict(); scalefactor = 1.; raster_format = None
-#     mode = 'NetCDF'
-    mode = 'raster2d'
+    mode = 'NetCDF'
+#     mode = 'raster2d'
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
@@ -479,9 +483,9 @@ if __name__ == '__main__':
         print(("\n***   Executing {:d} Workloads for '{:s}' using Dask   ***".format(n_loads,varname)))
         print(("Chunks (time only): {}".format(xvar.chunks[0])))
     
-    #     with dask.set_options(scheduler='processes'):      
-        with dask.config.set(pool=ThreadPool(4)):    
-            dask.compute(*work_load)
+        #with dask.set_options(scheduler='processes'):      
+        #with dask.config.set(pool=ThreadPool(4)):    
+        dask.compute(*work_load)
             
         #print("\nDummy output:")
         #print(dummy_output)
