@@ -22,8 +22,6 @@ from geodata.base import Dataset, Variable, Axis, concatDatasets
 from datasets.WSC import getGageStation, GageStationError, loadWSC_StnTS, updateScalefactor
 from geodata.gdal import loadPickledGridDef, addGDALtoDataset, GridDefinition
 from geodata.gdal import grid_folder as common_grid_folder
-# Graham's package
-from hgs_output import binary
 # local imports
 from hgs.misc import interpolateIrregular, convertDate, parseObsWells
 from hgs.PGMN import loadMetadata, loadPGMN_TS
@@ -888,6 +886,7 @@ def loadHGS(varlist=None, folder=None, name=None, title=None, basin=None, season
   dataset += time
         
   ## load vardata using Graham's hgs_output package
+  from hgs_output import binary
   # load first time step to create coordinate arrays etc.
   prefixo = prefix+'o'
   reader = binary.IO(prefixo,folder,t_list[0])

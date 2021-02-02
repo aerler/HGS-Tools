@@ -116,14 +116,21 @@ if __name__ == '__main__':
 #     project = 'GRW'
 #     grid_name  = 'grw2'; resampling = 'nearest'; #source_grid = 'grw1'
     ## operational config for SON2
-#     project = 'SON'
-#     grid_name  = 'son2'
+    project = 'SON'
+    grid_name  = 'son2'
     ## 
-    project = 'SNW'
-    grid_name  = 'snw2'
+#     project = 'SNW'
+#     grid_name  = 'snw2'
     ## operational config for ASB2
 #     project = 'ASB'
-#     grid_name  = 'asb2'
+#     grid_name  = 'asb1'
+#     #grid_name  = 'asb2'
+    ## CA12 NRCan grid
+#     project = 'Geo'
+#     grid_name = 'ca12'
+    ## Queensland (Australia) grid
+#     project = 'QEL'
+#     grid_name = 'qel1' # 10 km Queensland grid
 
     ## define target grid/projection
     # projection/UTM zone
@@ -157,11 +164,17 @@ if __name__ == '__main__':
     elif project.upper() == 'ASB':
         # Assiniboin projection
         tgt_crs = genCRS("+proj=utm +zone=14 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs", name=grid_name)
+    elif project.upper() in ('QEL'):
+        # Queensland (Australia) projection
+        tgt_crs = genCRS("+proj=utm +zone=55 +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs", name=grid_name)
     else:
         tgt_crs = None # native grid
     # grid definition (mostly UTM grids for HGS)
     if tgt_geotrans is not None and tgt_size is not None:
         pass # already assigned above
+    elif grid_name == 'ca12': # the NRCan 1/12t deg Canada grid
+        tgt_geotrans = (-141.0, 1./12., 0.0, 41.0, 0.0, 1./12.); tgt_size = (1068, 510) # (x,y) map size of NRCan grid
+        resampling = 'cubic_spline'
     elif grid_name == 'on1':
         tgt_geotrans = [-87.87916564941406,0.008331298828125,0.0,41.995832443237305,0.0,0.008335113525390625,]
         resampling = 'cubic_spline'
@@ -196,9 +209,18 @@ if __name__ == '__main__':
     elif grid_name == 'cmb1':
         tgt_size = (640,826) # higher resolution 500 m grid
         tgt_geotrans = (292557.,500,0,5872251.,0,-500.) # 500 m 
+    elif grid_name == 'asb1':
+        tgt_size = (191,135) # lower resolution 5 km grid
+        tgt_geotrans = (-159.e3, 5.e3, 0., 5202.e3, 0., 5.e3) # 5 km
     elif grid_name == 'asb2':
         tgt_size = (955,675) # higher resolution 1 km grid (> 1 MB per day)
-        tgt_geotrans = (-159.e3, 1.e3, 0., 5202.e3, 0., 1.e3) # 1 km 
+        tgt_geotrans = (-159.e3, 1.e3, 0., 5202.e3, 0., 1.e3) # 1 km
+    elif grid_name == 'qel1':
+        tgt_size = (121,191) # 10 km grid, similar to ERA5
+#         tgt_geotrans = (-26770., 10400, 0., 6902510, 0., 10970) # ~10 km
+        tgt_geotrans = (-26772., 10398.9, 0., 6902511, 0., 10968.7) # ~10 km  
+        # N.B.: this grid attempts to achieve direct grid point correspondence to the ERA5-Land lat/lon grid
+        #       at 148E/23S
     elif grid_name == 'native': # original grid
         time_chunks = 1 # this can be pretty big!
         tgt_size = None; tgt_geotrans = None # native grid
@@ -217,7 +239,7 @@ if __name__ == '__main__':
     time_chunks = 8 # SnoDAS & CaSPAr only! typically not much speed-up beyond 8
     dataset_kwargs = dict(); subdataset = None 
     bias_correction = None; bc_varmap = dict(); obs_name = None; bc_method = None
-    target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/climate_forcing/'
+    target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/'
     raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
     target_folder_netcdf = '{daily:s}/{grid:s}/{smpl:s}/'
     
@@ -235,39 +257,50 @@ if __name__ == '__main__':
     ## CaSPAr
     #dataset = 'CaSPAr'; lhourly = True; dataset_kwargs = dict(grid='lcc_snw')
     ## MergedForcing
-    varlist = []
+#     varlist = []
 #     dataset = 'MergedForcing'
-# #     subdataset = dataset; varlist = ['liqwatflx',]
-# #     subdataset = dataset; varlist = ['pet_pts',] # PET based on Priestley-Taylor with solar radiation only
-# #     subdataset = dataset; varlist = ['liqwatflx','pet_pts',] # assorted forcing
-# #     subdataset = 'NRCan'; varlist += ['Tmin',] # base variables
-# #     subdataset = 'NRCan'; varlist += ['precip','Tmin','Tmax','T2',] # base variables
-# #     subdataset = 'NRCan'; varlist += ['precip_adj',] # adjusted precip data (up to 2016)
-#     subdataset = 'NRCan'; varlist += ['pet_har',] # PET based on Hargreaves' method
-# #     subdataset = 'NRCan'; varlist += ['pet_haa',] # PET based on Hargreaves' with Allen's correction
-# #     subdataset = 'NRCan'; varlist += ['pet_th',] # PET based on Thornthwaite method
-#     subdataset = 'NRCan'; varlist += ['pet_hog',] # PET based on simple Hogg method
-#     dataset_kwargs = dict(dataset=subdataset)
-# #     dataset_kwargs['resolution'] = 'CA12'; resampling = 'cubic_spline'
-#     dataset_kwargs['resolution'] = 'SON60'; resampling = 'bilinear'
-# #     dataset_kwargs['grid'] = 'son2'; resampling = None
-#     dataset_kwargs['grid'] = 'snw2'; resampling = None; lwarp = False
+#     subdataset = dataset; varlist = ['liqwatflx_ne5']
+# #     subdataset = dataset; varlist = ['liqwatflx_ne5','pet_har','pet_hog',]
+# # #     subdataset = dataset; varlist = ['pet_pts',] # PET based on Priestley-Taylor with solar radiation only
+# # #     subdataset = dataset; varlist = ['liqwatflx','pet_pts',] # assorted forcing
+# # #     subdataset = 'NRCan'; varlist += ['Tmin',] # base variables
+# # #     subdataset = 'NRCan'; varlist += ['precip','Tmin','Tmax','T2',] # base variables
+# # #     subdataset = 'NRCan'; varlist += ['precip_adj',] # adjusted precip data (up to 2016)
+# #     subdataset = 'NRCan'; varlist += ['pet_har',] # PET based on Hargreaves' method
+# # #     subdataset = 'NRCan'; varlist += ['pet_haa',] # PET based on Hargreaves' with Allen's correction
+# # #     subdataset = 'NRCan'; varlist += ['pet_th',] # PET based on Thornthwaite method
+# #     subdataset = 'NRCan'; varlist += ['pet_hog',] # PET based on simple Hogg method
+# #     dataset_kwargs = dict(dataset=subdataset)
+#     dataset_kwargs['resolution'] = 'CA12'; resampling = 'cubic_spline'; dataset_kwargs['chunks'] = dict(time=8, lon=63, lat=64)
+# #     dataset_kwargs['resolution'] = 'SON60'; resampling = 'bilinear'
+#     dataset_kwargs['dataset_index'] = dict(liqwatflx='MergedForcing',liqwatflx_ne5='MergedForcing',pet_har='NRCan',pet_hog='NRCan')
+# #     dataset_kwargs['grid'] = 'son2'; resampling = None; lwarp = False
+# #     dataset_kwargs['grid'] = 'snw2'; resampling = None; lwarp = False
     ## ERA5
     dataset = 'ERA5'; subdataset = 'ERA5L'
-    varlist = ['dswe',]
+#     varlist = ['snow','dswe',]
+#     varlist = ['precip','pet_era5','liqwatflx','snow','dswe',]
+    varlist = ['pet_era5','liqwatflx','snow']
     dataset_kwargs = dict(filetype=subdataset)
-    dataset_kwargs['resolution'] = 'NA10'; resampling = 'cubic_spline'
-    dataset_kwargs['chunks'] = dict(time=8,latitude=61,longitude=62) # apparently we need to pre-chunk or there is a memory leak..
+#     dataset_kwargs['resolution'] = 'NA10'; chunks = dict(time=8,latitude=61,longitude=62)
+    dataset_kwargs['resolution'] = 'NA10'; dataset_kwargs['grid'] = 'son2'; chunks = dict(time=9,y=59,x=59)
+#     dataset_kwargs['resolution'] = 'AU10'; chunks = dict(time=8, latitude=59, longitude=62)  
+    resampling = 'cubic_spline'; dataset_kwargs['chunks'] = chunks # apparently we need to pre-chunk or there is a memory leak..   
     
 
-    #start_date = '1997-01-01'; end_date = '2017-12-31' # SON/SNW full period
-    start_date = '1981-01-01'; end_date = '2017-12-31' # SON/SNW full period
+#     start_date = '1997-01-01'; end_date = '2017-12-31' # SON/SNW full period
+#     start_date = '1981-01-01'; end_date = '2017-12-31' # SON/SNW full period
+    start_date = '1981-01-01'; end_date = '2020-08-31' # full ERA5-Land period
 #     start_date = '2000-01-01'; end_date = '2018-01-01'
 #     start_date = '2011-01-01'; end_date = '2017-12-31' # combined NRCan-SnoDAS period
 #     start_date = '2016-01-01'; end_date = '2017-12-31'
 #     start_date = '2016-01-01'; end_date = '2016-01-31' # for testing NRCan
-#     start_date = '1997-01-01'; end_date = '1997-02-01' # for testing...
-#     resampling = 'nearest'
+#     start_date = '1997-01-01'; end_date = '1997-02-01'; resampling = 'nearest' # for testing...
+
+    ## output type: ASCII raster or NetCDF-4
+#     mode = 'NetCDF'
+    mode = 'raster2d'
+
     
     ## WRF requires special treatment
 #     dataset = 'WRF';  lhourly = False; bias_correction = None; resampling = 'bilinear'
@@ -298,11 +331,11 @@ if __name__ == '__main__':
         bc_folder = exp_folder
         daily_folder = ds_mod.daily_folder
     elif dataset == 'MergedForcing':
-        daily_folder,netcdf_name =ds_mod.getFolderFileName(varname='{var_str:s}', **dataset_kwargs)
+        daily_folder,netcdf_name =ds_mod.getFolderFileName(varname='{var_str:s}', mode='daily', aggregation='daily', **dataset_kwargs)
         print(daily_folder,netcdf_name)
     else:
         if hasattr(ds_mod,'getFolderFileName',):
-            daily_folder,netcdf_name =ds_mod.getFolderFileName(varname='{var_str:s}', dataset=dataset, **dataset_kwargs)
+            daily_folder,netcdf_name =ds_mod.getFolderFileName(varname='{var_str:s}', dataset=dataset, mode='daily', aggregation='daily', **dataset_kwargs)
         else: 
             netcdf_name = ds_mod.netcdf_filename.format('{var_str:s}', VAR='{var_str:s}')
             daily_folder = ds_mod.daily_folder
@@ -318,8 +351,6 @@ if __name__ == '__main__':
         
     ## define export parameters
     driver_args = dict(); scalefactor = 1.; raster_format = None
-    mode = 'NetCDF'
-#     mode = 'raster2d'
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio

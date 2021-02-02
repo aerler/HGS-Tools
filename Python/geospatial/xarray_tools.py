@@ -423,6 +423,22 @@ def autoChunkXArray(xds, chunks=None, dims=None, **kwargs):
     if chunks: cks.update(chunks) # manually/explicitly specified chunks override 
     return xds.chunk(chunks=cks)
 
+def getCommonChunks(xds, method='min'):
+    ''' get smallest/largest/mean common denominator for chunks in dataset '''
+    chunk_list = dict()
+    # collect chunks
+    for xvar in xds.data_vars.values():
+        if 'chunksizes' in xvar.encoding:
+            for dim,cks in zip(xvar.dims,xvar.encoding['chunksizes']):
+                if dim in chunk_list: chunk_list[dim].append(cks)
+                else: chunk_list[dim] = [cks]
+    # reduce chunks
+    chunks = dict()
+    for dim,cks in list(chunk_list.items()):
+        chunks[dim] = getattr(np,method)(cks)
+    # return dict with chunksize for each dimension
+    return chunks        
+
 
 def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=False, time_name='time'):
     ''' function invoking lazy groupby() call and replacing the resulting time axis with a new time axis '''  
@@ -470,7 +486,8 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
 ## function to load a dataset         
          
 def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_pattern=None, default_varlist=None, varmap=None, 
-               mask_and_scale=True, grid=None, lgeoref=True, geoargs=None, chunks=True, lautoChunk=False, lskip=False, **kwargs):
+               mask_and_scale=True, grid=None, lgeoref=True, geoargs=None, chunks=True, multi_chunks=None, lskip=False, 
+               compat='override', join='inner', fill_value=np.NaN, **kwargs):
     ''' function to open a dataset where variables are stored in separate files (but in the same folder); this mainly applies 
         to high-resolution, high-frequency (daily) observations (e.g. SnoDAS); datasets are opened using xarray '''
     # load variables
@@ -486,36 +503,51 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
     if varmap is not None:
         ravmap = {value:key for key,value in varmap.items()}
         varlist = [ravmap.get(varname,varname) for varname in varlist]
+    # just some default settings that will produce chunks larger than 100 MB on 8*64*64 float chunks
+    if isinstance(multi_chunks,str):
+        if multi_chunks.lower() == 'regular': # 256 MB
+            multi_chunks = {dim:16 for dim in ('lat','lon','latitude','longitude','x','y',)}
+            multi_chunks['time'] = 8
+        if multi_chunks.lower() == 'small': # 64 MB
+            multi_chunks = {dim:8 for dim in ('lat','lon','latitude','longitude','x','y','time')}
+        elif multi_chunks.lower() == 'time': # 184 MB
+            multi_chunks = {dim:4 for dim in ('lat','lon','latitude','longitude','x','y')}
+            multi_chunks['time'] = 92 # for reductions along time, we can use a higher value (8 days * 92 ~ 2 years)
+        else:
+            raise NotImplementedError(multi_chunks)
     # construct dataset
-    xds = None
+    default_chunks = chunks.copy() if isinstance(chunks, dict) else chunks # deep copy
+    ds_list = []
     for varname in varlist:
         filename = filename_pattern.lower().format(var=varname.lower()) # all lower case
         filepath = '{}/{}'.format(folder,filename)
+        chunks = default_chunks # reset
         if os.path.exists(filepath):
             # load dataset
-            cks = {} if chunks is True else chunks
-            ds = xr.open_dataset(filepath, chunks=cks, mask_and_scale=mask_and_scale, **kwargs)
+            if chunks is True:
+                # infer chunks from NetCDF-4 file (not sure why xarray doesn't do this automatically...)
+                ncds = nc.Dataset(filepath, 'r')# open in read-only using NetCDF4 module
+                ncvar = ncds.variables[varname] 
+                chunks = dict(zip(ncvar.dimensions,ncvar.chunking()))
+                ncds.close()
+            if multi_chunks: # enlarge chunks with multiplier
+                chunks = {dim:(val*multi_chunks.get(dim,1)) for dim,val in chunks.items()}                  
+            # open dataset with xarray
+            print(varname,chunks)
+            ds = xr.open_dataset(filepath, chunks=chunks, mask_and_scale=mask_and_scale, **kwargs)
             # N.B.: the use of open_mfdataset is problematic, because it does not play nicely with chunking - 
             #       by default it loads everything as one chunk, and it only respects chunking, if chunks are 
             #       specified explicitly at the initial load time (later chunking seems to have no effect!)
-            if chunks is True:
-                # apply chunks from NetCDF-4 file (not sure why xarray doesn't do this automatically...)
-                tmpvar = ds[varname]
-                warn("Post-hoc chunking does not seem to work properly!")
-                ds[varname] = tmpvar.chunk(chunks=tmpvar.encoding['chunksizes'])
-            # merge into new dataset
-            if xds is None: xds = ds
-            else: xds.update(ds)
+            ds_list.append(ds)
         else:
             if lskip:
                 print("Skipping missing dataset file '{}' ('{}')".format(filename,folder))
             else:
                 raise IOError("The dataset file '{}' was not found in folder:\n '{}'".format(filename,folder))
-    assert xds is not None, "Dataset is empty - aborting"
-    # rewrite chunking, if desired
-    if lautoChunk:
-        cks = None if not isinstance(chunks, dict) else chunks
-        xds = autoChunkXArray(xds, chunks=cks)
+    # merge into new dataset
+    if len(ds_list) == 0:
+        raise ValueError("Dataset is empty - aborting! Folder: \n '{}'".format(folder))
+    xds = xr.merge(ds_list, compat=compat, join=join, fill_value=fill_value)
     # rename and apply attributes
     if varatts or varmap:
         xds = updateVariableAttrs(xds, varatts=varatts, varmap=varmap)
