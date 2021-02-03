@@ -538,6 +538,7 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
             # N.B.: the use of open_mfdataset is problematic, because it does not play nicely with chunking - 
             #       by default it loads everything as one chunk, and it only respects chunking, if chunks are 
             #       specified explicitly at the initial load time (later chunking seems to have no effect!)
+            #       That being said, I don't know if this is still the case...
             ds_list.append(ds)
         else:
             if lskip:
@@ -573,6 +574,27 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
             # use default lat/lon, if it works...
             xds = addGeoReference(xds,) 
     return xds
+  
+    
+    def saveXArray(xds, filename=None, folder=None, mode='add', chunks=None, encoding=None, laddTime=None,
+                   ltmpfile=True, lcompute=True, lprogress=True, lfeedback=True, **kwargs):
+        ''' function to save a xarray dataset to disk, with options to add/overwrite variables, choose smart encoding, 
+            add timstamps, use a temp file, and handle dask functionality '''
+        raise NotImplementedError()
+        # file path and tmp file
+        
+        # if file exists, get varlist and chunks
+        
+        # take variables and set encoding
+        
+        # write to file (with progress)
+        
+        # N.B.: make sure the spatial units work!!! spatial coordinates seem to loose attributes...
+        
+        # add extras
+        
+        # return file path
+        return 
 
 
 if __name__ == '__main__':
