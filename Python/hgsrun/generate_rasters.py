@@ -279,8 +279,8 @@ if __name__ == '__main__':
     ## ERA5
     dataset = 'ERA5'; subdataset = 'ERA5L'
 #     varlist = ['snow','dswe',]
-#     varlist = ['precip','pet_era5','liqwatflx','snow','dswe',]
-    varlist = ['pet_era5','liqwatflx','snow']
+    varlist = ['precip','pet_era5','liqwatflx','snow','dswe',]
+#     varlist = ['pet_era5','liqwatflx','snow']
     dataset_kwargs = dict(filetype=subdataset)
 #     dataset_kwargs['resolution'] = 'NA10'; chunks = dict(time=8,latitude=61,longitude=62)
     dataset_kwargs['resolution'] = 'NA10'; dataset_kwargs['grid'] = 'son2'; chunks = dict(time=9,y=59,x=59)
@@ -298,8 +298,8 @@ if __name__ == '__main__':
 #     start_date = '1997-01-01'; end_date = '1997-02-01'; resampling = 'nearest' # for testing...
 
     ## output type: ASCII raster or NetCDF-4
-#     mode = 'NetCDF'
-    mode = 'raster2d'
+    mode = 'NetCDF'
+#     mode = 'raster2d'
 
     
     ## WRF requires special treatment
@@ -465,7 +465,9 @@ if __name__ == '__main__':
         if mode.lower() == 'raster2d':
             print(("Output folder: '{:s}'\nRaster pattern: '{:s}'".format(target_folder,filename)))
         elif mode.upper() == 'NETCDF':
-            print(("NetCDF file: '{:s}'".format(osp.join(target_folder,filename))))        
+            print(("NetCDF file: '{:s}'".format(osp.join(target_folder,filename))))   
+            original_filename = filename
+            filename += '.tmp'     
         
         
         # explicitly determine chunking to get complete 2D lat/lon slices
@@ -530,6 +532,9 @@ if __name__ == '__main__':
                 if  xlon in var.dimensions and ylat in var.dimensions:
                     var.setncattr('resampling',resampling)
             dataset.close()
+            # replace original file
+            if os.path.exists(original_filename): os.remove(original_filename)
+            os.rename(filename, original_filename)
         
         end_var = time()
         print(("\n\n***   Completed '{:s}' in {:.2f} seconds   ***\n".format(varname,end_var-start_var)))

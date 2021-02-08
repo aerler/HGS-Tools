@@ -21,6 +21,8 @@ from warnings import warn
 
 ## definitions
 
+geospatial_netcdf_version = 1.0
+
 # NC4 compression options
 zlib_default = dict(zlib=True, complevel=1, shuffle=True) # my own default compression settings
 
@@ -314,7 +316,6 @@ def copy_dims(dst, src, dimlist=None, namemap=None, copy_coords=True, **kwargs):
 
 def interprete_time_units(units):
     ''' homogenize various time formats... '''
-    
     # identify unit names and default formats
     if units == 'M' or units.lower() in ('month','months'):
         unit_name= 'Months'; units = 'month'; dt_code = 'M'; date_fmt = '%Y-%m'
@@ -326,7 +327,8 @@ def interprete_time_units(units):
         unit_name= 'Minutes'; units = 'min'; dt_code = 'm'; date_fmt = '%Y-%m-%d_%H:%M:%S'
     elif units.lower() in ('sec','second','seconds','s'):
         unit_name= 'Seconds'; units = 's'; dt_code = 's'; date_fmt = '%Y-%m-%d_%H:%M:%S'
-    
+    else:
+        raise ValueError(units)
     # return various translations
     return unit_name,units,dt_code,date_fmt
 
@@ -372,6 +374,7 @@ def add_time_coord(dst, data, name=None, units='D', atts=None, ts_atts=None, dat
     elif name is None: name = atts.get('name','time')
     if atts is None: atts = dict(name=name)
     atts['units'] = '{} since {}'.format(unit_name.lower(), start_date) 
+    atts['geospatial_netcdf_version'] = geospatial_netcdf_version
     coord = (data - data[0]) / np.timedelta64(1, dt_code)
     if dtype is None: dtype = np.dtype('i4') # 32 bit int
     add_coord(dst, name, data=coord, length=None, atts=atts, dtype=dtype, zlib=zlib, **kwargs) # record dim
@@ -382,7 +385,8 @@ def add_time_coord(dst, data, name=None, units='D', atts=None, ts_atts=None, dat
             ts_atts = atts.copy() # build based on time atts
             ts_atts['name'] = name+'_stamp'
             ts_atts['long_name'] = "Human-readable Time Stamp"
-            ts_atts['units'] = ''        
+            ts_atts['units'] = ''    
+            ts_atts['geospatial_netcdf_version'] = geospatial_netcdf_version
         add_var(dst, name+'_stamp', dims=(name,), data=ts_data, shape=(len(data),), 
                 atts=ts_atts, dtype=np.dtype('U'), zlib=zlib, **kwargs) # time-stamp
         
@@ -391,8 +395,10 @@ def add_time_coord(dst, data, name=None, units='D', atts=None, ts_atts=None, dat
 
 
 # default attributes for month meta data variables
-default_mon_name_atts = dict(name='name_of_month', units='', long_name='Name of the Month')
-default_mon_len_atts = dict(name='length_of_month', units='days',long_name='Length of Month')
+default_mon_name_atts = dict(name='name_of_month', units='', long_name='Name of the Month',
+                             geospatial_netcdf_versio=geospatial_netcdf_version)
+default_mon_len_atts = dict(name='length_of_month', units='days',long_name='Length of Month',
+                             geospatial_netcdf_versio=geospatial_netcdf_version)
 
 def addNameLengthMonth(ds, time_dim='time', mon_name_atts=default_mon_name_atts, mon_len_atts=default_mon_len_atts):
     ''' add name and length of month to monthly normals '''
@@ -469,7 +475,7 @@ def createGeoReference(ds, crs=None, geotrans=None, size=None, xlon=None, ylat=N
     epsg = crs.to_epsg() if hasattr(crs,'to_epsg') else 'n/a'
     ds.setncattr('EPSG',epsg if epsg is not None else 'n/a')
     ds.setncattr('is_projected',int(lproj))
-        
+    ds.setncattr('geospatial_netcdf_versio',geospatial_netcdf_version)
     # return modified dataset
     return ds    
 

@@ -12,9 +12,10 @@ import os
 import numpy as np
 import xarray as xr
 import netCDF4 as nc
+from dask.diagnostics import ProgressBar
 
 # internal imports
-from geospatial.netcdf_tools import getNCAtts # this import shpuld be fine
+from geospatial.netcdf_tools import getNCAtts, geospatial_netcdf_version, zlib_default # this import should be fine
 
 ## an important option I am relying on!
 xr.set_options(keep_attrs=True)
@@ -23,6 +24,7 @@ xr.set_options(keep_attrs=True)
 default_x_coords = dict(geo=('lon','long','longitude',), proj=('x','easting') )
 default_y_coords = dict(geo=('lat','latitude',),         proj=('y','northing'))
 default_lon_coords = default_x_coords['geo']; default_lat_coords = default_y_coords['geo']
+
 
 
 ## helper functions
@@ -427,11 +429,20 @@ def getCommonChunks(xds, method='min'):
     ''' get smallest/largest/mean common denominator for chunks in dataset '''
     chunk_list = dict()
     # collect chunks
-    for xvar in xds.data_vars.values():
-        if 'chunksizes' in xvar.encoding:
-            for dim,cks in zip(xvar.dims,xvar.encoding['chunksizes']):
-                if dim in chunk_list: chunk_list[dim].append(cks)
-                else: chunk_list[dim] = [cks]
+    if isinstance(xds,xr.Dataset):
+        for xvar in xds.data_vars.values():
+            if 'chunksizes' in xvar.encoding:
+                for dim,cks in zip(xvar.dims,xvar.encoding['chunksizes']):
+                    if dim in chunk_list: chunk_list[dim].append(cks)
+                    else: chunk_list[dim] = [cks]
+    elif isinstance(xds,nc.Dataset):
+        for ncvar in xds.variables.values():
+            if ncvar.chunking():
+                for dim,cks in zip(ncvar.dimensions,ncvar.chunking()):
+                    if dim in chunk_list: chunk_list[dim].append(cks)
+                    else: chunk_list[dim] = [cks]
+    else:
+        raise TypeError(xds)
     # reduce chunks
     chunks = dict()
     for dim,cks in list(chunk_list.items()):
@@ -533,7 +544,7 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
             if multi_chunks: # enlarge chunks with multiplier
                 chunks = {dim:(val*multi_chunks.get(dim,1)) for dim,val in chunks.items()}                  
             # open dataset with xarray
-            print(varname,chunks)
+            #print(varname,chunks)
             ds = xr.open_dataset(filepath, chunks=chunks, mask_and_scale=mask_and_scale, **kwargs)
             # N.B.: the use of open_mfdataset is problematic, because it does not play nicely with chunking - 
             #       by default it loads everything as one chunk, and it only respects chunking, if chunks are 
@@ -576,25 +587,132 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
     return xds
   
     
-    def saveXArray(xds, filename=None, folder=None, mode='add', chunks=None, encoding=None, laddTime=None,
-                   ltmpfile=True, lcompute=True, lprogress=True, lfeedback=True, **kwargs):
-        ''' function to save a xarray dataset to disk, with options to add/overwrite variables, choose smart encoding, 
-            add timstamps, use a temp file, and handle dask functionality '''
-        raise NotImplementedError()
-        # file path and tmp file
+def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, chunks=None, encoding=None, laddTime=None, 
+               time_dim='time', time_agg=None, ltmpfile=True, lcompute=True, lprogress=True, lfeedback=True, **kwargs):
+    ''' function to save a xarray dataset to disk, with options to add/overwrite variables, choose smart encoding, 
+        add timstamps, use a temp file, and handle dask functionality '''
+    from geospatial.netcdf_tools import addTimeStamps, addNameLengthMonth
+    # file path and tmp file
+    if folder: 
+        filepath = '{}/{}'.format(folder,filename)
+    # if file exists, get varlist and chunks
+    if not os.path.exists(filepath) or mode.lower() in ('overwrite','write'):
+        # create a new file
+        nc_mode = 'w'
+        if lfeedback: print("\nExporting to new NetCDF-4 file:")
+    else:
+        # if file exists and we are appending...
+        nc_mode = 'a' # in most cases
+        ltmpfile = not lcompute # only works with new file (or dummy...)
+        if mode.lower() in ('add_new',):
+            if lfeedback: print("\nAppending to existing NetCDF-4 file (only adding new variables):")
+        elif mode.lower() in ('add_all',):
+            if lfeedback: print("\nAppending to existing NetCDF-4 file (overwriting existing variables):")
+        else:
+            raise ValueError(mode)
+    # determine tmp file
+    if ltmpfile: 
+        tmp_filepath = filepath + ( '.tmp' if lcompute else '.test' ) # use temporary file during creation
+    else:
+        tmp_filepath = filepath
+    if lfeedback: print(" '{}'".format(tmp_filepath))
+    ## handle varlist and existing variables in file
+    # user-supplied varlist
+    if varlist:
+        drop_vars = [xvar for xvar in xds.data_vars.keys() if xvar not in varlist]
+        xds = xds.drop_vars(drop_vars) # returns a shallow copy with vars removed
+    # handle existing 
+    if nc_mode == 'a':
+        # open existing file and get encoding
+        with nc.Dataset(filepath, 'r') as ncds:
+            if chunks is None: chunks = getCommonChunks(ncds)
+            if mode.lower() == 'add_new':
+                nc_varlist = [var for var in ncds.variables.keys() if var not in ncds.dimensions]
+                drop_vars = [xvar for xvar in xds.data_vars.keys() if xvar in nc_varlist]
+                xds = xds.drop_vars(drop_vars) # returns a shallow copy with vars removed
+        # adding all variables and overwriting existing ones, requires no changes except nc_mode = 'a'
+    # setup encoding
+    if encoding is None: 
+        encoding = dict(); default = None
+    else:
+        default = encoding.pop('DEFAULT',None)
+    for varname,xvar in xds.data_vars.items():
+        tmp = zlib_default.copy()
+        cks = tuple(1 if dim == 'time' else chunks[dim] for dim in xvar.dims)
+        tmp['chunksizes'] = cks # depends on variable
+        # N.B.: use chunk size 1 for time and as before for space; monthly chunks make sense, since
+        #       otherwise normals will be expensive to compute (access patterns are not sequential)            
+        if isinstance(xvar.dtype,np.inexact): encoding[varname]['_FillValue'] = np.NaN
+        if default: tmp.update(default)
+        if varname not in encoding: 
+            encoding[varname] = tmp
+        else:
+            tmp.update(encoding[varname])
+            encoding[varname] = tmp
+        #print(varname,cks,rvar.encoding)
+    # write to NetCDF
+    ## write to file (with progress)
+    
+    # write results to file (actually just create file)
+    task = xds.to_netcdf(tmp_filepath, mode=nc_mode, format='NETCDF4', unlimited_dims=['time'], 
+                         engine='netcdf4', encoding=encoding, compute=False)
+    if lcompute:
+        # execute with or without progress bar
+        if lprogress:
+            with ProgressBar():
+                task.compute()
+        else:
+            task.compute()
+
+        ## add extras
+        with nc.Dataset(tmp_filepath, mode='a') as ncds:
+            if laddTime:
+                time_coord = ncds.variables[time_dim]
+                tatts = getNCAtts(time_coord)
+                tname = tatts.get('long_name','')
+                if tname.lower().startswith('calendar '):
+                    # info on month for climatology
+                    from geospatial.netcdf_tools import default_mon_name_atts
+                    if default_mon_name_atts['name'] in ncds.variables:
+                        if lfeedback: print("\nName of months variable alrady exists.")
+                    else:
+                        if lfeedback: print("\nAdding name and length of months.")
+                        assert tatts.get('units','').lower().startswith('month'), tatts # this assumes monthly time aggregation
+                        assert not time_agg or time_agg.lower().startswith('month')
+                        addNameLengthMonth(ncds, time_dim=time_dim)
+                else:
+                    # time stamps for transient
+                    if time_dim+'_stamp' in ncds.variables:
+                        if lfeedback: print("\nTime-stamp variable ('{}_stamp') already exists.".format(time_dim))
+                    else:
+                        time_agg = time_agg.lower()
+                        if time_agg.endswith('ly'): time_agg = time_agg[:-2]
+                        if lfeedback: print("\nAdding human-readable time-stamp variable ('_stamp').".format(time_dim))
+                        addTimeStamps(ncds, units=time_agg) # add time-stamps
+            ## make sure the spatial units are present!!! xarray seems to loose the spatial coordinate units
+            lgeo = isGeoCRS(ncds, lraise=True)
+            for coord in getGeoCoords(ncds, lvars=True, lraise=True):
+                if 'units' not in coord.ncattrs():
+                    coord.setncattr('units','deg' if lgeo else 'm')
+            # store geospatial code version
+            ncds.setncattr('geospatial_netcdf_version',geospatial_netcdf_version) 
         
-        # if file exists, get varlist and chunks
-        
-        # take variables and set encoding
-        
-        # write to file (with progress)
-        
-        # N.B.: make sure the spatial units work!!! spatial coordinates seem to loose attributes...
-        
-        # add extras
-        
-        # return file path
-        return 
+        # replace original file
+        if ltmpfile:
+            if lfeedback: print("\nMoving file to final destination (overwriting old file):\n '{}'".format(filepath))
+            if os.path.exists(filepath): os.remove(filepath)
+            os.rename(tmp_filepath, filepath)            
+    else:
+        # just show some info and save task graph
+        if lfeedback:
+            print("\nEncoding info:") 
+            print(encoding)
+            print(task)
+            print("\nSaving task graph to:\n '{}.svg'".format(filepath))
+        task.visualize(filename=filepath+'.svg')  # This file is never produced
+    
+    # return file path
+    return filepath
 
 
 if __name__ == '__main__':
