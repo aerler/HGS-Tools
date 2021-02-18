@@ -72,6 +72,7 @@ def writeIncFile(filepath, time_coord, filename_pattern, time_fmt='{:15.0f}', da
 if __name__ == '__main__':
 
     import dask
+    from dask.diagnostics import ProgressBar
     # N.B.: it seems dask multi-processing is prone to memory leaks...
     #from multiprocessing.pool import ThreadPool
     from time import time
@@ -116,11 +117,11 @@ if __name__ == '__main__':
 #     project = 'GRW'
 #     grid_name  = 'grw2'; resampling = 'nearest'; #source_grid = 'grw1'
     ## operational config for SON2
-    project = 'SON'
-    grid_name  = 'son2'
+#     project = 'SON'
+#     grid_name  = 'son2'
     ## 
-#     project = 'SNW'
-#     grid_name  = 'snw2'
+    project = 'SNW'
+    grid_name  = 'snw2'
     ## operational config for ASB2
 #     project = 'ASB'
 #     grid_name  = 'asb1'
@@ -237,6 +238,7 @@ if __name__ == '__main__':
     lwarp = True # set False to suppress reprojection    
     # some defaults for most datasets
     time_chunks = 8 # SnoDAS & CaSPAr only! typically not much speed-up beyond 8
+    multi_chunks = 'regular' # ERA5, Merged, NRCan: time x 8
     dataset_kwargs = dict(); subdataset = None 
     bias_correction = None; bc_varmap = dict(); obs_name = None; bc_method = None
     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/'
@@ -271,21 +273,22 @@ if __name__ == '__main__':
 # # #     subdataset = 'NRCan'; varlist += ['pet_th',] # PET based on Thornthwaite method
 # #     subdataset = 'NRCan'; varlist += ['pet_hog',] # PET based on simple Hogg method
 # #     dataset_kwargs = dict(dataset=subdataset)
-#     dataset_kwargs['resolution'] = 'CA12'; resampling = 'cubic_spline'; dataset_kwargs['chunks'] = dict(time=8, lon=63, lat=64)
+#     dataset_kwargs['resolution'] = 'CA12'; resampling = 'cubic_spline'
 # #     dataset_kwargs['resolution'] = 'SON60'; resampling = 'bilinear'
 #     dataset_kwargs['dataset_index'] = dict(liqwatflx='MergedForcing',liqwatflx_ne5='MergedForcing',pet_har='NRCan',pet_hog='NRCan')
 # #     dataset_kwargs['grid'] = 'son2'; resampling = None; lwarp = False
 # #     dataset_kwargs['grid'] = 'snw2'; resampling = None; lwarp = False
     ## ERA5
     dataset = 'ERA5'; subdataset = 'ERA5L'
+    multi_chunks = 'time' # time x 92 - for small grids only!
 #     varlist = ['snow','dswe',]
     varlist = ['precip','pet_era5','liqwatflx','snow','dswe',]
 #     varlist = ['pet_era5','liqwatflx','snow']
     dataset_kwargs = dict(filetype=subdataset)
-#     dataset_kwargs['resolution'] = 'NA10'; chunks = dict(time=8,latitude=61,longitude=62)
-    dataset_kwargs['resolution'] = 'NA10'; dataset_kwargs['grid'] = 'son2'; chunks = dict(time=9,y=59,x=59)
-#     dataset_kwargs['resolution'] = 'AU10'; chunks = dict(time=8, latitude=59, longitude=62)  
-    resampling = 'cubic_spline'; dataset_kwargs['chunks'] = chunks # apparently we need to pre-chunk or there is a memory leak..   
+    dataset_kwargs['resolution'] = 'NA10'
+#     dataset_kwargs['resolution'] = 'AU10'
+#     dataset_kwargs['resolution'] = 'NA10'; dataset_kwargs['grid'] = 'son2'; multi_chunks = 'time'
+    resampling = 'cubic_spline'; dataset_kwargs['multi_chunks'] = multi_chunks # apparently we need to pre-chunk or there is a memory leak..   
     
 
 #     start_date = '1997-01-01'; end_date = '2017-12-31' # SON/SNW full period
@@ -462,12 +465,14 @@ if __name__ == '__main__':
         ## generate workload for lazy execution
         start_load = time()
         print(("\nConstructing Workload for '{:s}' from {:s} to {:s}.   ***".format(varname,start_date,end_date)))
+        filepath = target_folder+filename
         if mode.lower() == 'raster2d':
-            print(("Output folder: '{:s}'\nRaster pattern: '{:s}'".format(target_folder,filename)))
+            print(("Output folder: '{:s}'\nRaster pattern: '{:s}'".format(filepath)))
         elif mode.upper() == 'NETCDF':
-            print(("NetCDF file: '{:s}'".format(osp.join(target_folder,filename))))   
-            original_filename = filename
-            filename += '.tmp'     
+            print(("NetCDF file: '{:s}'".format(filepath)))   
+            original_filepath = filepath
+            filepath += '.tmp'
+            filename += '.tmp'   
         
         
         # explicitly determine chunking to get complete 2D lat/lon slices
@@ -514,11 +519,12 @@ if __name__ == '__main__':
         
         # execute delayed computation
         print(("\n***   Executing {:d} Workloads for '{:s}' using Dask   ***".format(n_loads,varname)))
-        print(("Chunks (time only): {}".format(xvar.chunks[0])))
+        #print(("Chunks (time only): {}".format(xvar.chunks[0])))
     
         #with dask.set_options(scheduler='processes'):      
-        #with dask.config.set(pool=ThreadPool(4)):    
-        dask.compute(*work_load)
+        #with dask.config.set(pool=ThreadPool(4)):
+        with ProgressBar():
+                dask.compute(*work_load)
             
         #print("\nDummy output:")
         #print(dummy_output)
@@ -533,8 +539,8 @@ if __name__ == '__main__':
                     var.setncattr('resampling',resampling)
             dataset.close()
             # replace original file
-            if os.path.exists(original_filename): os.remove(original_filename)
-            os.rename(filename, original_filename)
+            if os.path.exists(original_filepath): os.remove(original_filepath)
+            os.rename(filepath, original_filepath)
         
         end_var = time()
         print(("\n\n***   Completed '{:s}' in {:.2f} seconds   ***\n".format(varname,end_var-start_var)))
