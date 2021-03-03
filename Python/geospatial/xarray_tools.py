@@ -318,8 +318,23 @@ def inferGeoInfo(xvar, varname=None, crs=None, transform=None, size=None, lraise
 
 ## functions that modify a dataset
 
+def _inferVarmap(varmap=None, varatts=None, linvert=False):
+    ''' simple function that infers a varmap using varatts, if necessary '''
+    if varmap is None:
+        varmap = dict()
+        if varatts is not None:
+            for varname,atts in varatts.items():
+                if 'name' in atts: varmap[varname] = atts['name']  
+    elif not isinstance(varmap,dict): 
+        raise TypeError(varmap)
+    if linvert:
+        varmap = {value:key for key,value in varmap.items()}
+    # return varmap (guaranteed to be a dict)
+    return varmap
+
 def updateVariableAttrs(xds, varatts=None, varmap=None, varlist=None, **kwargs):
     ''' a helper function to update variable attributes, rename variables, and apply scaling factors '''
+    # update varatts
     if varatts is None: 
         varatts = dict()
     elif isinstance(varatts,dict): 
@@ -327,13 +342,8 @@ def updateVariableAttrs(xds, varatts=None, varmap=None, varlist=None, **kwargs):
     else: 
         raise TypeError(varatts)
     varatts.update(kwargs) # add kwargs
-    # generate var map
-    if varmap is None:
-        varmap = dict()
-        for varname,atts in varatts.items():
-            if varname in xds and 'name' in atts: varmap[varname] = atts['name']  
-    elif not isinstance(varmap,dict): 
-        raise TypeError(varmap)
+    # generate varmap
+    varmap = _inferVarmap(varmap=varmap, varatts=varatts, linvert=False)
     # drop variables
     if varlist is not None:
         drop_list = []
@@ -495,26 +505,9 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
          
          
 ## function to load a dataset         
-         
-def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_pattern=None, default_varlist=None, varmap=None, 
-               mask_and_scale=True, grid=None, lgeoref=True, geoargs=None, chunks=True, multi_chunks=None, lskip=False, 
-               compat='override', join='inner', fill_value=np.NaN, **kwargs):
-    ''' function to open a dataset where variables are stored in separate files (but in the same folder); this mainly applies 
-        to high-resolution, high-frequency (daily) observations (e.g. SnoDAS); datasets are opened using xarray '''
-    # load variables
-    if varname and varlist: 
-        raise ValueError(varname,varlist)
-    elif varname:
-        varlist = [varname] # load a single variable
-    elif varlist is None:
-        varlist = default_varlist
-    # apply varmap in reverse to varlist
-    if varmap is None and varatts is not None:
-        varmap = {name:atts.get('name',name) for name,atts in varatts.items()}
-    if varmap is not None:
-        ravmap = {value:key for key,value in varmap.items()}
-        varlist = [ravmap.get(varname,varname) for varname in varlist]
-    # just some default settings that will produce chunks larger than 100 MB on 8*64*64 float chunks
+
+def _multichunkPresets(multi_chunks):
+    ''' translate string identifiers into valid multichunk dicts, based on presets '''
     if isinstance(multi_chunks,str):
         if multi_chunks.lower() == 'regular': # 256 MB
             multi_chunks = {dim:16 for dim in ('lat','lon','latitude','longitude','x','y',)}
@@ -526,21 +519,71 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
             multi_chunks['time'] = 92 # for reductions along time, we can use a higher value (8 days * 92 ~ 2 years)
         else:
             raise NotImplementedError(multi_chunks)
+    elif ( multi_chunks is not None ) and not isinstance(multi_chunks, dict):
+        raise TypeError(multi_chunks)
+    # return valid multi_chunks (dict)
+    return multi_chunks
+         
+def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_pattern=None, default_varlist=None, varmap=None, 
+               mask_and_scale=True, grid=None, lgeoref=True, geoargs=None, chunks=True, multi_chunks=None, lskip=False, 
+               filetypes=None, compat='override', join='inner', fill_value=np.NaN, **kwargs):
+    ''' function to open a dataset in one of two modes: 1) variables are stored in separate files, but in the same folder (this mainly 
+        applies to high-resolution, high-frequency (daily) observations, e.g. SnoDAS) or 2) multiple variables are stored in different
+        filetypes and each is opened and then merged (usually model output); datasets are opened using xarray '''
+    # load variables
+    if filetypes is None: 
+        # option 1: one variable per file
+        if varname and varlist: 
+            raise ValueError(varname,varlist)
+        elif varname:
+            varlist = [varname] # load a single variable
+        elif varlist is None:
+            varlist = default_varlist
+        # add variable filetypes
+        # if there is a (implied) varmap, we need to apply that to variable-filetypes
+        ravmap = _inferVarmap(varmap=varmap, varatts=varatts, linvert=True)
+        filetypes = [ravmap.get(varname,varname) for varname in varlist]
+    # now use option 2: multiple variables per file
+    # expand varmap to filetypes
+    if varmap is None: varmap = {filetype:None for filetype in filetypes} # no varmap
+    elif isinstance(varmap,dict):
+        if all([key in filetypes for key in varmap.keys()]): # one varmap per filetype
+            if not all([isinstance(value,dict) or value is None for value in varmap.values()]):
+                raise TypeError(varmap)
+        else: varmap = {filetype:varmap for filetype in filetypes} # same varmap for all
+    else:
+        raise TypeError(varmap)
+    # expand varatts to filetypes
+    if varatts is None: varatts = {filetype:None for filetype in filetypes} # no varatts
+    elif isinstance(varatts,dict):
+        if all([key in filetypes for key in varatts.keys()]): # one varatts per filetype
+            if not all([isinstance(value,dict) or value is None for value in varatts.values()]):
+                raise TypeError(varatts)
+        else: varatts = {filetype:varatts for filetype in filetypes} # same varatts for all
+    else:
+        raise TypeError(varatts)
+        varatts = {filetype:varatts for filetype in filetypes}        
+    # just some default settings that will produce chunks larger than 100 MB on 8*64*64 float chunks
+    multi_chunks = _multichunkPresets(multi_chunks)
+    orig_chunks = chunks.copy() if isinstance(chunks, dict) else chunks # deep copy or True or None
     # construct dataset
-    default_chunks = chunks.copy() if isinstance(chunks, dict) else chunks # deep copy
     ds_list = []
-    for varname in varlist:
-        filename = filename_pattern.lower().format(var=varname.lower()) # all lower case
+    for filetype in filetypes:
+        filename = filename_pattern.lower().format(var=filetype.lower(), type=filetype.lower()) # all lower case
         filepath = '{}/{}'.format(folder,filename)
-        chunks = default_chunks # reset
+        chunks = orig_chunks # reset
+        # apply varmap in reverse to varlist
         if os.path.exists(filepath):
             # load dataset
             if chunks is True:
                 # infer chunks from NetCDF-4 file (not sure why xarray doesn't do this automatically...)
-                ncds = nc.Dataset(filepath, 'r')# open in read-only using NetCDF4 module
-                ncvar = ncds.variables[varname] 
-                chunks = dict(zip(ncvar.dimensions,ncvar.chunking()))
-                ncds.close()
+                with nc.Dataset(filepath, 'r') as ncds : # open in read-only using NetCDF4 module
+                    chunks = dict()
+                    for varname,ncvar in ncds.variables.items():
+                        for dim,size in zip(ncvar.dimensions,ncvar.chunking()):
+                            chunks[dim] = size # this just selects the last value... not necessarily always the same
+                            if dim in chunks and chunks[dim] != size:
+                                print("WARNING: Chunks for dimension '{}' not coherent in file:\n '{}'".format(dim, filepath))
             if multi_chunks: # enlarge chunks with multiplier
                 chunks = {dim:(val*multi_chunks.get(dim,1)) for dim,val in chunks.items()}                  
             # open dataset with xarray
@@ -550,6 +593,9 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
             #       by default it loads everything as one chunk, and it only respects chunking, if chunks are 
             #       specified explicitly at the initial load time (later chunking seems to have no effect!)
             #       That being said, I don't know if this is still the case...
+            # rename, prune/drop vars and apply attributes
+            if varatts or varmap:
+                ds = updateVariableAttrs(ds, varatts=varatts[filetype], varmap=varmap[filetype], varlist=varlist)
             ds_list.append(ds)
         else:
             if lskip:
@@ -560,9 +606,6 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
     if len(ds_list) == 0:
         raise ValueError("Dataset is empty - aborting! Folder: \n '{}'".format(folder))
     xds = xr.merge(ds_list, compat=compat, join=join, fill_value=fill_value)
-    # rename and apply attributes
-    if varatts or varmap:
-        xds = updateVariableAttrs(xds, varatts=varatts, varmap=varmap)
     # add projection info
     if lgeoref:
         if geoargs is not None:
