@@ -21,8 +21,8 @@ from geospatial.netcdf_tools import getNCAtts, geospatial_netcdf_version, zlib_d
 xr.set_options(keep_attrs=True)
 
 # names of valid geographic/projected coordinates
-default_x_coords = dict(geo=('lon','long','longitude',), proj=('x','easting') )
-default_y_coords = dict(geo=('lat','latitude',),         proj=('y','northing'))
+default_x_coords = dict(geo=('lon','long','longitude',), proj=('x','easting','west_east') )
+default_y_coords = dict(geo=('lat','latitude',),         proj=('y','northing','south_north'))
 default_lon_coords = default_x_coords['geo']; default_lat_coords = default_y_coords['geo']
 
 
@@ -41,49 +41,70 @@ def getAtts(xvar, lraise=True):
 
 ## functions to interface with rasterio
 
-def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True, lvars=True):
-    '''  helper function to extract geographic/projected coordinates from xarray'''
-    
+def getGeoDims(xvar, x_coords=None, y_coords=None, lraise=True):
+    ''' helper function to identify geographic/projected dimensions by name ''' 
     if x_coords is None: x_coords = default_x_coords
     if y_coords is None: y_coords = default_y_coords
     
-    xlon,ylat = None,None # return None, if nothing is found
-    
+    xlon,ylat = None,None # return None, if nothing is found    
+
     if isinstance(xvar,(xr.DataArray,xr.Dataset)):
         # test geographic grid and projected grids separately
         for coord_type in x_coords.keys():
-            for name,coord in xvar.coords.items():
+            for name in xvar.dims.keys():
                 if name.lower() in x_coords[coord_type]: 
-                    xlon = coord if lvars else name; break
-            for name,coord in xvar.coords.items():
+                    xlon = name; break
+            for name in xvar.dims.keys():
                 if name.lower() in y_coords[coord_type]: 
-                    ylat = coord if lvars else name; break
+                    ylat = name; break
             if xlon is not None and ylat is not None: break
             else: xlon,ylat = None,None
-    elif isinstance(xvar,nc.Variable) and lraise:
-        raise TypeError("Cannot infer coordinates from netCDF4 Variable - only Dataset!")
     elif isinstance(xvar,nc.Dataset):
         # test geographic grid and projected grids separately
         for coord_type in x_coords.keys():
             for name in xvar.dimensions:
                 if name.lower() in x_coords[coord_type]: 
-                    if name in xvar.variables:
-                        xlon = xvar.variables[name] if lvars else name; break
+                    xlon = name; break
             for name in xvar.dimensions:
                 if name.lower() in y_coords[coord_type]: 
-                    if name in xvar.variables:
-                        ylat = xvar.variables[name] if lvars else name; break
+                    ylat = name; break
             if xlon is not None and ylat is not None: break
             else: xlon,ylat = None,None      
     elif lraise: # optionally check input
         raise TypeError("Can only infer coordinates from xarray or netCDF4 - not from {}".format(xvar.__class__))
     else:
         pass # return None,None
+    
+    return xlon,ylat
+
+def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True, lvars=True, lcreate=False, xlon_coord=None, ylat_coord=None):
+    '''  helper function to extract geographic/projected coordinates from xarray'''
+    
+    # find dim names
+    xlon_dim,ylat_dim = getGeoDims(xvar, x_coords=x_coords, y_coords=y_coords, lraise=lraise)
+    
+    # find coordinates
+    if isinstance(xvar,(xr.DataArray,xr.Dataset)):
+        if xlon_dim in xvar.coords:
+            xlon = xvar.coords[xlon_dim] if lvars else xlon_dim
+        else: xlon = None
+        if ylat_dim in xvar.coords:
+            ylat = xvar.coords[ylat_dim] if lvars else ylat_dim 
+        else: ylat = None
+    elif isinstance(xvar,nc.Variable) and lraise:
+        raise TypeError("Cannot infer coordinates from netCDF4 Variable - only Dataset!")
+    elif isinstance(xvar,nc.Dataset):
+        if xlon_dim in xvar.coords:
+            xlon = xvar.variables[xlon_dim] if lvars else xlon_dim
+        else: xlon = None
+        if ylat_dim in xvar.coords:
+            ylat = xvar.variables[ylat_dim] if lvars else ylat_dim 
+        else: ylat = None
         
     # optionally raise error if no coordinates are found, otherwise just return None
     if lraise and (xlon is None or ylat is None):
         raise ValueError("No valid pair of geographic coodinates found:\n {}".format(xvar.dims))
-    
+      
     # return a valid pair of geographic or projected coordinate axis
     return xlon,ylat
 
@@ -375,15 +396,28 @@ def updateVariableAttrs(xds, varatts=None, varmap=None, varlist=None, **kwargs):
                 attrs['updated'] = date_str # indicate we have updated with date string
                 var.attrs = attrs
     # actually rename (but only vars that are present and need to be renamed...)
-    xds = xds.rename({key:val for key,val in varmap.items() if key in xds and key != val})
+    xds = xds.rename({key:val for key,val in varmap.items() if key in xds.variables and key != val})
+    xds = xds.rename_dims({key:val for key,val in varmap.items() if key in xds.dims and key != val})
     xds.attrs['updated'] = date_str
     return xds
 
 
-def addGeoReference(xds, proj4_string=None, x_coords=None, y_coords=None):
+def addGeoReference(xds, proj4_string=None, x_coords=None, y_coords=None, lcreate=False, xlon_coord=None, ylat_coord=None):
     ''' helper function to add GDAL/rasterio-style georeferencing information to an xarray dataset;
         note that this only refers to attributed, not axes, but also includes variables '''
-    xlon,ylat = getGeoCoords(xds, x_coords=x_coords, y_coords=y_coords, lvars=False)
+    xlon,ylat = getGeoCoords(xds, x_coords=x_coords, y_coords=y_coords, lvars=lcreate, lraise=not lcreate)
+    if lcreate:
+        if (xlon is None and ylat is None):
+            assert xlon_coord is not None and ylat_coord is not None
+            # need to find names again...
+            xlon_dim,ylat_dim = getGeoDims(xds, x_coords=x_coords, y_coords=y_coords, lraise=True)
+            # create new xlon/ylat coordinates, based on coordinates passed down
+            coords = {xlon_dim:xlon_coord, ylat_dim:ylat_coord}
+            xds = xds.assign_coords(**coords)
+        elif (xlon is not None) and (ylat is not None):
+            xlon = xlon.name; ylat = ylat.name # from here on only need names
+        else:
+            raise ValueError("No valid pair of geographic coodinates found:\n {}".format(xds.dims))
     xds.attrs['xlon'] = xlon
     xds.attrs['ylat'] = ylat
     if proj4_string is None:
@@ -524,9 +558,10 @@ def _multichunkPresets(multi_chunks):
     # return valid multi_chunks (dict)
     return multi_chunks
          
-def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_pattern=None, default_varlist=None, varmap=None, 
-               mask_and_scale=True, grid=None, lgeoref=True, geoargs=None, chunks=True, multi_chunks=None, lskip=False, 
-               filetypes=None, compat='override', join='inner', fill_value=np.NaN, **kwargs):
+def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_pattern=None, filelist=None, default_varlist=None, 
+               varmap=None, mask_and_scale=True, grid=None, lgeoref=True, geoargs=None, chunks=True, multi_chunks=None, 
+               ldropAtts=False, lskip=False, filetypes=None, 
+               compat='override', join='inner', fill_value=np.NaN, combine_attrs='no_conflicts', **kwargs):
     ''' function to open a dataset in one of two modes: 1) variables are stored in separate files, but in the same folder (this mainly 
         applies to high-resolution, high-frequency (daily) observations, e.g. SnoDAS) or 2) multiple variables are stored in different
         filetypes and each is opened and then merged (usually model output); datasets are opened using xarray '''
@@ -543,33 +578,71 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
         # if there is a (implied) varmap, we need to apply that to variable-filetypes
         ravmap = _inferVarmap(varmap=varmap, varatts=varatts, linvert=True)
         filetypes = [ravmap.get(varname,varname) for varname in varlist]
-    # now use option 2: multiple variables per file
+        # now also transform varatts and varmap
+        varmap_single = None if varmap is None else varmap.copy()
+        varatts_single = None if varatts is None else varatts.copy()
+        varatts = {filetype:varatts_single for filetype in filetypes}
+        varmap = {filetype:varmap_single for filetype in filetypes}
+    ## now use option 2: multiple variables per file
     # expand varmap to filetypes
-    if varmap is None: varmap = {filetype:None for filetype in filetypes} # no varmap
+    if varmap is None: 
+        varmap = {filetype:None for filetype in filetypes} # no varmap
     elif isinstance(varmap,dict):
+        filetypes_set = set(filetypes); varmap_set = set(varmap.keys())
+        if varmap_set.issubset(filetypes_set) or filetypes_set.issubset(varmap_set): # expand to filetypes using None
+            for filetype in filetypes:
+                if filetype in varmap_set:
+                    if not isinstance(varmap[filetype],dict) and varmap[filetype] is not None:
+                        raise TypeError(filetype,varmap[filetype])
+                else:
+                    varmap[filetype] = None
+        elif any([key in filetypes for key in varmap.keys()]):
+            raise ValueError("It is unclear if varmap is a dict containing varmap dicts for each filetype or just one varmap dict.",varmap.keys())
+
         if all([key in filetypes for key in varmap.keys()]): # one varmap per filetype
             if not all([isinstance(value,dict) or value is None for value in varmap.values()]):
                 raise TypeError(varmap)
-        else: varmap = {filetype:varmap for filetype in filetypes} # same varmap for all
+        elif any([key in filetypes for key in varmap.keys()]):
+            raise ValueError(varmap.keys())
+        else: 
+            varmap = {filetype:varmap for filetype in filetypes} # same varmap for all
     else:
         raise TypeError(varmap)
     # expand varatts to filetypes
-    if varatts is None: varatts = {filetype:None for filetype in filetypes} # no varatts
+    if varatts is None: 
+        varatts = {filetype:None for filetype in filetypes} # no varatts
     elif isinstance(varatts,dict):
-        if all([key in filetypes for key in varatts.keys()]): # one varatts per filetype
-            if not all([isinstance(value,dict) or value is None for value in varatts.values()]):
-                raise TypeError(varatts)
-        else: varatts = {filetype:varatts for filetype in filetypes} # same varatts for all
+        filetypes_set = set(filetypes); varatts_set = set(varatts.keys())
+        if varatts_set.issubset(filetypes_set) or filetypes_set.issubset(varatts_set): # expand to filetypes using None
+            for filetype in filetypes:
+                if filetype in varatts_set:
+                    if not isinstance(varatts[filetype],dict) and varatts[filetype] is not None:
+                        raise TypeError(filetype,varatts[filetype])
+                else:
+                    varatts[filetype] = None
+        elif any([key in filetypes for key in varatts.keys()]):
+            raise ValueError("It is unclear if varatts is a dict containing varatts dicts for each filetype or just one varatts dict.",varatts.keys())
+        else: 
+            varatts = {filetype:varatts for filetype in filetypes} # same varatts for all
     else:
         raise TypeError(varatts)
-        varatts = {filetype:varatts for filetype in filetypes}        
+    # expand filename/pattern to filetypes
+    if filename_pattern and not filelist: 
+        filelist = filename_pattern
+    if isinstance(filelist, dict):
+        if len(filelist) != len(filetypes):
+            raise ValueError(filelist)
+    elif isinstance(filelist, str):
+        filelist = {filetype:filelist for filetype in filetypes}
+    else:
+        raise ValueError(filelist)
     # just some default settings that will produce chunks larger than 100 MB on 8*64*64 float chunks
     multi_chunks = _multichunkPresets(multi_chunks)
     orig_chunks = chunks.copy() if isinstance(chunks, dict) else chunks # deep copy or True or None
     # construct dataset
     ds_list = []
     for filetype in filetypes:
-        filename = filename_pattern.lower().format(var=filetype.lower(), type=filetype.lower()) # all lower case
+        filename = filelist[filetype].lower().format(var=filetype.lower(), type=filetype.lower()) # all lower case
         filepath = '{}/{}'.format(folder,filename)
         chunks = orig_chunks # reset
         # apply varmap in reverse to varlist
@@ -594,6 +667,7 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
             #       specified explicitly at the initial load time (later chunking seems to have no effect!)
             #       That being said, I don't know if this is still the case...
             # rename, prune/drop vars and apply attributes
+            if ldropAtts: ds.attrs = dict() # drop original attributes from NC file (still add georef etc.)
             if varatts or varmap:
                 ds = updateVariableAttrs(ds, varatts=varatts[filetype], varmap=varmap[filetype], varlist=varlist)
             ds_list.append(ds)
@@ -605,13 +679,13 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
     # merge into new dataset
     if len(ds_list) == 0:
         raise ValueError("Dataset is empty - aborting! Folder: \n '{}'".format(folder))
-    xds = xr.merge(ds_list, compat=compat, join=join, fill_value=fill_value)
+    xds = xr.merge(ds_list, compat=compat, join=join, fill_value=fill_value, combine_attrs=combine_attrs)
     # add projection info
     if lgeoref:
         if geoargs is not None:
             # check
-            if 'proj4' in xds.attrs and 'proj4' in geoargs:
-                if xds.attrs['proj4'] != geoargs['proj4']:
+            if 'proj4' in xds.attrs and 'proj4_string' in geoargs:
+                if xds.attrs['proj4'] != geoargs['proj4_string']:
                     raise ValueError(xds.attrs['proj4'])
             # custom options 
             xds = addGeoReference(xds, **geoargs)
