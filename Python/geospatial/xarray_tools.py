@@ -59,7 +59,7 @@ def getGeoDims(xvar, x_coords=None, y_coords=None, lraise=True):
                     ylat = name; break
             if xlon is not None and ylat is not None: break
             else: xlon,ylat = None,None
-    elif isinstance(xvar,nc.Dataset):
+    elif isinstance(xvar,(nc.Dataset,nc.Variable)):
         # test geographic grid and projected grids separately
         for coord_type in x_coords.keys():
             for name in xvar.dimensions:
@@ -77,7 +77,7 @@ def getGeoDims(xvar, x_coords=None, y_coords=None, lraise=True):
     
     return xlon,ylat
 
-def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True, lvars=True, lcreate=False, xlon_coord=None, ylat_coord=None):
+def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True, lvars=True):
     '''  helper function to extract geographic/projected coordinates from xarray'''
     
     # find dim names
@@ -94,10 +94,10 @@ def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True, lvars=True, lc
     elif isinstance(xvar,nc.Variable) and lraise:
         raise TypeError("Cannot infer coordinates from netCDF4 Variable - only Dataset!")
     elif isinstance(xvar,nc.Dataset):
-        if xlon_dim in xvar.coords:
+        if xlon_dim in xvar.variables:
             xlon = xvar.variables[xlon_dim] if lvars else xlon_dim
         else: xlon = None
-        if ylat_dim in xvar.coords:
+        if ylat_dim in xvar.variables:
             ylat = xvar.variables[ylat_dim] if lvars else ylat_dim 
         else: ylat = None
         
