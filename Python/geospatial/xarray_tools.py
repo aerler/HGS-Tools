@@ -546,7 +546,7 @@ def _multichunkPresets(multi_chunks):
         if multi_chunks.lower() == 'regular': # 256 MB
             multi_chunks = {dim:16 for dim in ('lat','lon','latitude','longitude','x','y',)}
             multi_chunks['time'] = 8
-        if multi_chunks.lower() == 'small': # 64 MB
+        elif multi_chunks.lower() == 'small': # 64 MB
             multi_chunks = {dim:8 for dim in ('lat','lon','latitude','longitude','x','y','time')}
         elif multi_chunks.lower() == 'time': # 184 MB
             multi_chunks = {dim:4 for dim in ('lat','lon','latitude','longitude','x','y')}
@@ -567,6 +567,7 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
         filetypes and each is opened and then merged (usually model output); datasets are opened using xarray '''
     # load variables
     if filetypes is None: 
+        lopt1 = True
         # option 1: one variable per file
         if varname and varlist: 
             raise ValueError(varname,varlist)
@@ -583,6 +584,8 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
         varatts_single = None if varatts is None else varatts.copy()
         varatts = {filetype:varatts_single for filetype in filetypes}
         varmap = {filetype:varmap_single for filetype in filetypes}
+    else:
+        lopt1 = False # just to remember when using option 2
     ## now use option 2: multiple variables per file
     # expand varmap to filetypes
     if varmap is None: 
@@ -669,7 +672,8 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
             # rename, prune/drop vars and apply attributes
             if ldropAtts: ds.attrs = dict() # drop original attributes from NC file (still add georef etc.)
             if varatts or varmap:
-                ds = updateVariableAttrs(ds, varatts=varatts[filetype], varmap=varmap[filetype], varlist=varlist)
+                ds = updateVariableAttrs(ds, varatts=varatts[filetype], varmap=varmap[filetype], 
+                                         varlist=None if lopt1 else varlist)
             ds_list.append(ds)
         else:
             if lskip:
