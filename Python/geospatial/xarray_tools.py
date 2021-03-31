@@ -51,10 +51,10 @@ def getGeoDims(xvar, x_coords=None, y_coords=None, lraise=True):
     if isinstance(xvar,(xr.DataArray,xr.Dataset)):
         # test geographic grid and projected grids separately
         for coord_type in x_coords.keys():
-            for name in xvar.dims.keys():
+            for name in xvar.dims.keys() if isinstance(xvar,xr.Dataset) else xvar.dims:
                 if name.lower() in x_coords[coord_type]: 
                     xlon = name; break
-            for name in xvar.dims.keys():
+            for name in xvar.dims.keys() if isinstance(xvar,xr.Dataset) else xvar.dims:
                 if name.lower() in y_coords[coord_type]: 
                     ylat = name; break
             if xlon is not None and ylat is not None: break

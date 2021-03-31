@@ -120,8 +120,8 @@ if __name__ == '__main__':
 #     project = 'SON'
 #     grid_name  = 'son2'
     ## 
-    project = 'SNW'
-    grid_name  = 'snw2'
+    # project = 'SNW'
+    # grid_name  = 'snw2'
     ## operational config for ASB2
 #     project = 'ASB'
 #     grid_name  = 'asb1'
@@ -130,8 +130,8 @@ if __name__ == '__main__':
 #     project = 'Geo'
 #     grid_name = 'ca12'
     ## Queensland (Australia) grid
-#     project = 'QEL'
-#     grid_name = 'qel1' # 10 km Queensland grid
+    project = 'QEL'
+    grid_name = 'qel1' # 10 km Queensland grid
 
     ## define target grid/projection
     # projection/UTM zone
@@ -284,9 +284,9 @@ if __name__ == '__main__':
 #     varlist = ['snow','dswe',]
     varlist = ['precip','pet_era5','liqwatflx','snow','dswe',]
 #     varlist = ['pet_era5','liqwatflx','snow']
-    dataset_kwargs = dict(filetype=subdataset)
-    dataset_kwargs['resolution'] = 'NA10'
-#     dataset_kwargs['resolution'] = 'AU10'
+    dataset_kwargs = dict(subset=subdataset, combine_attrs='override')
+    # dataset_kwargs['resolution'] = 'NA10'
+    dataset_kwargs['resolution'] = 'AU10'
 #     dataset_kwargs['resolution'] = 'NA10'; dataset_kwargs['grid'] = 'son2'; multi_chunks = 'time'
     resampling = 'cubic_spline'; dataset_kwargs['multi_chunks'] = multi_chunks # apparently we need to pre-chunk or there is a memory leak..   
     
