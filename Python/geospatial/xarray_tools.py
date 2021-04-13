@@ -683,6 +683,10 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
     # merge into new dataset
     if len(ds_list) == 0:
         raise ValueError("Dataset is empty - aborting! Folder: \n '{}'".format(folder))
+    # resolve a very common conflict caused by NCO logging
+    if np.sum(['history' in ds.attrs for ds in ds_list]) > 1:
+        for ds in ds_list: 
+            if 'history' in ds.attrs: ds.attrs['history'] = 'conflicting sources'
     xds = xr.merge(ds_list, compat=compat, join=join, fill_value=fill_value, combine_attrs=combine_attrs)
     # add projection info
     if lgeoref:

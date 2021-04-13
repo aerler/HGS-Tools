@@ -14,6 +14,7 @@ from six import string_types # for testing string in Python 2 and 3
 import pandas as pd
 import rasterio as rio
 from rasterio.warp import reproject, Resampling, calculate_default_transform
+from rasterio.fill import fillnodata
 from warnings import warn
 
 # prevent failue if xarray or netCDF4 are not installed
@@ -158,7 +159,15 @@ def regrid_array(data, tgt_crs=None, tgt_transform=None, tgt_size=None, resampli
     else:
         src_data = data
         tgt_data = np.empty(tgt_shp)
-    # prefill with missing values, so as to avoid orphaned zeroes
+    # set default no-data value
+    if nodata_flag is None:
+        if fill_value is not None:
+            nodata_flag = fill_value
+        elif np.issubdtype(data.dtype, np.inexact):
+            nodata_flag  = np.NaN 
+        else:
+            raise NotImplementedError("No-date flag for integer fields has to be set manually.")
+    # prefill with missing values, so as to avoid orphaned zeroes    
     tgt_data[:] = nodata_flag
     
     # prepare reprojection
@@ -278,6 +287,7 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
                       tgt_crs=None, tgt_geotrans=None, tgt_size=None, mode='raster2D', resampling='bilinear',
                       filepath=None, time_coord=None, driver='AAIGrid',fill_value=0., nodata_flag=None,
                       time_fmt='%Y%m%d', ncvar=None, bias_correction=None, bc_varname=None, lwarp=True,
+                      fill_masked=None, fill_mask=None, fill_max_search=2, fill_smoothing=0, lclip=False,
                       lecho=True, loverwrite=True, return_dummy=dummy_array, **driver_args):
     ''' a function for use with Dask lazy execution that regrids an array and exports/writes the results 
         to either NetCDF or any GDAL/rasterio raster format; the array has to be chunked in a way that  
@@ -286,7 +296,7 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
     # missing values
     if nodata_flag is None:
         if mode.lower() == 'raster2d': nodata_flag = fill_value
-        elif mode.upper() == 'NETCDF': nodata_flag = np.NaN # xarray convention
+        elif mode.upper() == 'NETCDF' and np.issubdtype(data.dtype, np.inexact): nodata_flag = np.NaN # xarray convention
         else:
             raise NotImplementedError(mode)
     
@@ -300,6 +310,9 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
 
     # figure out time coordinates/dates
     ts = time_chunks[block_id[0]]; te = ts + data.shape[0] 
+
+    # set negative values to zero (in-place)
+    if lclip: np.clip(data, 0, None, out=data)
     
     # bias correction
     if bias_correction:
@@ -309,6 +322,24 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
         #       variabel indicates, which correction array from bias_correction should be used
         data = bias_correction.correctArray(data, varname=bc_varname, time=time_chunk, ldt=True, time_idx=0)
         
+    # add halo around masked points using rasterio fill
+    if fill_masked:
+        if fill_mask is None:
+            # define a mask
+            if not isinstance(data,np.ma.masked_array):
+                # assume regular numpy, which will normally be the case
+                fill_mask = np.isfinite(data)
+                if nodata_flag is not None and np.isfinite(nodata_flag):
+                    fill_mask = np.logical_and(fill_mask, data != nodata_flag )
+        elif fill_mask.shape == data.shape[1:]:
+            fill_mask = np.stack(fill_mask, axis=0)
+        else:
+            raise NotImplementedError(fill_mask)
+        # create fill - usually a halo around masked points
+        for i in range(data.shape[0]):
+            data[i,:,:] = fillnodata(data[i,:,:], mask=fill_mask[i,:,:], 
+                                     max_search_distance=fill_max_search, smoothing_iterations=fill_smoothing)  
+    
     if mode.lower() == 'raster2d':    
         # write raster files, one per time step
         if not bias_correction:
@@ -330,7 +361,8 @@ def regrid_and_export(data, block_id=None, time_chunks=None, src_crs=None, src_g
 def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=None, filename=None,
                                tgt_crs=None, tgt_geotrans=None, tgt_size=None, resampling='bilinear', 
                                driver='AAIGrid', fill_value=0., nodata_flag=None, lwarp=True,
-                               bias_correction=None, bc_varname=None, time_fmt='%Y%m%d',
+                               bias_correction=None, bc_varname=None, time_fmt='%Y%m%d', lclip=False,
+                               fill_masked=None, fill_mask=None, fill_max_search=2, fill_smoothing=0,
                                lecho=True, loverwrite=True, **driver_args):
     ''' a function that returns another function, which is suitable for regridding and direct export to disk 
         using Dask lazy execution; some parameters can be inferred from xarray attributes '''
@@ -410,7 +442,9 @@ def generate_regrid_and_export(xvar, mode='raster2D', time_coord='time', folder=
                                  tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
                                  mode=mode, filepath=filepath, time_coord=time_coord, ncvar=ncvar,
                                  driver=driver,fill_value=fill_value, nodata_flag=nodata_flag, 
-                                 bias_correction=bias_correction, bc_varname=bc_varname, time_fmt=time_fmt,                               
+                                 bias_correction=bias_correction, bc_varname=bc_varname, time_fmt=time_fmt,
+                                 fill_masked=fill_masked, fill_mask=fill_mask, fill_max_search=fill_max_search, 
+                                 fill_smoothing=fill_smoothing, lclip=lclip,                     
                                  lecho=lecho, loverwrite=loverwrite, return_dummy=dummy_array, **driver_args)
     
     # return function with dummy array (for measure)

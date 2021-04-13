@@ -117,8 +117,8 @@ if __name__ == '__main__':
 #     project = 'GRW'
 #     grid_name  = 'grw2'; resampling = 'nearest'; #source_grid = 'grw1'
     ## operational config for SON2
-#     project = 'SON'
-#     grid_name  = 'son2'
+    # project = 'SON'
+    # grid_name  = 'son2'
     ## 
     # project = 'SNW'
     # grid_name  = 'snw2'
@@ -235,13 +235,16 @@ if __name__ == '__main__':
     ## define source data
     lexec = True
     loverwrite = True  
-    lwarp = True # set False to suppress reprojection    
+    lwarp = True # set False to suppress reprojection
+    lclip = None # clip rasters, but not NetCDF
+    ltest = False # prefix with 'test' - don't overwrite exiting data
     # some defaults for most datasets
-    time_chunks = 8 # SnoDAS & CaSPAr only! typically not much speed-up beyond 8
-    multi_chunks = 'regular' # ERA5, Merged, NRCan: time x 8
+    time_chunks = 8 # used for multi_chunks or directly in SnoDAS & CaSPAr; typically not much speed-up beyond 8
     dataset_kwargs = dict(); subdataset = None 
     bias_correction = None; bc_varmap = dict(); obs_name = None; bc_method = None
+    fill_masked = False; fill_max_search = 2
     target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/'
+    if ltest: target_folder_ascii += 'test/' # store in subfolder
     raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
     target_folder_netcdf = '{daily:s}/{grid:s}/{smpl:s}/'
     
@@ -280,16 +283,19 @@ if __name__ == '__main__':
 # #     dataset_kwargs['grid'] = 'snw2'; resampling = None; lwarp = False
     ## ERA5
     dataset = 'ERA5'; subdataset = 'ERA5L'
-    multi_chunks = 'time' # time x 92 - for small grids only!
+    #time_chunks = 92 # for small grids only!
 #     varlist = ['snow','dswe',]
-    varlist = ['precip','pet_era5','liqwatflx','snow','dswe',]
-#     varlist = ['pet_era5','liqwatflx','snow']
+    # varlist = ['precip','pet_era5','liqwatflx','snow','dswe',]
+    # varlist = ['pet_era5',]
+    varlist = ['liqwatflx',]
     dataset_kwargs = dict(subset=subdataset, combine_attrs='override')
     # dataset_kwargs['resolution'] = 'NA10'
     dataset_kwargs['resolution'] = 'AU10'
 #     dataset_kwargs['resolution'] = 'NA10'; dataset_kwargs['grid'] = 'son2'; multi_chunks = 'time'
-    resampling = 'cubic_spline'; dataset_kwargs['multi_chunks'] = multi_chunks # apparently we need to pre-chunk or there is a memory leak..   
+    resampling = 'cubic_spline' # apparently we need to pre-chunk or there is a memory leak..   
+    fill_masked = True
     
+    if ltest: varlist = varlist[:1]
 
 #     start_date = '1997-01-01'; end_date = '2017-12-31' # SON/SNW full period
 #     start_date = '1981-01-01'; end_date = '2017-12-31' # SON/SNW full period
@@ -298,11 +304,12 @@ if __name__ == '__main__':
 #     start_date = '2011-01-01'; end_date = '2017-12-31' # combined NRCan-SnoDAS period
 #     start_date = '2016-01-01'; end_date = '2017-12-31'
 #     start_date = '2016-01-01'; end_date = '2016-01-31' # for testing NRCan
-#     start_date = '1997-01-01'; end_date = '1997-02-01'; resampling = 'nearest' # for testing...
+    if ltest: 
+        start_date = '1997-01-01'; end_date = '1997-02-01'; resampling = 'nearest' # for testing...
 
     ## output type: ASCII raster or NetCDF-4
-    mode = 'NetCDF'
-#     mode = 'raster2d'
+    # mode = 'NetCDF'
+    mode = 'raster2d'
 
     
     ## WRF requires special treatment
@@ -343,6 +350,7 @@ if __name__ == '__main__':
             netcdf_name = ds_mod.netcdf_filename.format('{var_str:s}', VAR='{var_str:s}')
             daily_folder = ds_mod.daily_folder
         bc_folder = ds_mod.avgfolder
+    if ltest: netcdf_name = 'test_' + netcdf_name
         
     ## bias correction
     if bias_correction:
@@ -357,6 +365,7 @@ if __name__ == '__main__':
     # modes
     if mode.lower() == 'raster2d':
         # raster output using rasterio
+        if lclip is None: lclip = True # remove negative values
         scalefactor = 1000. # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
         gridstr = dataset.lower() if grid_name.lower() == 'native' else grid_name.lower()
         bc_str = bc_method+'_' if bc_method else ''
@@ -371,6 +380,7 @@ if __name__ == '__main__':
         print(("\n***   Exporting '{}' to raster format {}   ***\n".format(dataset,raster_format)))
     elif mode.upper() == 'NETCDF':
         # NetCDF output using netCDF4
+        if lclip is None: lclip = False
         gridstr = '' if grid_name.lower() == 'native' else '_'+grid_name.lower()
         bc_str1 = bc_method+'_' if bc_method else ''
         bc_str2 = '_'+bc_method if bc_method else ''
@@ -385,14 +395,10 @@ if __name__ == '__main__':
     
     
     # lazily load dataset (assuming xarray)
-#     if dataset == 'MergedForcing':
-#         xds = getattr(ds_mod,'load{}_Daily'.format(subdataset))(varlist=varlist, **dataset_kwargs)
-    if dataset == 'SnoDAS':
-        xds = ds_mod.loadDailyTimeSeries(varlist=varlist, time_chunks=time_chunks, **dataset_kwargs)
-    elif lhourly:
+    if lhourly:
         xds = ds_mod.loadHourlyTimeSeries(varlist=varlist, time_chunks=time_chunks, **dataset_kwargs)
     else:
-        xds = ds_mod.loadDailyTimeSeries(varlist=varlist, **dataset_kwargs)
+        xds = ds_mod.loadDailyTimeSeries(varlist=varlist, multi_chunks=dict(time=time_chunks), **dataset_kwargs)
     
     # get georeference
     src_crs = getCRS(xds)
@@ -467,7 +473,7 @@ if __name__ == '__main__':
         print(("\nConstructing Workload for '{:s}' from {:s} to {:s}.   ***".format(varname,start_date,end_date)))
         filepath = target_folder+filename
         if mode.lower() == 'raster2d':
-            print(("Output folder: '{:s}'\nRaster pattern: '{:s}'".format(filepath)))
+            print(("Output folder: '{:s}'\nRaster pattern: '{:s}'".format(target_folder, filename)))
         elif mode.upper() == 'NETCDF':
             print(("NetCDF file: '{:s}'".format(filepath)))   
             original_filepath = filepath
@@ -498,7 +504,8 @@ if __name__ == '__main__':
                                                     tgt_crs=tgt_crs, tgt_geotrans=tgt_geotrans, tgt_size=tgt_size, 
                                                     mode=mode, resampling=resampling, time_fmt=date_fmt,
                                                     folder=target_folder, filename=filename, driver=raster_format,
-                                                    bias_correction=bc_object, bc_varname=bc_varname,
+                                                    bias_correction=bc_object, bc_varname=bc_varname, lclip=lclip,
+                                                    fill_masked=fill_masked, fill_max_search=fill_max_search,
                                                     lecho=True, loverwrite=loverwrite, **driver_args)
         # N.B.: the dataset returned here is a NetCDF dataset, not a xarray dataset!
         
