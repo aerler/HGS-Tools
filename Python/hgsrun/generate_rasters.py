@@ -131,7 +131,8 @@ if __name__ == '__main__':
 #     grid_name = 'ca12'
     ## Queensland (Australia) grid
     project = 'QEL'
-    grid_name = 'qel1' # 10 km Queensland grid
+    # grid_name = 'qel1' # quasi-10 km Queensland grid
+    grid_name = 'qel2' # 10 km Queensland grid
 
     ## define target grid/projection
     # projection/UTM zone
@@ -217,11 +218,14 @@ if __name__ == '__main__':
         tgt_size = (955,675) # higher resolution 1 km grid (> 1 MB per day)
         tgt_geotrans = (-159.e3, 1.e3, 0., 5202.e3, 0., 1.e3) # 1 km
     elif grid_name == 'qel1':
-        tgt_size = (121,191) # 10 km grid, similar to ERA5
+        tgt_size = (121,191) # approx. 10 km grid, similar to ERA5
 #         tgt_geotrans = (-26770., 10400, 0., 6902510, 0., 10970) # ~10 km
         tgt_geotrans = (-26772., 10398.9, 0., 6902511, 0., 10968.7) # ~10 km  
         # N.B.: this grid attempts to achieve direct grid point correspondence to the ERA5-Land lat/lon grid
         #       at 148E/23S
+    elif grid_name == 'qel2':
+        tgt_size = (126,211) # exactly 10 km grid, similar to ERA5
+        tgt_geotrans = (-26772., 10e3, 0., 6902511, 0., 10e3) # 10 km  
     elif grid_name == 'native': # original grid
         time_chunks = 1 # this can be pretty big!
         tgt_size = None; tgt_geotrans = None # native grid
@@ -286,8 +290,7 @@ if __name__ == '__main__':
     #time_chunks = 92 # for small grids only!
 #     varlist = ['snow','dswe',]
     # varlist = ['precip','pet_era5','liqwatflx','snow','dswe',]
-    # varlist = ['pet_era5',]
-    varlist = ['liqwatflx',]
+    varlist = ['pet_era5','liqwatflx',]
     dataset_kwargs = dict(subset=subdataset, combine_attrs='override')
     # dataset_kwargs['resolution'] = 'NA10'
     dataset_kwargs['resolution'] = 'AU10'
