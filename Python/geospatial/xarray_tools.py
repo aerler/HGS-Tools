@@ -35,27 +35,27 @@ def getAtts(xvar, lraise=True):
         atts = xvar.attrs.copy()
     elif isinstance(xvar,(nc.Variable,nc.Dataset)):
         atts = getNCAtts(xvar)
-    elif lraise: 
+    elif lraise:
         raise TypeError(xvar)
     return atts
 
 ## functions to interface with rasterio
 
 def getGeoDims(xvar, x_coords=None, y_coords=None, lraise=True):
-    ''' helper function to identify geographic/projected dimensions by name ''' 
+    ''' helper function to identify geographic/projected dimensions by name '''
     if x_coords is None: x_coords = default_x_coords
     if y_coords is None: y_coords = default_y_coords
-    
-    xlon,ylat = None,None # return None, if nothing is found    
+
+    xlon,ylat = None,None # return None, if nothing is found
 
     if isinstance(xvar,(xr.DataArray,xr.Dataset)):
         # test geographic grid and projected grids separately
         for coord_type in x_coords.keys():
             for name in xvar.dims.keys() if isinstance(xvar,xr.Dataset) else xvar.dims:
-                if name.lower() in x_coords[coord_type]: 
+                if name.lower() in x_coords[coord_type]:
                     xlon = name; break
             for name in xvar.dims.keys() if isinstance(xvar,xr.Dataset) else xvar.dims:
-                if name.lower() in y_coords[coord_type]: 
+                if name.lower() in y_coords[coord_type]:
                     ylat = name; break
             if xlon is not None and ylat is not None: break
             else: xlon,ylat = None,None
@@ -63,33 +63,33 @@ def getGeoDims(xvar, x_coords=None, y_coords=None, lraise=True):
         # test geographic grid and projected grids separately
         for coord_type in x_coords.keys():
             for name in xvar.dimensions:
-                if name.lower() in x_coords[coord_type]: 
+                if name.lower() in x_coords[coord_type]:
                     xlon = name; break
             for name in xvar.dimensions:
-                if name.lower() in y_coords[coord_type]: 
+                if name.lower() in y_coords[coord_type]:
                     ylat = name; break
             if xlon is not None and ylat is not None: break
-            else: xlon,ylat = None,None      
+            else: xlon,ylat = None,None
     elif lraise: # optionally check input
         raise TypeError("Can only infer coordinates from xarray or netCDF4 - not from {}".format(xvar.__class__))
     else:
         pass # return None,None
-    
+
     return xlon,ylat
 
 def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True, lvars=True):
     '''  helper function to extract geographic/projected coordinates from xarray'''
-    
+
     # find dim names
     xlon_dim,ylat_dim = getGeoDims(xvar, x_coords=x_coords, y_coords=y_coords, lraise=lraise)
-    
+
     # find coordinates
     if isinstance(xvar,(xr.DataArray,xr.Dataset)):
         if xlon_dim in xvar.coords:
             xlon = xvar.coords[xlon_dim] if lvars else xlon_dim
         else: xlon = None
         if ylat_dim in xvar.coords:
-            ylat = xvar.coords[ylat_dim] if lvars else ylat_dim 
+            ylat = xvar.coords[ylat_dim] if lvars else ylat_dim
         else: ylat = None
     elif isinstance(xvar,nc.Variable) and lraise:
         raise TypeError("Cannot infer coordinates from netCDF4 Variable - only Dataset!")
@@ -98,21 +98,21 @@ def getGeoCoords(xvar, x_coords=None, y_coords=None, lraise=True, lvars=True):
             xlon = xvar.variables[xlon_dim] if lvars else xlon_dim
         else: xlon = None
         if ylat_dim in xvar.variables:
-            ylat = xvar.variables[ylat_dim] if lvars else ylat_dim 
+            ylat = xvar.variables[ylat_dim] if lvars else ylat_dim
         else: ylat = None
-        
+
     # optionally raise error if no coordinates are found, otherwise just return None
     if lraise and (xlon is None or ylat is None):
         raise ValueError("No valid pair of geographic coodinates found:\n {}".format(xvar.dims))
-      
+
     # return a valid pair of geographic or projected coordinate axis
     return xlon,ylat
 
-  
+
 def isGeoVar(xvar, x_coords=None, y_coords=None, lraise=True):
-    ''' helper function to identify variables that have geospatial coordinates (geographic or 
+    ''' helper function to identify variables that have geospatial coordinates (geographic or
         projected), based on xarray or netCDF4 dimension names '''
-    
+
     if x_coords is None: x_coords = default_x_coords
     if y_coords is None: y_coords = default_y_coords
 
@@ -124,29 +124,29 @@ def isGeoVar(xvar, x_coords=None, y_coords=None, lraise=True):
         raise TypeError("Can only infer coordinate system from xarray or netCDF4 - not from {}".format(xvar.__class__))
     else:
         return None # evaluates as False, but allows checking
-        
+
     # test geographic grid and projected grids separately
     for coord_type in x_coords.keys():
         xlon,ylat = False,False
         for name in dims:
-            if name.lower() in x_coords[coord_type]: 
+            if name.lower() in x_coords[coord_type]:
                 xlon = True; break
         for name in dims:
-            if name.lower() in y_coords[coord_type]: 
+            if name.lower() in y_coords[coord_type]:
                 ylat = True; break
         if xlon and ylat: break
-    
+
     # if it has a valid pair of geographic or projected coordinate axis
     return ( xlon and ylat )
 
-  
+
 def isGeoCRS(xvar, lat_coords=None, lon_coords=None, lraise=True):
     ''' helper function to determine if we have a simple geographic lat/lon CRS (based on xarray dimension names) '''
     lat,lon = False,False
-    
+
     if lon_coords is None: lon_coords = default_x_coords['geo']
     if lat_coords is None: lat_coords = default_y_coords['geo']
-    
+
     if isinstance(xvar,(xr.DataArray,xr.Dataset)):
         dims = xvar.coords.keys()
     elif isinstance(xvar,(nc.Dataset,nc.Variable)):
@@ -155,15 +155,15 @@ def isGeoCRS(xvar, lat_coords=None, lon_coords=None, lraise=True):
         raise TypeError("Can only infer coordinate system from xarray or netCDF4- not from {}".format(xvar.__class__))
     else:
         return None # evaluates as False, but allows checking
-      
+
     # check dimension names
     for name in dims:
-        if name.lower() in lon_coords: 
+        if name.lower() in lon_coords:
             lon = True; break
     for name in dims:
-        if name.lower() in lat_coords: 
+        if name.lower() in lat_coords:
             lat = True; break
-    
+
     # it is a geographic coordinate system if both, lat & lon are present
     return ( lat and lon )
 
@@ -171,32 +171,32 @@ def isGeoCRS(xvar, lat_coords=None, lon_coords=None, lraise=True):
 def getTransform(xvar=None, x=None, y=None, lcheck=True):
     ''' generate an affine transformation from xarray coordinate axes '''
     from rasterio.transform import Affine # to generate Affine transform
-    
+
     if isinstance(xvar,(xr.DataArray,xr.Dataset,nc.Dataset)):
         x,y = getGeoCoords(xvar, lraise=True)
     elif xvar is None and isinstance(x,(xr.DataArray,nc.Variable)) and isinstance(y,(xr.DataArray,nc.Variable)):
         pass # x and y axes are supplied directly
     elif xvar:
         raise TypeError('Can only infer GeoTransform from xarray Dataset or DataArray or netCDF4 Dataset\n - not from {}.'.format(xvar))
-    
+
     # check X-axis
     if isinstance(x,xr.DataArray): x = x.data
     elif isinstance(x,nc.Variable): x = x[:]
-    if not isinstance(x,np.ndarray): 
+    if not isinstance(x,np.ndarray):
         raise TypeError(x)
     diff_x = np.diff(x); dx = diff_x.min()
-    if lcheck and not np.isclose(dx, diff_x.max(), rtol=1.e-2): 
+    if lcheck and not np.isclose(dx, diff_x.max(), rtol=1.e-2):
         raise ValueError("X-axis is not regular: {} - {}".format(dx, diff_x.max()))
-    
+
     # check Y-axis
     if isinstance(y,xr.DataArray): y = y.data
     elif isinstance(y,nc.Variable): y = y[:]
-    if not isinstance(y,np.ndarray): 
+    if not isinstance(y,np.ndarray):
         raise TypeError(y)
     diff_y = np.diff(y); dy = diff_y.min()
-    if lcheck and not np.isclose(dy, diff_y.max(), rtol=1.e-2): 
+    if lcheck and not np.isclose(dy, diff_y.max(), rtol=1.e-2):
         raise ValueError("Y-axis is not regular. {} - {}".format(dy, diff_y.max()))
-    
+
     # generate transform
     return Affine.from_gdal(x[0]-dx/2.,dx,0.,y[0]-dy/2.,0.,dy), (len(x),len(y))
 
@@ -220,7 +220,7 @@ def readCFCRS(xds, grid_mapping=None, lraise=True, lproj4=False):
         if grid_mapping in xds.variables:
             grid_type = grid_mapping
             grid_atts = getAtts(xds.variables[grid_mapping])
-        else: 
+        else:
             raise ValueError("Grid mapping '{}' not found in dataset.".format(grid_mapping))
     else:
         grid_type = None
@@ -255,53 +255,53 @@ def getCRS(xvar, lraise=True):
     ''' infer projection from a xarray Dataset or DataArray; this function assumes that either a proj4 string or
         an EPSG designation is stored in the attributes of the dataset/variable. '''
     from geospatial.rasterio_tools import genCRS # used to generate CRS object
-    
+
     if isinstance(xvar,(xr.DataArray,xr.Dataset)):
         atts = xvar.attrs
-    elif isinstance(xvar,(nc.Variable,nc.Dataset)):        
+    elif isinstance(xvar,(nc.Variable,nc.Dataset)):
         atts = getAtts(xvar)
     elif lraise:
         raise TypeError("Can only infer coordinate system from xarray or netCDF4 - not from {}".format(xvar.__class__))
-    else: 
+    else:
         return None # no projection
-          
+
     crs = None
     # check CF convention
     if isinstance(xvar,(xr.Dataset,nc.Dataset)):
-        crs = readCFCRS(xvar, lraise=False, lproj4=False)        
+        crs = readCFCRS(xvar, lraise=False, lproj4=False)
     # search for EPSG number
     if crs is None:
         for key,value in atts.items():
-            if key.upper() == 'EPSG' and value != 'n/a': crs = genCRS(value); break    
+            if key.upper() == 'EPSG' and value != 'n/a': crs = genCRS(value); break
     # search for Proj4 string
     if crs is None:
         for key,value in atts.items():
-            if key.lower() == 'proj4' and value != 'n/a': crs = genCRS(value); break    
+            if key.lower() == 'proj4' and value != 'n/a': crs = genCRS(value); break
     # check for simple geographic lat/lon system
     if crs is None:
         if isGeoCRS(xvar, lraise=False): # error will be raised below (if desired)
-            crs = genCRS() # no arguments for default lat/lon    
+            crs = genCRS() # no arguments for default lat/lon
     # return values
     if lraise and crs is None:
         raise ValueError("No projection information found in attributes.")
-    
+
     # return a GDAL/rasterio CRS instance
     return crs
 
 
 def inferGeoInfo(xvar, varname=None, crs=None, transform=None, size=None, lraise=True, lcheck=True):
     ''' infere geo-reference information from xarray DataArray or Dataset and netCDF4 Dataset '''
-    
+
     # CRS
     _crs = getCRS(xvar, lraise=lraise)
     if crs is None: crs = _crs
-    elif crs != _crs: 
+    elif crs != _crs:
         from geospatial.rasterio_tools import genCRS # used to generate CRS object
         crs = genCRS(crs)
         if crs != _crs:
             raise ValueError("Prescribed CRS and inferred CRS are incompatible:\n{}\n{}".format(crs,_crs))
     crs = _crs # for some reason EPSG ints also pass the equality test...
-    
+
     # geotransform & grid size
     xlon,ylat = getGeoCoords(xvar, lraise=True, lvars=False)
     _transform, _size = getTransform(xvar, lcheck=lraise)
@@ -311,15 +311,15 @@ def inferGeoInfo(xvar, varname=None, crs=None, transform=None, size=None, lraise
     if size is None: size = _size
     elif not size is _size:
         raise ValueError("Prescribed and inferred grid sizes are incompatible:\n{}\n{}".format(size,_size))
-    
+
     # do some checks
     if lcheck:
         if crs.is_projected and isGeoCRS(xvar):
             raise ValueError(crs,xvar) # simple check
-        if isinstance(xvar,xr.Dataset) and varname: 
+        if isinstance(xvar,xr.Dataset) and varname:
             xvar = xvar[varname]
         shape = None; dims = None
-        if isinstance(xvar,xr.DataArray): 
+        if isinstance(xvar,xr.DataArray):
             shape = xvar.data.shape; dims = xvar.dims
             if xvar.attrs.get('dim_order',None) is False:
                 raise NotImplementedError("The x/lon and y/lat axes of this xarray have to be swapped:\n {}".format(xvar))
@@ -332,9 +332,9 @@ def inferGeoInfo(xvar, varname=None, crs=None, transform=None, size=None, lraise
         if dims:
             if dims[-2] != ylat or dims[-1] != xlon:
                 raise ValueError(xvar)
-          
+
     # return verified georef info
-    return crs, transform, size    
+    return crs, transform, size
 
 
 ## functions that modify a dataset
@@ -345,8 +345,8 @@ def _inferVarmap(varmap=None, varatts=None, linvert=False):
         varmap = dict()
         if varatts is not None:
             for varname,atts in varatts.items():
-                if 'name' in atts: varmap[varname] = atts['name']  
-    elif not isinstance(varmap,dict): 
+                if 'name' in atts: varmap[varname] = atts['name']
+    elif not isinstance(varmap,dict):
         raise TypeError(varmap)
     if linvert:
         varmap = {value:key for key,value in varmap.items()}
@@ -356,11 +356,11 @@ def _inferVarmap(varmap=None, varatts=None, linvert=False):
 def updateVariableAttrs(xds, varatts=None, varmap=None, varlist=None, **kwargs):
     ''' a helper function to update variable attributes, rename variables, and apply scaling factors '''
     # update varatts
-    if varatts is None: 
+    if varatts is None:
         varatts = dict()
-    elif isinstance(varatts,dict): 
+    elif isinstance(varatts,dict):
         varatts = varatts.copy()
-    else: 
+    else:
         raise TypeError(varatts)
     varatts.update(kwargs) # add kwargs
     # generate varmap
@@ -371,7 +371,7 @@ def updateVariableAttrs(xds, varatts=None, varmap=None, varlist=None, **kwargs):
         for varname in xds.data_vars.keys():
             name = varmap.get(varname,varname)
             if name not in varlist: drop_list.append(varname)
-        xds = xds.drop_vars(drop_list)                    
+        xds = xds.drop_vars(drop_list)
     # update attributes (using old names)
     date_str = datetime.today().strftime('%Y%m%d')
     for varname,atts in varatts.items():
@@ -429,7 +429,7 @@ def addGeoReference(xds, proj4_string=None, x_coords=None, y_coords=None, lcreat
         xds.attrs['proj4'] = proj4_string
     else:
         raise TypeError("Cannot infer projection - need to provide proj4 string!")
-    for xvar in list(xds.data_vars.values()): 
+    for xvar in list(xds.data_vars.values()):
         if isGeoVar(xvar):
             xvar.attrs['proj4'] = proj4_string
             xvar.attrs['xlon'] = xlon
@@ -442,7 +442,7 @@ def addGeoReference(xds, proj4_string=None, x_coords=None, y_coords=None, lcreat
 def rechunkTo2Dslices(xvar, **other_chunks):
     ''' convenience function to rechunk an xarray so that the horizontal dimensions are contiguous (not chunked)
         N.B.: rechunking in a way that does not simply combine existing chunks seems to cause all chunks/data
-              to be loaded into memory (we want to avoid that); also, chunks are defined by their size, not by 
+              to be loaded into memory (we want to avoid that); also, chunks are defined by their size, not by
               their number, i.e. the definition for one large 2D chunk is (len(y),len(x)) and *not* (1,1) '''
     if not isinstance(xvar,(xr.DataArray,xr.Dataset)):
         raise TypeError(xvar)
@@ -452,10 +452,10 @@ def rechunkTo2Dslices(xvar, **other_chunks):
     else: chunks = dict()
     chunks.update(other_chunks)
     # find horizontal/map dimensions
-    xlon = xvar.attrs['xlon']; ylat = xvar.attrs['ylat'] 
+    xlon = xvar.attrs['xlon']; ylat = xvar.attrs['ylat']
     chunks[xlon] = xvar.sizes[xlon]; chunks[ylat] = xvar.sizes[ylat]
     return xvar.chunk(chunks=chunks) # rechunk x/lon and y/lat
-  
+
 def autoChunkXArray(xds, chunks=None, dims=None, **kwargs):
     ''' apply auto-chunking to an xarray object, like a Dataset or DataArray (chunks kw arg can override) '''
     from geospatial.netcdf_tools import autoChunk
@@ -466,7 +466,7 @@ def autoChunkXArray(xds, chunks=None, dims=None, **kwargs):
     shape = [xds.sizes[dim] for dim in dims]
     cks = autoChunk(shape, **kwargs)
     cks = {dim:c for dim,c in zip(dims,cks)}
-    if chunks: cks.update(chunks) # manually/explicitly specified chunks override 
+    if chunks: cks.update(chunks) # manually/explicitly specified chunks override
     return xds.chunk(chunks=cks)
 
 def getCommonChunks(xds, method='min'):
@@ -492,12 +492,12 @@ def getCommonChunks(xds, method='min'):
     for dim,cks in list(chunk_list.items()):
         chunks[dim] = getattr(np,method)(cks)
     # return dict with chunksize for each dimension
-    return chunks        
+    return chunks
 
 
 def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=False, time_name='time'):
-    ''' function invoking lazy groupby() call and replacing the resulting time axis with a new time axis '''  
-    
+    ''' function invoking lazy groupby() call and replacing the resulting time axis with a new time axis '''
+
     lts = time_stamp and time_stamp in xds
     # time stamp variable for meta data
     if lts:
@@ -505,7 +505,7 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
         ts_var = xds[time_stamp].load()
         period = (pd.to_datetime(ts_var.data[0]).year, (pd.to_datetime(ts_var.data[-1])+pd.Timedelta(31, unit='D')).year)
         prdstr = '{:04d}-{:04d}'.format(*period)
-    
+
     # resample data to aggregation interval
     if lresample:
         if aggregation.lower() == 'month': rsi = 'MS'
@@ -513,11 +513,11 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
             raise NotImplementedError(aggregation)
         xds = xds.resample(time=rsi,skipna=True,).mean()
     # N.B.: I am not sure to which extent resampling is necessary
-    
+
     # compute monthly normals
     cds = xds.groupby('time.'+aggregation).mean('time')
     assert len(cds['month']) == 12, cds
-    
+
     # convert time axis
     cds = cds.rename({aggregation:time_name}) # the new time axis is named 'month'
     tm = cds.coords[time_name]
@@ -525,20 +525,20 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
     tm.attrs['long_name']  = 'Calendar '+aggregation.title()
     tm.attrs['units']      = aggregation
     # add period info for quick identification
-    if lts:        
+    if lts:
         tm.attrs['start_date'] = str(ts_var.data[0])
         tm.attrs['end_date']   = str(ts_var.data[-1])
         tm.attrs['period']     = prdstr
         # add attributes to dataset
         cds.attrs['start_date'] = str(ts_var.data[0])
         cds.attrs['end_date']   = str(ts_var.data[-1])
-        cds.attrs['period']     = prdstr    
-        
-    # return formatted climatology dataset      
-    return cds         
-         
-         
-## function to load a dataset         
+        cds.attrs['period']     = prdstr
+
+    # return formatted climatology dataset
+    return cds
+
+
+## function to load a dataset
 
 def _multichunkPresets(multi_chunks):
     ''' translate string identifiers into valid multichunk dicts, based on presets '''
@@ -557,19 +557,19 @@ def _multichunkPresets(multi_chunks):
         raise TypeError(multi_chunks)
     # return valid multi_chunks (dict)
     return multi_chunks
-         
-def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_pattern=None, filelist=None, default_varlist=None, 
-               varmap=None, mask_and_scale=True, grid=None, lgeoref=True, geoargs=None, chunks=True, multi_chunks=None, 
-               ldropAtts=False, lskip=False, filetypes=None, 
+
+def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_pattern=None, filelist=None, default_varlist=None,
+               varmap=None, mask_and_scale=True, grid=None, lgeoref=True, geoargs=None, chunks=True, multi_chunks=None,
+               ldropAtts=False, lskip=False, filetypes=None,
                compat='override', join='inner', fill_value=np.NaN, combine_attrs='no_conflicts', **kwargs):
-    ''' function to open a dataset in one of two modes: 1) variables are stored in separate files, but in the same folder (this mainly 
+    ''' function to open a dataset in one of two modes: 1) variables are stored in separate files, but in the same folder (this mainly
         applies to high-resolution, high-frequency (daily) observations, e.g. SnoDAS) or 2) multiple variables are stored in different
         filetypes and each is opened and then merged (usually model output); datasets are opened using xarray '''
     # load variables
-    if filetypes is None: 
+    if filetypes is None:
         lopt1 = True
         # option 1: one variable per file
-        if varname and varlist: 
+        if varname and varlist:
             raise ValueError(varname,varlist)
         elif varname:
             varlist = [varname] # load a single variable
@@ -588,7 +588,7 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
         lopt1 = False # just to remember when using option 2
     ## now use option 2: multiple variables per file
     # expand varmap to filetypes
-    if varmap is None: 
+    if varmap is None:
         varmap = {filetype:None for filetype in filetypes} # no varmap
     elif isinstance(varmap,dict):
         filetypes_set = set(filetypes); varmap_set = set(varmap.keys())
@@ -607,12 +607,12 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
                 raise TypeError(varmap)
         elif any([key in filetypes for key in varmap.keys()]):
             raise ValueError(varmap.keys())
-        else: 
+        else:
             varmap = {filetype:varmap for filetype in filetypes} # same varmap for all
     else:
         raise TypeError(varmap)
     # expand varatts to filetypes
-    if varatts is None: 
+    if varatts is None:
         varatts = {filetype:None for filetype in filetypes} # no varatts
     elif isinstance(varatts,dict):
         filetypes_set = set(filetypes); varatts_set = set(varatts.keys())
@@ -625,12 +625,12 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
                     varatts[filetype] = None
         elif any([key in filetypes for key in varatts.keys()]):
             raise ValueError("It is unclear if varatts is a dict containing varatts dicts for each filetype or just one varatts dict.",varatts.keys())
-        else: 
+        else:
             varatts = {filetype:varatts for filetype in filetypes} # same varatts for all
     else:
         raise TypeError(varatts)
     # expand filename/pattern to filetypes
-    if filename_pattern and not filelist: 
+    if filename_pattern and not filelist:
         filelist = filename_pattern
     if isinstance(filelist, dict):
         if len(filelist) != len(filetypes):
@@ -661,18 +661,18 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
                             if dim in chunks and chunks[dim] != size:
                                 print("WARNING: Chunks for dimension '{}' not coherent in file:\n '{}'".format(dim, filepath))
             if multi_chunks: # enlarge chunks with multiplier
-                chunks = {dim:(val*multi_chunks.get(dim,1)) for dim,val in chunks.items()}                  
+                chunks = {dim:(val*multi_chunks.get(dim,1)) for dim,val in chunks.items()}
             # open dataset with xarray
             #print(varname,chunks)
             ds = xr.open_dataset(filepath, chunks=chunks, mask_and_scale=mask_and_scale, **kwargs)
-            # N.B.: the use of open_mfdataset is problematic, because it does not play nicely with chunking - 
-            #       by default it loads everything as one chunk, and it only respects chunking, if chunks are 
+            # N.B.: the use of open_mfdataset is problematic, because it does not play nicely with chunking -
+            #       by default it loads everything as one chunk, and it only respects chunking, if chunks are
             #       specified explicitly at the initial load time (later chunking seems to have no effect!)
             #       That being said, I don't know if this is still the case...
             # rename, prune/drop vars and apply attributes
             if ldropAtts: ds.attrs = dict() # drop original attributes from NC file (still add georef etc.)
             if varatts or varmap:
-                ds = updateVariableAttrs(ds, varatts=varatts[filetype], varmap=varmap[filetype], 
+                ds = updateVariableAttrs(ds, varatts=varatts[filetype], varmap=varmap[filetype],
                                          varlist=None if lopt1 else varlist)
             ds_list.append(ds)
         else:
@@ -685,7 +685,7 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
         raise ValueError("Dataset is empty - aborting! Folder: \n '{}'".format(folder))
     # resolve a very common conflict caused by NCO logging
     if np.sum(['history' in ds.attrs for ds in ds_list]) > 1:
-        for ds in ds_list: 
+        for ds in ds_list:
             if 'history' in ds.attrs: ds.attrs['history'] = 'conflicting sources'
     xds = xr.merge(ds_list, compat=compat, join=join, fill_value=fill_value, combine_attrs=combine_attrs)
     # add projection info
@@ -695,30 +695,30 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
             if 'proj4' in xds.attrs and 'proj4_string' in geoargs:
                 if xds.attrs['proj4'] != geoargs['proj4_string']:
                     raise ValueError(xds.attrs['proj4'])
-            # custom options 
+            # custom options
             xds = addGeoReference(xds, **geoargs)
-        # default options            
-        elif 'proj4' in xds.attrs: 
+        # default options
+        elif 'proj4' in xds.attrs:
             # read projection string
             xds = addGeoReference(xds, proj4_string=xds.attrs['proj4'])
         elif grid:
             # load griddef from pickle
             from geodata.gdal import loadPickledGridDef
             griddef = loadPickledGridDef(grid=grid)
-            xds = addGeoReference(xds, proj4_string=griddef.projection.ExportToProj4(),) 
-        else: 
+            xds = addGeoReference(xds, proj4_string=griddef.projection.ExportToProj4(),)
+        else:
             # use default lat/lon, if it works...
-            xds = addGeoReference(xds,) 
+            xds = addGeoReference(xds,)
     return xds
-  
-    
-def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, chunks=None, encoding=None, laddTime=None, 
+
+
+def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, chunks=None, encoding=None, laddTime=None,
                time_dim='time', time_agg=None, ltmpfile=True, lcompute=True, lprogress=True, lfeedback=True, **kwargs):
-    ''' function to save a xarray dataset to disk, with options to add/overwrite variables, choose smart encoding, 
+    ''' function to save a xarray dataset to disk, with options to add/overwrite variables, choose smart encoding,
         add timstamps, use a temp file, and handle dask functionality '''
     from geospatial.netcdf_tools import addTimeStamps, addNameLengthMonth
     # file path and tmp file
-    if folder: 
+    if folder:
         filepath = '{}/{}'.format(folder,filename)
     # if file exists, get varlist and chunks
     if not os.path.exists(filepath) or mode.lower() in ('overwrite','write'):
@@ -736,7 +736,7 @@ def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, 
         else:
             raise ValueError(mode)
     # determine tmp file
-    if ltmpfile: 
+    if ltmpfile:
         tmp_filepath = filepath + ( '.tmp' if lcompute else '.test' ) # use temporary file during creation
     else:
         tmp_filepath = filepath
@@ -746,7 +746,7 @@ def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, 
     if varlist:
         drop_vars = [xvar for xvar in xds.data_vars.keys() if xvar not in varlist]
         xds = xds.drop_vars(drop_vars) # returns a shallow copy with vars removed
-    # handle existing 
+    # handle existing
     if nc_mode == 'a':
         # open existing file and get encoding
         with nc.Dataset(filepath, 'r') as ncds:
@@ -757,7 +757,7 @@ def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, 
                 xds = xds.drop_vars(drop_vars) # returns a shallow copy with vars removed
         # adding all variables and overwriting existing ones, requires no changes except nc_mode = 'a'
     # setup encoding
-    if encoding is None: 
+    if encoding is None:
         encoding = dict(); default = None
     else:
         default = encoding.pop('DEFAULT',None)
@@ -766,10 +766,10 @@ def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, 
         cks = tuple(1 if dim == 'time' else chunks[dim] for dim in xvar.dims)
         tmp['chunksizes'] = cks # depends on variable
         # N.B.: use chunk size 1 for time and as before for space; monthly chunks make sense, since
-        #       otherwise normals will be expensive to compute (access patterns are not sequential)            
+        #       otherwise normals will be expensive to compute (access patterns are not sequential)
         if isinstance(xvar.dtype,np.inexact): encoding[varname]['_FillValue'] = np.NaN
         if default: tmp.update(default)
-        if varname not in encoding: 
+        if varname not in encoding:
             encoding[varname] = tmp
         else:
             tmp.update(encoding[varname])
@@ -777,9 +777,9 @@ def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, 
         #print(varname,cks,rvar.encoding)
     # write to NetCDF
     ## write to file (with progress)
-    
+
     # write results to file (actually just create file)
-    task = xds.to_netcdf(tmp_filepath, mode=nc_mode, format='NETCDF4', unlimited_dims=['time'], 
+    task = xds.to_netcdf(tmp_filepath, mode=nc_mode, format='NETCDF4', unlimited_dims=['time'],
                          engine='netcdf4', encoding=encoding, compute=False)
     if lcompute:
         # execute with or without progress bar
@@ -820,22 +820,22 @@ def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, 
                 if 'units' not in coord.ncattrs():
                     coord.setncattr('units','deg' if lgeo else 'm')
             # store geospatial code version
-            ncds.setncattr('geospatial_netcdf_version',geospatial_netcdf_version) 
-        
+            ncds.setncattr('geospatial_netcdf_version',geospatial_netcdf_version)
+
         # replace original file
         if ltmpfile:
             if lfeedback: print("\nMoving file to final destination (overwriting old file):\n '{}'".format(filepath))
             if os.path.exists(filepath): os.remove(filepath)
-            os.rename(tmp_filepath, filepath)            
+            os.rename(tmp_filepath, filepath)
     else:
         # just show some info and save task graph
         if lfeedback:
-            print("\nEncoding info:") 
+            print("\nEncoding info:")
             print(encoding)
             print(task)
             print("\nSaving task graph to:\n '{}.svg'".format(filepath))
         task.visualize(filename=filepath+'.svg')  # This file is never produced
-    
+
     # return file path
     return filepath
 
