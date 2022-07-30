@@ -551,6 +551,10 @@ def _multichunkPresets(multi_chunks):
         elif multi_chunks.lower() == 'time': # 184 MB
             multi_chunks = {dim:4 for dim in ('lat','lon','latitude','longitude','x','y')}
             multi_chunks['time'] = 92 # for reductions along time, we can use a higher value (8 days * 92 ~ 2 years)
+        elif multi_chunks.lower() == 'tiny':
+            multi_chunks = {dim:2 for dim in ('lat','lon','latitude','longitude','x','y')}
+            multi_chunks['time'] = 2 # for reductions along time, we can use a higher value (8 days * 92 ~ 2 years)
+
         else:
             raise NotImplementedError(multi_chunks)
     elif ( multi_chunks is not None ) and not isinstance(multi_chunks, dict):

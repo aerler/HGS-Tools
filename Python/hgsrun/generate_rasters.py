@@ -120,8 +120,8 @@ if __name__ == '__main__':
 #     project = 'GRW'
 #     grid_name  = 'grw2'; resampling = 'nearest'; #source_grid = 'grw1'
     ## operational config for SON2
-    # project = 'SON'
-    # grid_name  = 'son2'
+    project = 'SON'
+    grid_name  = 'son2'
     ##
     # project = 'SNW'
     # grid_name  = 'snw2'
@@ -137,8 +137,8 @@ if __name__ == '__main__':
     # # grid_name = 'qel1' # quasi-10 km Queensland grid
     # grid_name = 'qel2'  # 10 km Queensland grid
     ## Carcajou Watershed (Norhtwest Territories)
-    project = 'C1W'  # Canada1Water projection
-    grid_name = 'ccj1'  # 5 km for regional model
+    # project = 'C1W'  # Canada1Water projection
+    # grid_name = 'ccj1'  # 5 km for regional model
 
     ## define target grid/projection
     # projection/UTM zone
@@ -252,14 +252,15 @@ if __name__ == '__main__':
     ## define source data
 
     # lexec = False
-    ltest = True  # prefix with 'test' - don't overwrite exiting data
+    ltest = False  # prefix with 'test' - don't overwrite exiting data
 
     # some defaults for most datasets
     time_chunks = 8  # used for multi_chunks or directly in SnoDAS & CaSPAr; typically not much speed-up beyond 8
     dataset_kwargs = dict(); subdataset = None
     bias_correction = None; bc_varmap = dict(); obs_name = None; bc_method = None
     fill_masked = False; fill_max_search = 2
-    target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/'
+    # target_folder_ascii = '{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/'
+    target_folder_ascii = '//aquanty-nas/share/temp_data_exchange/Erler/NewNRCanERA5/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/'
     if ltest:
         target_folder_ascii += 'test/'  # store in subfolder
     raster_name = '{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc'
@@ -280,52 +281,54 @@ if __name__ == '__main__':
     ## CaSPAr
     #dataset = 'CaSPAr'; dataset_kwargs = dict(grid='lcc_snw'); time_interval = 'hourly'
     ## MergedForcing
-#     varlist = []
-#     dataset = 'MergedForcing'
-#     subdataset = dataset; varlist = ['liqwatflx_ne5']
-# #     subdataset = dataset; varlist = ['liqwatflx_ne5','pet_har','pet_hog',]
-# # #     subdataset = dataset; varlist = ['pet_pts',] # PET based on Priestley-Taylor with solar radiation only
-# # #     subdataset = dataset; varlist = ['liqwatflx','pet_pts',] # assorted forcing
-# # #     subdataset = 'NRCan'; varlist += ['Tmin',] # base variables
-# # #     subdataset = 'NRCan'; varlist += ['precip','Tmin','Tmax','T2',] # base variables
-# # #     subdataset = 'NRCan'; varlist += ['precip_adj',] # adjusted precip data (up to 2016)
-# #     subdataset = 'NRCan'; varlist += ['pet_har',] # PET based on Hargreaves' method
-# # #     subdataset = 'NRCan'; varlist += ['pet_haa',] # PET based on Hargreaves' with Allen's correction
-# # #     subdataset = 'NRCan'; varlist += ['pet_th',] # PET based on Thornthwaite method
-# #     subdataset = 'NRCan'; varlist += ['pet_hog',] # PET based on simple Hogg method
-# #     dataset_kwargs = dict(dataset=subdataset)
-#     dataset_kwargs['resolution'] = 'CA12'; resampling = 'cubic_spline'
-# #     dataset_kwargs['resolution'] = 'SON60'; resampling = 'bilinear'
-#     dataset_kwargs['dataset_index'] = dict(liqwatflx='MergedForcing',liqwatflx_ne5='MergedForcing',pet_har='NRCan',pet_hog='NRCan')
-# #     dataset_kwargs['grid'] = 'son2'; resampling = None; lwarp = False
-# #     dataset_kwargs['grid'] = 'snw2'; resampling = None; lwarp = False
+    varlist = []
+    dataset = 'MergedForcing'
+    subdataset = 'NRCan'; varlist = ['pet_hog']
+    # subdataset = dataset; varlist = ['liqwatflx_ne5',]
+# #     subdataset = dataset; varlist = ['pet_pts',] # PET based on Priestley-Taylor with solar radiation only
+# #     subdataset = dataset; varlist = ['liqwatflx','pet_pts',] # assorted forcing
+# #     subdataset = 'NRCan'; varlist += ['Tmin',] # base variables
+#     subdataset = 'NRCan'; varlist += ['precip','Tmin','Tmax','T2',] # base variables
+# #     subdataset = 'NRCan'; varlist += ['precip_adj',] # adjusted precip data (up to 2016)
+#     subdataset = 'NRCan'; varlist += ['pet_har',] # PET based on Hargreaves' method
+# #     subdataset = 'NRCan'; varlist += ['pet_haa',] # PET based on Hargreaves' with Allen's correction
+# #     subdataset = 'NRCan'; varlist += ['pet_th',] # PET based on Thornthwaite method
+#     subdataset = 'NRCan'; varlist += ['pet_hog',] # PET based on simple Hogg method
+    dataset_kwargs = dict(dataset=subdataset)
+    dataset_kwargs['resolution'] = 'NA12'; resampling = 'cubic_spline'
+#     dataset_kwargs['resolution'] = 'SON60'; resampling = 'bilinear'
+    # dataset_kwargs['dataset_index'] = dict(liqwatflx='MergedForcing',liqwatflx_ne5='MergedForcing',pet_har='NRCan',pet_hog='NRCan')
+    dataset_kwargs['grid'] = 'son2'
+    resampling = None; lwarp = False
+#     dataset_kwargs['grid'] = 'snw2'; resampling = None; lwarp = False
     ## ERA5
-#     dataset = 'ERA5'; subdataset = 'ERA5L'
-#     #time_chunks = 92 # for small grids only!
-# #     varlist = ['snow','dswe',]
-#     # varlist = ['precip','pet_era5','liqwatflx','snow','dswe',]
-#     varlist = ['pet_era5','liqwatflx',]
-#     if ltest: varlist = ['snow']
-#     dataset_kwargs = dict(subset=subdataset, combine_attrs='override')
-#     dataset_kwargs['resolution'] = 'NA10'
-#     # dataset_kwargs['resolution'] = 'AU10'
-# #     dataset_kwargs['resolution'] = 'NA10'; dataset_kwargs['grid'] = 'son2'; multi_chunks = 'time'
-#     resampling = 'cubic_spline' # apparently we need to pre-chunk or there is a memory leak..
-#     fill_masked = True
-    ## C1W data
-    dataset = 'C1W'; subdataset = 'C1W_Soil'
-    time_interval = 'monthly'; data_mode = 'avg'
-    varlist = ['Tsl1','Tsl2','Tsl3']
-    dataset_kwargs = dict(subset=subdataset)
-    dataset_kwargs['resolution'] = 'NA005'
-    resampling = 'cubic_spline' # apparently we need to pre-chunk or there is a memory leak..
-    fill_masked = True
+    # dataset = 'ERA5'; subdataset = 'ERA5L'
+    # #time_chunks = 92 # for small grids only!
+    # varlist = ['snow','dswe',]
+    # # varlist = ['precip','pet_era5','liqwatflx','snow','dswe',]
+    # # varlist = ['pet_era5','liqwatflx',]
+    # if ltest: varlist = ['snow']
+    # dataset_kwargs = dict(subset=subdataset, combine_attrs='override')
+    # # dataset_kwargs['resolution'] = 'NA10'
+    # # dataset_kwargs['resolution'] = 'AU10'
+    # dataset_kwargs['resolution'] = 'SON10'; #dataset_kwargs['grid'] = 'son2'; multi_chunks = 'time'
+    # resampling = 'cubic_spline' # apparently we need to pre-chunk or there is a memory leak..
+    # fill_masked = True
+    # ## C1W data
+    # # dataset = 'C1W'; subdataset = 'C1W_Soil'
+    # # time_interval = 'monthly'; data_mode = 'avg'
+    # # varlist = ['Tsl1','Tsl2','Tsl3']
+    # # dataset_kwargs = dict(subset=subdataset)
+    # # dataset_kwargs['resolution'] = 'NA005'
+    # # resampling = 'cubic_spline' # apparently we need to pre-chunk or there is a memory leak..
+    # # fill_masked = True
 
     if ltest: varlist = varlist[:2]
 
 #     start_date = '1997-01-01'; end_date = '2017-12-31' # SON/SNW full period
 #     start_date = '1981-01-01'; end_date = '2017-12-31' # SON/SNW full period
-    start_date = '1981-01-01'; end_date = '2020-08-31' # full ERA5-Land period
+    start_date = '1981-01-01'; end_date = '2020-09-01' # full ERA5-Land period
+    # start_date = '1981-01-01'; end_date = '2020-12-31' # full ERA5-Land period
 #     start_date = '2000-01-01'; end_date = '2018-01-01'
 #     start_date = '2011-01-01'; end_date = '2017-12-31' # combined NRCan-SnoDAS period
 #     start_date = '2016-01-01'; end_date = '2017-12-31'
@@ -335,8 +338,8 @@ if __name__ == '__main__':
         end_date = '1998-01-01' if time_interval.lower() == 'monthly' else '1997-01-15'
 
     ## output type: ASCII raster or NetCDF-4
-    mode = 'NetCDF'
-    # mode = 'raster2d'
+    # mode = 'NetCDF'
+    mode = 'raster2d'
 
 
     ## WRF requires special treatment
@@ -372,12 +375,13 @@ if __name__ == '__main__':
             netcdf_name = ds_mod.fileclasses[filetype].dailyfile.format(domain, '{grid:s}')
             netcdf_folder = ds_mod.daily_folder
     elif dataset == 'MergedForcing':
-        netcdf_folder,netcdf_name = ds_mod.getFolderFileName(varname='{var_str:s}', grid=grid_name.lower(),
+        netcdf_folder,netcdf_name = ds_mod.getFolderFileName(varname='{var_str:s}', resampling=resampling,
                                                              mode=data_mode, aggregation=time_interval, **dataset_kwargs)
     else:
         if hasattr(ds_mod,'getFolderFileName',):
-            netcdf_folder,netcdf_name = ds_mod.getFolderFileName(varname='{var_str:s}', dataset=dataset, grid=grid_name.lower(),
-                                                                 mode=data_mode, aggregation=time_interval, **dataset_kwargs)
+            netcdf_folder,netcdf_name = ds_mod.getFolderFileName(varname='{var_str:s}', dataset=dataset,
+                                                                 mode=data_mode, aggregation=time_interval,
+                                                                 resampling=resampling, **dataset_kwargs)
         else:
             netcdf_name = ds_mod.netcdf_filename.format('{var_str:s}', VAR='{var_str:s}')
             netcdf_folder = ds_mod.avgfolder if data_mode.lower() == 'avg' else ds_mod.daily_folder
@@ -420,9 +424,12 @@ if __name__ == '__main__':
         if data_mode.lower() == 'avg':
             target_folder = netcdf_folder
         else:
-            target_folder = target_folder_netcdf.format(daily=netcdf_folder, grid=grid_name, smpl=resampling,
-                                                        exp_name=exp_name, dom=domain, exp_folder=exp_folder)
-        filename_novar = netcdf_name.format(var_str=bc_str1 + '{var:s}' + gridstr, grid=bc_str2.lower() + gridstr,)  # usually either var or grid
+            if dataset == 'WRF':
+                target_folder = target_folder_netcdf.format(daily=netcdf_folder, grid=grid_name, smpl=resampling,
+                                                            exp_name=exp_name, dom=domain, exp_folder=exp_folder)
+            else:
+                target_folder = netcdf_folder
+        filename_novar = netcdf_name.format(var_str=bc_str1 + '{var:s}', grid=bc_str2.lower() + gridstr,)  # usually either var or grid
         #driver_args = dict(least_significant_digit=4)
         print(("\n***   Regridding '{}' to '{}' (NetCDF format)   ***".format(dataset, grid_name)))
     else:
@@ -592,10 +599,10 @@ if __name__ == '__main__':
 
 
 
-    # replace original file
-    if mode.upper() == 'NETCDF':
-        if os.path.exists(original_filepath): os.remove(original_filepath)
-        os.rename(filepath, original_filepath)
+        # replace original file
+        if mode.upper() == 'NETCDF':
+            if os.path.exists(original_filepath): os.remove(original_filepath)
+            os.rename(filepath, original_filepath)
 
     end = time()
     print(("\n***   Overall Timing: {:.2f} seconds   ***\n".format(end-start)))
