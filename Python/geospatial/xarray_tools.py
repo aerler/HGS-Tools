@@ -320,7 +320,7 @@ def inferGeoInfo(xvar, varname=None, crs=None, transform=None, size=None, lraise
             xvar = xvar[varname]
         shape = None; dims = None
         if isinstance(xvar,xr.DataArray):
-            shape = xvar.data.shape; dims = xvar.dims
+            shape = xvar.shape; dims = xvar.dims
             if xvar.attrs.get('dim_order',None) is False:
                 raise NotImplementedError("The x/lon and y/lat axes of this xarray have to be swapped:\n {}".format(xvar))
         elif isinstance(xvar,nc.Dataset) and varname:
@@ -376,10 +376,13 @@ def updateVariableAttrs(xds, varatts=None, varmap=None, varlist=None, **kwargs):
     date_str = datetime.today().strftime('%Y%m%d')
     for varname,atts in varatts.items():
         if varname in xds.variables:
-            if varname == 'time':
-                warn("The 'time' coordinate is handled automatically by xarray using numpy datetime64; "
-                      + "changing attributes can break this functionality when the dataset is saved to file. ")
             var = xds.variables[varname]
+            if varname == 'time' and np.issubdtype(var.dtype, np.datetime64):
+                warn("The 'time' coordinate is handled automatically by xarray using numpy datetime64")
+                if 'units' in atts:
+                    warn(" ... removing 'units' attribute to prevent envoding errors.")
+                    atts = atts.copy()
+                    del atts['units']
             attrs = var.attrs.copy()
             if 'updated' not in attrs:
                 if 'units' in atts:
@@ -542,7 +545,7 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
 
 def _multichunkPresets(multi_chunks):
     ''' translate string identifiers into valid multichunk dicts, based on presets '''
-    if isinstance(multi_chunks,str):
+    if isinstance(multi_chunks, str):
         if multi_chunks.lower() == 'regular': # 256 MB
             multi_chunks = {dim:16 for dim in ('lat','lon','latitude','longitude','x','y',)}
             multi_chunks['time'] = 8
@@ -554,7 +557,6 @@ def _multichunkPresets(multi_chunks):
         elif multi_chunks.lower() == 'tiny':
             multi_chunks = {dim:2 for dim in ('lat','lon','latitude','longitude','x','y')}
             multi_chunks['time'] = 2 # for reductions along time, we can use a higher value (8 days * 92 ~ 2 years)
-
         else:
             raise NotImplementedError(multi_chunks)
     elif ( multi_chunks is not None ) and not isinstance(multi_chunks, dict):
@@ -658,12 +660,19 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
             if chunks is True:
                 # infer chunks from NetCDF-4 file (not sure why xarray doesn't do this automatically...)
                 with nc.Dataset(filepath, 'r') as ncds : # open in read-only using NetCDF4 module
-                    chunks = dict()
+                    chunks = dict(); chunks_nD = dict()
                     for varname,ncvar in ncds.variables.items():
                         for dim,size in zip(ncvar.dimensions,ncvar.chunking()):
-                            chunks[dim] = size # this just selects the last value... not necessarily always the same
-                            if dim in chunks and chunks[dim] != size:
-                                print("WARNING: Chunks for dimension '{}' not coherent in file:\n '{}'".format(dim, filepath))
+                            if ncvar.ndim > 1:
+                                if dim in chunks_nD and chunks_nD[dim] != size:
+                                    print("WARNING: Chunks (nD) for dimension '{}' not coherent in file:\n '{}'".format(dim, filepath))
+                                chunks_nD[dim] = size # this just selects the last value... not necessarily always the same
+                            else:
+                                if dim in chunks and chunks[dim] != size:
+                                    print("WARNING: Chunks (1D) for dimension '{}' not coherent in file:\n '{}'".format(dim, filepath))
+                                chunks[dim] = size # this just selects the last value... not necessarily always the same
+                            # overwrite 1D chunks with nD chunks (nD fields should dictate chunking)
+                            chunks.update(chunks_nD)
             if multi_chunks: # enlarge chunks with multiplier
                 chunks = {dim:(val*multi_chunks.get(dim,1)) for dim,val in chunks.items()}
             # open dataset with xarray
