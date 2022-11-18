@@ -647,13 +647,18 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
         raise ValueError(filelist)
     # just some default settings that will produce chunks larger than 100 MB on 8*64*64 float chunks
     multi_chunks = _multichunkPresets(multi_chunks)
-    orig_chunks = chunks.copy() if isinstance(chunks, dict) else chunks # deep copy or True or None
+    if isinstance(chunks, dict):
+        orig_chunks = chunks.copy()
+    elif chunks is None:
+        orig_chunks = bool(multi_chunks)
+    else:
+        orig_chunks = chunks  # True/False
     # construct dataset
     ds_list = []
     for filetype in filetypes:
         filename = filelist[filetype].lower().format(var=filetype.lower(), type=filetype.lower()) # all lower case
         filepath = '{}/{}'.format(folder,filename)
-        chunks = orig_chunks # reset
+        chunks = orig_chunks  # reset
         # apply varmap in reverse to varlist
         if os.path.exists(filepath):
             # load dataset
