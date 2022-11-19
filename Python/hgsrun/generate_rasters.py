@@ -115,8 +115,8 @@ if __name__ == "__main__":
     #     project = 'WRF'
     #     #grid_name  = 'wc2_d01'
     #     #project = 'CMB'
-    project = 'ARB'
-    grid_name  = 'arb3'
+    # project = 'ARB'
+    # grid_name  = 'arb3'
     ## Fraser's Ontario domain
     #     project = 'WRF' # load grid from pickle
     # #     grid_name = 'glb1_d02'
@@ -149,8 +149,8 @@ if __name__ == "__main__":
     # project = 'SON'
     # grid_name  = 'son2'
     ##
-    # project = 'SNW'
-    # grid_name  = 'snw2'
+    project = 'SNW'
+    grid_name  = 'snw1'
     ## operational config for ASB2
     #     project = 'ASB'
     #     grid_name  = 'asb1'
@@ -282,6 +282,10 @@ if __name__ == "__main__":
         tgt_size = (27, 33)  # smaller, lower resolution 5 km grid for GRW
         tgt_geotrans = (500.0e3, 5.0e3, 0, 4740.0e3, 0, 5.0e3)  # 5 km
         resampling = "average"  # it's a fairly coarse grid...
+    elif grid_name == "snw1":
+        tgt_size = (18, 22)  # 5 km resolution SNW grid for WRF data
+        tgt_geotrans = (438.0e3, 5.0e3, 0, 4940.0e3, 0, 5.0e3)  # 5 km
+        resampling = "average"  # it's a fairly coarse grid...
     elif grid_name == "snw2":
         tgt_size = (44, 55)  # 2 km resolution SNW grid for CaLDAS/CaPA data
         tgt_geotrans = (438.0e3, 2.0e3, 0, 4940.0e3, 0, 2.0e3)  # 2 km
@@ -321,8 +325,8 @@ if __name__ == "__main__":
 
     ## define source data
 
-    lexec = False
-    ltest = True  # prefix with 'test' - don't overwrite exiting data
+    lexec = True
+    ltest = False  # prefix with 'test' - don't overwrite exiting data
 
     # some defaults for most datasets
     time_chunks = 8  # used for multi_chunks or directly in SnoDAS & CaSPAr; typically not much speed-up beyond 8
@@ -332,8 +336,8 @@ if __name__ == "__main__":
     bc_varmap = dict()
     obs_name = None
     bc_method = None
-    fill_masked = False
-    fill_max_search = 2
+    fill_masked = True
+    fill_max_search = 5
     raster_name = "{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc"
     target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/"
     # target_folder_ascii = '//aquanty-nas/share/temp_data_exchange/Erler/NewNRCanERA5/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/'
@@ -404,13 +408,11 @@ if __name__ == "__main__":
     lhourly = False
     bias_correction = None
     resampling = "bilinear"
-    # if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
-    # else: from projects.GreatLakes import WRF_exps
-    from projects.WesternCanada import WRF_exps
+    if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
+    else: from projects.GreatLakes import WRF_exps
 
-    exp_name = "max-ctrl"
-    # exp_name = os.getenv('WRFEXP')
-    domain = 2
+    exp_name = os.getenv('WRFEXP', "g-ens")
+    domain = 1
     filetype = "aux"
     data_mode = "avg"
     src_resampling = None
@@ -422,7 +424,8 @@ if __name__ == "__main__":
     dataset_kwargs = dict(
         experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps, lconst=False,
     )
-    target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}transient_{int:s}/climate_forcing/"
+    target_folder_ascii = "//aquanty-nas/share/temp_data_exchange/Erler/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}_{int:s}/climate_forcing/"
+    #target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}_{int:s}/climate_forcing/"
     target_folder_netcdf = "{exp_folder:s}/{grid:s}/{smpl:s}/"
     # bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'
     # bias_correction = 'AABC'; bc_varmap = dict(liqwatflx='precip'); obs_name = 'CRU'
@@ -545,7 +548,7 @@ if __name__ == "__main__":
         gridstr = (
             dataset.lower() if grid_name.lower() == "native" else grid_name.lower()
         )
-        bc_str = bc_method + "_" if bc_method else ""
+        bc_str = bc_method + "_" if bc_method else "noBC"
         hgs_root = os.getenv("HGS_ROOT", os.getenv("DATA_ROOT") + "HGS/")
         target_folder = target_folder_ascii.format(
             root=hgs_root,
@@ -565,7 +568,7 @@ if __name__ == "__main__":
             grid=grid_name.lower(),
             date="{date:s}",
         )  # no date for now...
-        driver_args = dict(significant_digits=4, fill_value=0.0, nodata_flag=-9999.0)
+        driver_args = dict(significant_digits=4, fill_value=0.0, nodata_flag=np.NaN)
         print(
             (
                 "\n***   Exporting '{}' to raster format {}   ***\n".format(
