@@ -111,61 +111,18 @@ if __name__ == "__main__":
     output_chunks = None
     resampling = "bilinear"
     lexec = True  # actually write rasters or just include file
-    # WRF grids
-    #     project = 'WRF'
-    #     #grid_name  = 'wc2_d01'
-    #     #project = 'CMB'
-    # project = 'ARB'
-    # grid_name  = 'arb3'
-    ## Fraser's Ontario domain
-    #     project = 'WRF' # load grid from pickle
-    # #     grid_name = 'glb1_d02'
-    #     start_date = None; end_date = None
-    #     grid_name = 'glb1_d01'
-    #     project = 'Geo'
-    #     grid_name = 'on1'
-    #     start_date = None; end_date = None
-    #     grid_name  = 'cmb1'
-    #     mode = 'NetCDF'
+    ## WRF grids
+    # project = 'WRF'
+    # grid_name  = 'wc2_d01'
     ## generate a full SnoDAS raster
     #     project = 'native'
     #     grid_name  = 'native'
     ## fast test config
     #     project = 'SON'
     #     grid_name  = 'son1'
-    ## config for Hugo's domain in Quebec
-    #     project = 'Hugo'
-    #     grid_name = 'hd1'
-    #     mode = 'NetCDF'
-    ## operational config for GRW
-    #     project = 'GRW'
-    #     grid_name  = 'grw1'
-    ## test config for GRW
-    # project = "GRW"
-    # grid_name = "grw2"
-    # resampling = "nearest"
-    # source_grid = 'grw1'
-    ## operational config for SON2
-    # project = 'SON'
-    # grid_name  = 'son2'
-    ##
-    project = 'SNW'
-    grid_name  = 'snw1'
-    ## operational config for ASB2
-    #     project = 'ASB'
-    #     grid_name  = 'asb1'
-    #     #grid_name  = 'asb2'
-    # CA12 NRCan grid
-    # project = 'Geo'
-    # grid_name = 'ca12'
-    # grid_name = 'na12'
-    ## Queensland (Australia) grid
-    # project = 'QEL'
-    # # grid_name = 'qel1' # quasi-10 km Queensland grid
-    # grid_name = 'qel2'  # 10 km Queensland grid
-    ## Carcajou Watershed (Norhtwest Territories)
-    # project = 'C1W'  # Canada1Water projection
-    # grid_name = 'ccj1'  # 5 km for regional model
+    ## explicitly defined grids
+    project = 'GLB'
+    grid_name = 'dog2'
 
     ## define target grid/projection
     # projection/UTM zone
@@ -202,28 +159,34 @@ if __name__ == "__main__":
             name=grid_name,
         )
         # N.B.: something seems to be wrong with this... rasterio can't read it...
-    elif project.upper() in ("SON", "GRW"):
-        # southern Ontario projection
-        tgt_crs = genCRS(
-            "+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
-            name=grid_name,
-        )
     elif project.upper() in ("SNW"):
         # South Nation projection
         tgt_crs = genCRS(
             "+proj=utm +zone=18 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
             name=grid_name,
         )
-    elif project.upper() == "CMB":
-        # Columbia Mass Balance projection
+    elif project.upper() in ("SON", "GRW"):
+        # southern Ontario projection
         tgt_crs = genCRS(
-            "+proj=utm +zone=11 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
+            "+proj=utm +zone=17 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
+            name=grid_name,
+        )
+    elif project.upper() == "GLB":
+        # Assiniboin projection
+        tgt_crs = genCRS(
+            "+proj=utm +zone=16 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs",
             name=grid_name,
         )
     elif project.upper() == "ASB":
         # Assiniboin projection
         tgt_crs = genCRS(
             "+proj=utm +zone=14 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs",
+            name=grid_name,
+        )
+    elif project.upper() == "CMB":
+        # Columbia Mass Balance projection
+        tgt_crs = genCRS(
+            "+proj=utm +zone=11 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
             name=grid_name,
         )
     elif project.upper() in ("QEL"):
@@ -293,6 +256,12 @@ if __name__ == "__main__":
     elif grid_name == "cmb1":
         tgt_size = (640, 826)  # higher resolution 500 m grid
         tgt_geotrans = (292557.0, 500, 0, 5872251.0, 0, -500.0)  # 500 m
+    elif grid_name == "dog1":
+        tgt_size = (12, 11)  # lower resolution 10 km grid
+        tgt_geotrans = (247.e3, 10.e3, 0., 5375.e3, 0., 10.e3)
+    elif grid_name == "dog2":
+        tgt_size = (24, 22)  # medium resolution 5 km grid
+        tgt_geotrans = (247.e3, 5.e3, 0., 5375.e3, 0., 5.e3)
     elif grid_name == "asb1":
         tgt_size = (191, 135)  # lower resolution 5 km grid
         tgt_geotrans = (-159.0e3, 5.0e3, 0.0, 5202.0e3, 0.0, 5.0e3)  # 5 km
@@ -412,7 +381,7 @@ if __name__ == "__main__":
     else: from projects.GreatLakes import WRF_exps
 
     exp_name = os.getenv('WRFEXP', "g-ens")
-    domain = 1
+    domain = 2
     filetype = "aux"
     data_mode = "avg"
     src_resampling = None
