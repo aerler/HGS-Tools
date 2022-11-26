@@ -110,6 +110,7 @@ if __name__ == "__main__":
     time_chunks = 1  # typically not much speed-up beyond 8
     output_chunks = None
     resampling = "bilinear"
+    src_resampling = None  # resampling of source dataset, if any
     lexec = True  # actually write rasters or just include file
     ## WRF grids
     # project = 'WRF'
@@ -210,14 +211,7 @@ if __name__ == "__main__":
         resampling = "cubic_spline"
         output_chunks = (8, 60, 58)  # time, ylat, xlon
     elif grid_name == "on1":
-        tgt_geotrans = [
-            -87.87916564941406,
-            0.008331298828125,
-            0.0,
-            41.995832443237305,
-            0.0,
-            0.008335113525390625,
-        ]
+        tgt_geotrans = [-87.87916564, 0.008331298, 0.0, 41.995832443, 0.0, 0.008335113525]
         resampling = "cubic_spline"
     elif grid_name == "arb2":
         tgt_geotrans = [-1460500, 5e3, 0, 810500, 0, 5e3]
@@ -294,7 +288,7 @@ if __name__ == "__main__":
 
     ## define source data
 
-    lexec = True
+    lexec = False
     ltest = False  # prefix with 'test' - don't overwrite exiting data
 
     # some defaults for most datasets
@@ -320,7 +314,7 @@ if __name__ == "__main__":
     WRF_exps = None
     filetype = None
 
-    ## SnoDAS
+    ## SnoDAS & NRCan
     #     dataset = 'SnoDAS' # default...
     # #     bias_correction = 'SMBC'; obs_name = 'NRCan'
     #     bc_varmap = dict(liqprec='liqwatflx') # just for testing...
@@ -330,78 +324,87 @@ if __name__ == "__main__":
     #     end_date = '2011-02-01'
     ## CaSPAr
     # dataset = 'CaSPAr'; dataset_kwargs = dict(grid='lcc_snw'); time_interval = 'hourly'
-    ## MergedForcing
-    # varlist = []
-    # dataset = 'MergedForcing'
+    # MergedForcing
+    varlist = []
+    dataset = 'MergedForcing'
     # subdataset = 'NRCan'; varlist = ['pet_hog']
-    # subdataset = dataset; varlist = ['liqwatflx_ne5',]
-    # #     subdataset = dataset; varlist = ['pet_pts',] # PET based on Priestley-Taylor with solar radiation only
-    # #     subdataset = dataset; varlist = ['liqwatflx','pet_pts',] # assorted forcing
-    # #     subdataset = 'NRCan'; varlist += ['Tmin',] # base variables
-    #     subdataset = 'NRCan'; varlist += ['precip','Tmin','Tmax','T2',] # base variables
-    # #     subdataset = 'NRCan'; varlist += ['precip_adj',] # adjusted precip data (up to 2016)
-    #     subdataset = 'NRCan'; varlist += ['pet_har',] # PET based on Hargreaves' method
-    # #     subdataset = 'NRCan'; varlist += ['pet_haa',] # PET based on Hargreaves' with Allen's correction
-    # #     subdataset = 'NRCan'; varlist += ['pet_th',] # PET based on Thornthwaite method
-    #     subdataset = 'NRCan'; varlist += ['pet_hog',] # PET based on simple Hogg method
-    # dataset_kwargs = dict(dataset=subdataset)
-    # dataset_kwargs['resolution'] = 'NA12'; resampling = 'cubic_spline'
-    #     dataset_kwargs['resolution'] = 'SON60'; resampling = 'bilinear'
-    # dataset_kwargs['dataset_index'] = dict(liqwatflx='MergedForcing',liqwatflx_ne5='MergedForcing',pet_har='NRCan',pet_hog='NRCan')
+    # subdataset = dataset; varlist = ['liqwatflx_ne5']
+    subdataset = None; varlist = ['liqwatflx_ne5', 'pet_hog']
+    # subdataset = dataset; varlist = ['pet_pts',] # PET based on Priestley-Taylor with solar radiation only
+    # subdataset = dataset; varlist = ['liqwatflx','pet_pts',] # assorted forcing
+    # subdataset = 'NRCan'; varlist += ['Tmin',] # base variables
+    # subdataset = 'NRCan'; varlist += ['precip','Tmin','Tmax','T2',] # base variables
+    # subdataset = 'NRCan'; varlist += ['precip_adj',] # adjusted precip data (up to 2016)
+    # subdataset = 'NRCan'; varlist += ['pet_har',] # PET based on Hargreaves' method
+    # subdataset = 'NRCan'; varlist += ['pet_haa',] # PET based on Hargreaves' with Allen's correction
+    # subdataset = 'NRCan'; varlist += ['pet_th',] # PET based on Thornthwaite method
+    # subdataset = 'NRCan'; varlist += ['pet_hog',] # PET based on simple Hogg method
+    # dataset_kwargs = dict(dataset=subdataset)  # only for daily
+    dataset_kwargs = dict(dataset=subdataset)
+    dataset_kwargs['resolution'] = 'NA12'  # for NRCan: SON60, NA12
+    resampling = 'bilinear'
+    dataset_kwargs['dataset_index'] = dict(liqwatflx='MergedForcing',
+                                           liqwatflx_ne5='MergedForcing',
+                                           pet_har='NRCan', pet_hog='NRCan')
     # dataset_kwargs['grid'] = 'son2'
-    # resampling = None; lwarp = False
-    #     dataset_kwargs['grid'] = 'snw2'; resampling = None; lwarp = False
+    # dataset_kwargs['grid'] = 'snw2'; resampling = None; lwarp = False
+    data_mode = "avg"
+    time_interval = "clim"
+    sim_cycles = 10  # cycles/repetitions in include file for periodic forcing
+    start_date = end_date = None
     # ## ERA5
     # dataset = 'ERA5'; subdataset = 'ERA5L'
     # #time_chunks = 92 # for small grids only!
     # varlist = ['snow','dswe',]
     # # varlist = ['precip','pet_era5','liqwatflx','snow','dswe',]
     # # varlist = ['pet_era5','liqwatflx',]
+    # data_mode = "avg"
+    # time_interval = "clim"
+    # sim_cycles = 10  # cycles/repetitions in include file for periodic forcing
+    # start_date = end_date = None
     # dataset_kwargs = dict(subset=subdataset, combine_attrs='override')
-    # dataset_kwargs['resolution'] = 'NA10'
-    # # dataset_kwargs['resolution'] = 'AU10'
-    # # dataset_kwargs['resolution'] = 'SON10'; #dataset_kwargs['grid'] = 'son2'; multi_chunks = 'time'
-    # resampling = 'bilinear' # apparently we need to pre-chunk or there is a memory leak..
+    # dataset_kwargs['resolution'] = 'NA10'  # NA10, AU10, SON10
+    # resampling = 'bilinear'  # apparently we need to pre-chunk or there is a memory leak..
     # fill_masked = True
-    # ## C1W data
-    # # dataset = 'C1W'; subdataset = 'C1W_Soil'
-    # # time_interval = 'monthly'; data_mode = 'avg'
-    # # varlist = ['Tsl1','Tsl2','Tsl3']
-    # # dataset_kwargs = dict(subset=subdataset)
-    # # dataset_kwargs['resolution'] = 'NA005'
-    # # resampling = 'cubic_spline' # apparently we need to pre-chunk or there is a memory leak..
-    # # fill_masked = True
 
-    ## WRF requires special treatment
-    dataset = "WRF"
-    lhourly = False
-    bias_correction = None
-    resampling = "bilinear"
-    if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
-    else: from projects.GreatLakes import WRF_exps
+    ## C1W data
+    # dataset = 'C1W'; subdataset = 'C1W_Soil'
+    # time_interval = 'monthly'; data_mode = 'avg'
+    # varlist = ['Tsl1','Tsl2','Tsl3']
+    # dataset_kwargs = dict(subset=subdataset)
+    # dataset_kwargs['resolution'] = 'NA005'
+    # resampling = 'cubic_spline' # apparently we need to pre-chunk or there is a memory leak..
+    # fill_masked = True
 
-    exp_name = os.getenv('WRFEXP', "g-ens")
-    domain = 2
-    filetype = "aux"
-    data_mode = "avg"
-    src_resampling = None
-    time_interval = "clim"
-    sim_cycles = 10  # cycles/repetitions in include file for periodic forcing
-    start_date = None
-    end_date = None
-    # start_date = '1979-01-01'; end_date = '1979-12-31'
-    dataset_kwargs = dict(
-        experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps, lconst=False,
-    )
-    target_folder_ascii = "//aquanty-nas/share/temp_data_exchange/Erler/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}_{int:s}/climate_forcing/"
-    #target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}_{int:s}/climate_forcing/"
-    target_folder_netcdf = "{exp_folder:s}/{grid:s}/{smpl:s}/"
-    # bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'
-    # bias_correction = 'AABC'; bc_varmap = dict(liqwatflx='precip'); obs_name = 'CRU'
-    varlist = [
-        "liqwatflx",
-        "pet",
-    ]
+    # ## WRF requires special treatment
+    # dataset = "WRF"
+    # lhourly = False
+    # bias_correction = None
+    # resampling = "bilinear"
+    # if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
+    # else: from projects.GreatLakes import WRF_exps
+    #
+    # exp_name = os.getenv('WRFEXP', "g-ens")
+    # domain = 2
+    # filetype = "aux"
+    # src_resampling = None
+    # data_mode = "avg"
+    # time_interval = "clim"
+    # sim_cycles = 10  # cycles/repetitions in include file for periodic forcing
+    # start_date = end_date = None
+    # # start_date = '1979-01-01'; end_date = '1979-12-31'
+    # dataset_kwargs = dict(
+    #     experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps, lconst=False,
+    # )
+    # target_folder_ascii = "//aquanty-nas/share/temp_data_exchange/Erler/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}_{int:s}/climate_forcing/"
+    # #target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}_{int:s}/climate_forcing/"
+    # target_folder_netcdf = "{exp_folder:s}/{grid:s}/{smpl:s}/"
+    # # bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'
+    # # bias_correction = 'AABC'; bc_varmap = dict(liqwatflx='precip'); obs_name = 'CRU'
+    # varlist = [
+    #     "liqwatflx",
+    #     "pet",
+    # ]
 
     # start_date = '1997-01-01'; end_date = '2017-12-31' # SON/SNW full period
     # start_date = '1981-01-01'; end_date = '2017-12-31' # SON/SNW full period
@@ -454,7 +457,7 @@ if __name__ == "__main__":
     elif dataset == "MergedForcing":
         netcdf_folder, netcdf_name = ds_mod.getFolderFileName(
             grid=grid_name,
-            resampling=resampling,
+            resampling=src_resampling,
             mode=data_mode,
             aggregation=time_interval,
             varname="{var_str:s}",
@@ -467,7 +470,7 @@ if __name__ == "__main__":
         ):
             netcdf_folder, netcdf_name = ds_mod.getFolderFileName(
                 grid=grid_name,
-                resampling=resampling,
+                resampling=src_resampling,
                 mode=data_mode,
                 aggregation=time_interval,
                 varname="{var_str:s}",
@@ -580,11 +583,11 @@ if __name__ == "__main__":
         )
     elif time_interval.lower() == "monthly":
         xds = ds_mod.loadTimeSeries(
-            varlist=varlist, multi_chunks=dict(time=time_chunks), **dataset_kwargs
+            varlist=varlist, lxarray=True, **dataset_kwargs
         )
     elif time_interval.lower().startswith("clim"):
         xds = ds_mod.loadClimatology(
-            varlist=varlist, multi_chunks=dict(time=time_chunks), lxarray=True, **dataset_kwargs
+            varlist=varlist, lxarray=True, **dataset_kwargs
         )
     else:
         raise ValueError(time_interval)
