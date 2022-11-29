@@ -380,7 +380,7 @@ def updateVariableAttrs(xds, varatts=None, varmap=None, varlist=None, **kwargs):
             if varname == 'time' and np.issubdtype(var.dtype, np.datetime64):
                 warn("The 'time' coordinate is handled automatically by xarray using numpy datetime64")
                 if 'units' in atts:
-                    warn(" ... removing 'units' attribute to prevent envoding errors.")
+                    warn(" ... removing 'units' attribute of time axis to prevent encoding errors.")
                     atts = atts.copy()
                     del atts['units']
             attrs = var.attrs.copy()
@@ -478,7 +478,7 @@ def getCommonChunks(xds, method='min'):
     # collect chunks
     if isinstance(xds,xr.Dataset):
         for xvar in xds.data_vars.values():
-            if 'chunksizes' in xvar.encoding:
+            if xvar.ndim > 0 and 'chunksizes' in xvar.encoding:
                 for dim,cks in zip(xvar.dims,xvar.encoding['chunksizes']):
                     if dim in chunk_list: chunk_list[dim].append(cks)
                     else: chunk_list[dim] = [cks]
@@ -509,6 +509,13 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
         period = (pd.to_datetime(ts_var.data[0]).year, (pd.to_datetime(ts_var.data[-1])+pd.Timedelta(31, unit='D')).year)
         prdstr = '{:04d}-{:04d}'.format(*period)
 
+    # save and remove CRS variable to add after averaging
+    if 'crs' in xds:
+        crs_var = xds.variables['crs']
+        xds = xds.drop('crs')
+    else:
+        crs_var = None
+
     # resample data to aggregation interval
     if lresample:
         if aggregation.lower() == 'month': rsi = 'MS'
@@ -520,6 +527,10 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
     # compute monthly normals
     cds = xds.groupby('time.'+aggregation).mean('time')
     assert len(cds['month']) == 12, cds
+
+    # add CRS variable if it was there in the first place
+    if crs_var:
+        cds += crs_var
 
     # convert time axis
     cds = cds.rename({aggregation:time_name}) # the new time axis is named 'month'
