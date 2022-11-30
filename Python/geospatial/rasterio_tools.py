@@ -51,7 +51,7 @@ def genCRS(*args,**kwargs):
             if kwargs:
                 for key,value in kwargs.items():
                     arg += ' +{:s}={}'.format(key,value)
-            crs = rio.crs.CRS.from_string(arg) # initialize from Proj4 string
+            crs = rio.crs.CRS.from_proj4(arg)  # initialize from Proj4 string
         elif isinstance(arg,(int,np.integer)):
             crs = rio.crs.CRS.from_epsg(arg) # initialize from EPSG reference number
             if kwargs: raise ValueError("kwargs don't work with EPSG.")

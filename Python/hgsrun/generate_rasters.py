@@ -110,7 +110,6 @@ if __name__ == "__main__":
     time_chunks = 1  # typically not much speed-up beyond 8
     output_chunks = None
     resampling = "bilinear"
-    src_resampling = None  # resampling of source dataset, if any
     lexec = True  # actually write rasters or just include file
     ## WRF grids
     # project = 'WRF'
@@ -122,8 +121,8 @@ if __name__ == "__main__":
     #     project = 'SON'
     #     grid_name  = 'son1'
     ## explicitly defined grids
-    project = 'GLB'
-    grid_name = 'dog2'
+    project = 'SNW'
+    grid_name = 'snw1'
 
     ## define target grid/projection
     # projection/UTM zone
@@ -288,7 +287,7 @@ if __name__ == "__main__":
 
     ## define source data
 
-    lexec = False
+    lexec = True
     ltest = False  # prefix with 'test' - don't overwrite exiting data
 
     # some defaults for most datasets
@@ -302,8 +301,8 @@ if __name__ == "__main__":
     fill_masked = True
     fill_max_search = 5
     raster_name = "{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc"
-    target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/"
-    # target_folder_ascii = '//aquanty-nas/share/temp_data_exchange/Erler/NewNRCanERA5/{proj:s}/{grid:s}/{name:s}/{bc:s}transient_{int:s}/'
+    target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}_{int:s}/"
+    # target_folder_ascii = '//aquanty-nas/share/temp_data_exchange/Erler/{proj:s}/{grid:s}/{name:s}/{bc:s}_{int:s}/'
     if ltest:
         target_folder_ascii += "test/"  # store in subfolder
     data_mode = "daily"
@@ -322,36 +321,42 @@ if __name__ == "__main__":
     #     dataset_kwargs = dict(grid='on1', bias_correction=bc_method)
     #     resampling = 'bilinear'
     #     end_date = '2011-02-01'
+
     ## CaSPAr
     # dataset = 'CaSPAr'; dataset_kwargs = dict(grid='lcc_snw'); time_interval = 'hourly'
-    # MergedForcing
-    varlist = []
-    dataset = 'MergedForcing'
-    # subdataset = 'NRCan'; varlist = ['pet_hog']
-    # subdataset = dataset; varlist = ['liqwatflx_ne5']
-    subdataset = None; varlist = ['liqwatflx_ne5', 'pet_hog']
-    # subdataset = dataset; varlist = ['pet_pts',] # PET based on Priestley-Taylor with solar radiation only
-    # subdataset = dataset; varlist = ['liqwatflx','pet_pts',] # assorted forcing
-    # subdataset = 'NRCan'; varlist += ['Tmin',] # base variables
-    # subdataset = 'NRCan'; varlist += ['precip','Tmin','Tmax','T2',] # base variables
-    # subdataset = 'NRCan'; varlist += ['precip_adj',] # adjusted precip data (up to 2016)
-    # subdataset = 'NRCan'; varlist += ['pet_har',] # PET based on Hargreaves' method
-    # subdataset = 'NRCan'; varlist += ['pet_haa',] # PET based on Hargreaves' with Allen's correction
-    # subdataset = 'NRCan'; varlist += ['pet_th',] # PET based on Thornthwaite method
-    # subdataset = 'NRCan'; varlist += ['pet_hog',] # PET based on simple Hogg method
-    # dataset_kwargs = dict(dataset=subdataset)  # only for daily
-    dataset_kwargs = dict(dataset=subdataset)
-    dataset_kwargs['resolution'] = 'NA12'  # for NRCan: SON60, NA12
-    resampling = 'bilinear'
-    dataset_kwargs['dataset_index'] = dict(liqwatflx='MergedForcing',
-                                           liqwatflx_ne5='MergedForcing',
-                                           pet_har='NRCan', pet_hog='NRCan')
+
+    ## MergedForcing Daily
+    # varlist = []
+    # dataset = 'MergedForcing'
+    # # subdataset = 'NRCan'; varlist = ['pet_hog']
+    # # subdataset = dataset; varlist = ['liqwatflx_ne5']
+    # subdataset = None; varlist = ['liqwatflx_ne5', 'pet_hog']
+    # # subdataset = dataset; varlist = ['pet_pts',] # PET based on Priestley-Taylor with solar radiation only
+    # dataset_kwargs = dict(dataset=subdataset)
+    # dataset_kwargs['resolution'] = 'NA12'  # for NRCan: SON60, NA12
+    # resampling = 'bilinear'
+    # dataset_kwargs['dataset_index'] = dict(liqwatflx='MergedForcing',
+    #                                        liqwatflx_ne5='MergedForcing',
+    #                                        pet_har='NRCan', pet_hog='NRCan')
     # dataset_kwargs['grid'] = 'son2'
     # dataset_kwargs['grid'] = 'snw2'; resampling = None; lwarp = False
-    data_mode = "avg"
+
+    ## MergedForcing Monthly
+    dataset = 'MergedForcing'  # to load module and use in this script
+    subdataset = 'MergedForcing';  varlist = ['liqwatflx_ne5']
+    # subdataset = 'NRCan';  varlist = ['pet_hog']
+    # subdataset = 'ERA5';  varlist = ['liqwatflx', 'pet_era5']
+    grid_res = 'na12'  # can be either resolution or grid, depending on source dataset
+    period = (1981, 2011)
+    data_mode = "daily"  # averages computed from daily data
     time_interval = "clim"
+    dataset_args = dict(ERA5=dict(grid='NA10'.lower(), subset='ERA5L'), )
+    dataset_kwargs = dict(period=period, grid=grid_res,
+                          mode=data_mode, aggregation=time_interval,
+                          dataset=subdataset, dataset_args=dataset_args)
     sim_cycles = 10  # cycles/repetitions in include file for periodic forcing
     start_date = end_date = None
+
     # ## ERA5
     # dataset = 'ERA5'; subdataset = 'ERA5L'
     # #time_chunks = 92 # for small grids only!
@@ -381,30 +386,26 @@ if __name__ == "__main__":
     # lhourly = False
     # bias_correction = None
     # resampling = "bilinear"
-    # if project in ('ARB','CMB','ASB'): from projects.WesternCanada import WRF_exps
-    # else: from projects.GreatLakes import WRF_exps
-    #
+    # if project in ('ARB', 'CMB', 'ASB'):
+    #     from projects.WesternCanada import WRF_exps
+    # else:
+    #     from projects.GreatLakes import WRF_exps
     # exp_name = os.getenv('WRFEXP', "g-ens")
     # domain = 2
     # filetype = "aux"
-    # src_resampling = None
     # data_mode = "avg"
     # time_interval = "clim"
     # sim_cycles = 10  # cycles/repetitions in include file for periodic forcing
     # start_date = end_date = None
     # # start_date = '1979-01-01'; end_date = '1979-12-31'
-    # dataset_kwargs = dict(
-    #     experiment=exp_name, domain=domain, filetypes=filetype, exps=WRF_exps, lconst=False,
-    # )
-    # target_folder_ascii = "//aquanty-nas/share/temp_data_exchange/Erler/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}_{int:s}/climate_forcing/"
-    # #target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}_{int:s}/climate_forcing/"
+    # dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes=filetype,
+    #                       exps=WRF_exps, lconst=False,)
+    # # target_folder_ascii = "//aquanty-nas/share/temp_data_exchange/Erler/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}_{int:s}/climate_forcing/"
+    # target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}_{int:s}/climate_forcing/"
     # target_folder_netcdf = "{exp_folder:s}/{grid:s}/{smpl:s}/"
     # # bias_correction = 'MyBC'; bc_varmap = dict(liqwatflx=None); obs_name = 'CRU'
     # # bias_correction = 'AABC'; bc_varmap = dict(liqwatflx='precip'); obs_name = 'CRU'
-    # varlist = [
-    #     "liqwatflx",
-    #     "pet",
-    # ]
+    # varlist = ["liqwatflx", "pet"]
 
     # start_date = '1997-01-01'; end_date = '2017-12-31' # SON/SNW full period
     # start_date = '1981-01-01'; end_date = '2017-12-31' # SON/SNW full period
@@ -420,9 +421,7 @@ if __name__ == "__main__":
         resampling = "nearest"  # faster, for testing...
         if start_date and end_date:
             start_date = "1997-01-01"
-            end_date = (
-                "1998-01-01" if time_interval.lower() == "monthly" else "1997-01-15"
-            )
+            end_date = "1998-01-01" if time_interval.lower() == "monthly" else "1997-01-15"
 
     ## output type: ASCII raster or NetCDF-4
     # mode = 'NetCDF'
@@ -435,66 +434,41 @@ if __name__ == "__main__":
     exp_folder = None
     exp = None
     bc_folder = None
+    target_kwargs = dataset_kwargs.copy()
+    for key in ('grid', 'resampling', 'mode', 'aggregation', 'domain', 'filetypes', 'lconst'):
+        target_kwargs.pop(key, None)
     if dataset == "WRF":
-        exp_folder, exp, exp_name, domain = ds_mod.getFolderNameDomain(
-            experiment=exp_name,
-            domains=domain,
-            exps=WRF_exps,
-            lreduce=True,
-            mode=data_mode,
-            grid=grid_name,
-            resampling=src_resampling,
-        )
+        exp_folder, exp, exp_name, domain = ds_mod.getFolderNameDomain(grid=grid_name,
+                                                                       resampling=resampling,
+                                                                       lreduce=True,
+                                                                       mode=data_mode,
+                                                                       **target_kwargs)
         print("{exp_name:s}_d{dom:0=2d}".format(exp_name=exp_name, dom=domain))
         netcdf_folder = exp_folder
         bc_folder = exp_folder
         if data_mode.lower() == "avg":
             netcdf_name = ds_mod.fileclasses[filetype].tsfile.format(domain, "{grid:s}")
         else:
-            netcdf_name = ds_mod.fileclasses[filetype].dailyfile.format(
-                domain, "{grid:s}"
-            )
-    elif dataset == "MergedForcing":
-        netcdf_folder, netcdf_name = ds_mod.getFolderFileName(
-            grid=grid_name,
-            resampling=src_resampling,
-            mode=data_mode,
-            aggregation=time_interval,
-            varname="{var_str:s}",
-            **dataset_kwargs
-        )
-    else:
-        if hasattr(
-            ds_mod,
-            "getFolderFileName",
-        ):
-            netcdf_folder, netcdf_name = ds_mod.getFolderFileName(
-                grid=grid_name,
-                resampling=src_resampling,
-                mode=data_mode,
-                aggregation=time_interval,
-                varname="{var_str:s}",
-                dataset=dataset,
-                **dataset_kwargs
-            )
-        else:
-            raise NotImplementedError(
-                ("Without a 'getFolderFileName' function, handling of grids "
-                 + "and resampling in filenames has to be implemented explicitly")
-            )
-            netcdf_folder = (
-                ds_mod.avgfolder if data_mode.lower() == "avg" else ds_mod.daily_folder
-            )
+            netcdf_name = ds_mod.fileclasses[filetype].dailyfile.format(domain, "{grid:s}")
+    elif hasattr(ds_mod, "getFolderFileName"):
+        netcdf_folder, netcdf_name = ds_mod.getFolderFileName(grid=grid_name,
+                                                              resampling=resampling,
+                                                              mode=data_mode,
+                                                              aggregation=time_interval,
+                                                              varname="{var_str:s}",
+                                                              **target_kwargs)
         bc_folder = ds_mod.avgfolder
+    else:
+        raise NotImplementedError('''Without a 'getFolderFileName' function, handling
+ of grids and resampling in filenames has to be implemented explicitly''')
+
     if ltest:
         netcdf_name = "test_" + netcdf_name
         print(netcdf_folder, netcdf_name)
 
     ## bias correction
     if bias_correction:
-        assert (
-            bc_method is None
-        ), "'bc_method' can only be set manually as a varname extension,  if no explicit bias_correction is applied"
+        assert (bc_method is None), "'bc_method' can only be set manually as a varname extension,  if no explicit bias_correction is applied"
         # load pickle from file
         from processing.bc_methods import loadBCpickle
 
@@ -518,36 +492,26 @@ if __name__ == "__main__":
             lclip = True  # remove negative values
         m3factor = 1000.0  # divide by this (convert kg/m^2 to m^3/m^2, SI units to HGS internal)
         gridstr = (
-            dataset.lower() if grid_name.lower() == "native" else grid_name.lower()
-        )
+            dataset.lower() if grid_name.lower() == "native" else grid_name.lower())
         bc_str = bc_method + "_" if bc_method else "noBC"
         hgs_root = os.getenv("HGS_ROOT", os.getenv("DATA_ROOT") + "HGS/")
-        target_folder = target_folder_ascii.format(
-            root=hgs_root,
-            proj=project,
-            grid=gridstr,
-            name=dataset,
-            int=time_interval,
-            bc=bc_str,
-            exp_name=exp_name,
-            dom=domain,
-            exp_folder=exp_folder,
-        )
+        target_folder = target_folder_ascii.format(root=hgs_root,
+                                                   proj=project,
+                                                   grid=gridstr,
+                                                   name=dataset,
+                                                   int=time_interval,
+                                                   bc=bc_str,
+                                                   exp_name=exp_name,
+                                                   dom=domain,
+                                                   exp_folder=exp_folder,)
         raster_format = "AAIGrid"
-        filename_novar = raster_name.format(
-            dataset=dataset.lower(),
-            variable="{var:s}",
-            grid=grid_name.lower(),
-            date="{date:s}",
-        )  # no date for now...
+        filename_novar = raster_name.format(dataset=dataset.lower(),
+                                            variable="{var:s}",
+                                            grid=grid_name.lower(),
+                                            date="{date:s}",)  # no date for now...
         driver_args = dict(significant_digits=4, fill_value=0.0, nodata_flag=np.NaN)
-        print(
-            (
-                "\n***   Exporting '{}' to raster format {}   ***\n".format(
-                    dataset, raster_format
-                )
-            )
-        )
+        print("\n***   Exporting '{}' to raster format {}   ***\n".format(dataset, raster_format))
+
     elif mode.upper() == "NETCDF":
         # NetCDF output using netCDF4
         if lclip is None:
@@ -556,18 +520,10 @@ if __name__ == "__main__":
         bc_str1 = bc_method + "_" if bc_method else ""
         bc_str2 = "_" + bc_method if bc_method else ""
         target_folder = netcdf_folder
-        filename_novar = netcdf_name.format(
-            var_str=bc_str1 + "{var:s}",
-            grid=bc_str2.lower() + gridstr,
-        )  # usually either var or grid
+        filename_novar = netcdf_name.format(var_str=bc_str1 + "{var:s}",  # usually either var or grid
+                                            grid=bc_str2.lower() + gridstr)
         # driver_args = dict(least_significant_digit=4)
-        print(
-            (
-                "\n***   Regridding '{}' to '{}' (NetCDF format)   ***".format(
-                    dataset, grid_name
-                )
-            )
-        )
+        print("\n***   Regridding '{}' to '{}' (NetCDF format)   ***".format(dataset, grid_name))
     else:
         raise NotImplementedError
     print(("   Variable list: {}\n".format(str(varlist))))
@@ -575,20 +531,14 @@ if __name__ == "__main__":
     # lazily load dataset (assuming xarray)
     if time_interval.lower() == "hourly":
         xds = ds_mod.loadHourlyTimeSeries(
-            varlist=varlist, time_chunks=time_chunks, **dataset_kwargs
-        )
+            varlist=varlist, time_chunks=time_chunks, **dataset_kwargs)
     elif time_interval.lower() == "daily":
         xds = ds_mod.loadDailyTimeSeries(
-            varlist=varlist, multi_chunks=dict(time=time_chunks), **dataset_kwargs
-        )
+            varlist=varlist, multi_chunks=dict(time=time_chunks), **dataset_kwargs)
     elif time_interval.lower() == "monthly":
-        xds = ds_mod.loadTimeSeries(
-            varlist=varlist, lxarray=True, **dataset_kwargs
-        )
+        xds = ds_mod.loadTimeSeries(varlist=varlist, lxarray=True, **dataset_kwargs)
     elif time_interval.lower().startswith("clim"):
-        xds = ds_mod.loadClimatology(
-            varlist=varlist, lxarray=True, **dataset_kwargs
-        )
+        xds = ds_mod.loadClimatology(varlist=varlist, lxarray=True, **dataset_kwargs)
     else:
         raise ValueError(time_interval)
 
@@ -604,25 +554,21 @@ if __name__ == "__main__":
         right, top = tgt_geotrans * tgt_size
         if tgt_crs != src_crs:
             # reproject outline, if necessary
-            trans, w, h = calculate_default_transform(
-                src_crs=tgt_crs,
-                dst_crs=src_crs,
-                width=tgt_size[0],
-                height=tgt_size[1],
-                left=left,
-                bottom=bottom,
-                right=right,
-                top=top,
-            )
+            trans, w, h = calculate_default_transform(src_crs=tgt_crs,
+                                                      dst_crs=src_crs,
+                                                      width=tgt_size[0],
+                                                      height=tgt_size[1],
+                                                      left=left,
+                                                      bottom=bottom,
+                                                      right=right,
+                                                      top=top,)
             left, top = trans * (-1, -1)
             right, bottom = trans * (w + 1, h + 1)  # need some padding to avoid margins
         # clip source data
         if src_geotrans.e < 0:
             bottom, top = top, bottom
-        space_slice = {
-            xds.attrs["xlon"]: slice(left, right),
-            xds.attrs["ylat"]: slice(bottom, top),
-        }
+        space_slice = {xds.attrs["xlon"]: slice(left, right),
+                       xds.attrs["ylat"]: slice(bottom, top)}
         print(space_slice)
         xds = xds.loc[space_slice]
     # clip time axis as well
@@ -674,13 +620,7 @@ if __name__ == "__main__":
         xvar = xds[varname]
         filename = filename_novar.format(var=varname.lower(), date="{:s}")
 
-        print(
-            (
-                "\n\n###   Processing Variable '{:s}'   ###".format(
-                    varname, start_date, end_date
-                )
-            )
-        )
+        print("\n\n###   Processing Variable '{:s}'   ###".format(varname, start_date, end_date))
 
         ## generate inc file
         if mode.lower() == "raster2d":
@@ -698,29 +638,15 @@ if __name__ == "__main__":
             # print("\nTiming to write include file: {} seconds".format(end_inc-start_inc))
 
         if not lexec:
-            print(
-                "\nNot executing workload --- set 'lexec' to 'True' to execute workload"
-            )
+            print("\nNot executing workload --- set 'lexec' to 'True' to execute workload")
             exit()
 
         ## generate workload for lazy execution
         start_load = time()
-        print(
-            (
-                "\nConstructing Workload for '{:s}' from {:s} to {:s}.   ***".format(
-                    varname, start_date, end_date
-                )
-            )
-        )
+        print("\nConstructing Workload for '{:s}' from {:s} to {:s}.   ***".format(varname, start_date, end_date))
         filepath = target_folder + filename
         if mode.lower() == "raster2d":
-            print(
-                (
-                    "Output folder: '{:s}'\nRaster pattern: '{:s}'".format(
-                        target_folder, filename
-                    )
-                )
-            )
+            print("Output folder: '{:s}'\nRaster pattern: '{:s}'".format(target_folder, filename))
         elif mode.upper() == "NETCDF":
             print(("NetCDF file: '{:s}'".format(filepath)))
             original_filepath = filepath
@@ -757,28 +683,26 @@ if __name__ == "__main__":
         #       since the files are created with a .tmp extension and later renamed.
 
         # generate dask execution function
-        dask_fct, dummy, dataset = generate_regrid_and_export(
-            xvar,
-            time_coord=time_coord,
-            lwarp=lwarp,
-            tgt_crs=tgt_crs,
-            tgt_geotrans=tgt_geotrans,
-            tgt_size=tgt_size,
-            mode=mode,
-            resampling=resampling,
-            time_fmt=date_fmt,
-            folder=target_folder,
-            filename=filename,
-            driver=raster_format,
-            bias_correction=bc_object,
-            bc_varname=bc_varname,
-            lclip=lclip,
-            fill_masked=fill_masked,
-            fill_max_search=fill_max_search,
-            lecho=True,
-            loverwrite=loverwrite,
-            **driver_args
-        )
+        dask_fct, dummy, dataset = generate_regrid_and_export(xvar,
+                                                              time_coord=time_coord,
+                                                              lwarp=lwarp,
+                                                              tgt_crs=tgt_crs,
+                                                              tgt_geotrans=tgt_geotrans,
+                                                              tgt_size=tgt_size,
+                                                              mode=mode,
+                                                              resampling=resampling,
+                                                              time_fmt=date_fmt,
+                                                              folder=target_folder,
+                                                              filename=filename,
+                                                              driver=raster_format,
+                                                              bias_correction=bc_object,
+                                                              bc_varname=bc_varname,
+                                                              lclip=lclip,
+                                                              fill_masked=fill_masked,
+                                                              fill_max_search=fill_max_search,
+                                                              lecho=True,
+                                                              loverwrite=loverwrite,
+                                                              **driver_args)
         # N.B.: the dataset returned here is a NetCDF dataset, not a xarray dataset!
 
         # now map regridding operation to blocks
@@ -792,13 +716,7 @@ if __name__ == "__main__":
         # print("\nTiming to construct workload: {:.2f} seconds".format(end_load-start_load))
 
         # execute delayed computation
-        print(
-            (
-                "\n***   Executing {:d} Workloads for '{:s}' using Dask   ***".format(
-                    n_loads, varname
-                )
-            )
-        )
+        print("\n***   Executing {:d} Workloads for '{:s}' using Dask   ***".format(n_loads, varname))
         # print(("Chunks (time only): {}".format(xvar.chunks[0])))
 
         # with dask.set_options(scheduler='processes'):
@@ -808,13 +726,7 @@ if __name__ == "__main__":
 
         # print("\nDummy output:")
         # print(dummy_output)
-        print(
-            (
-                "\nDummy Size in memory: {:f} MB".format(
-                    dummy_output.nbytes / 1024.0 / 1024.0
-                )
-            )
-        )
+        print("\nDummy Size in memory: {:f} MB".format(dummy_output.nbytes / 1024.0 / 1024.0))
 
         # finalize
         if mode.upper() == "NETCDF":
@@ -823,13 +735,7 @@ if __name__ == "__main__":
             dataset.close()
 
         end_var = time()
-        print(
-            (
-                "\n\n***   Completed '{:s}' in {:.2f} seconds   ***\n".format(
-                    varname, end_var - start_var
-                )
-            )
-        )
+        print("\n\n***   Completed '{:s}' in {:.2f} seconds   ***\n".format(varname, end_var - start_var))
 
         # replace original file
         if mode.upper() == "NETCDF":

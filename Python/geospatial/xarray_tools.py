@@ -248,7 +248,7 @@ def readCFCRS(xds, grid_mapping=None, lraise=True, lproj4=False):
     import rasterio as rio
     # return either string or CRS object
     if lproj4: crs = proj4
-    else: crs = rio.crs.CRS.from_string(proj4) # initialize from Proj4 string
+    else: crs = rio.crs.CRS.from_proj4(proj4) # initialize from Proj4 string
     return crs
 
 def getCRS(xvar, lraise=True):
