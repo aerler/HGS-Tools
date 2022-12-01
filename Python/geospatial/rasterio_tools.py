@@ -242,15 +242,15 @@ def write_raster(filename, data, crs=None, transform=None, driver='AAIGrid', fil
 
         # write data
         if nodata_flag is None: nodata_flag = fill_value
-        with rio.open(filename, mode='w', driver=driver, crs=crs, transform=transform, width=width, height=height,
-                      count=count, dtype=str(data.dtype), nodata=nodata_flag, **driver_args) as dst:
+        with rio.Env(), rio.open(filename, mode='w', driver=driver, crs=crs, transform=transform, width=width, height=height,
+                                 count=count, dtype=str(data.dtype), nodata=nodata_flag, **driver_args) as dst:
             if count == 1:
-                dst.write(data,1) # GDAL/rasterio bands are one-based
+                dst.write(data, 1)  # GDAL/rasterio bands are one-based
             else:
                 # loop over bands (if there are bands)
-                data = data.reshape((count,height,width)) # merge non-geospatial dimensions
-                for i in range(1,count+1):
-                    dst.write(data[i,:,:],i) # GDAL/rasterio bands are one-based
+                data = data.reshape((count,height,width))  # merge non-geospatial dimensions
+                for i in range(1, count + 1):
+                    dst.write(data[i, :, :], i)  # GDAL/rasterio bands are one-based
     # done...
     return None
 

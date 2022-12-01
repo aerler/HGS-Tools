@@ -118,11 +118,11 @@ if __name__ == "__main__":
     #     project = 'native'
     #     grid_name  = 'native'
     ## fast test config
-    #     project = 'SON'
-    #     grid_name  = 'son1'
+    # project = 'SNW'
+    # grid_name = 'snw1'
     ## explicitly defined grids
-    project = 'SNW'
-    grid_name = 'snw1'
+    project = 'C1W'
+    grid_name = 'c1w1'
 
     ## define target grid/projection
     # projection/UTM zone
@@ -209,17 +209,12 @@ if __name__ == "__main__":
         tgt_size = (1392, 720)  # (x,y) map size of NRCan grid
         resampling = "cubic_spline"
         output_chunks = (8, 60, 58)  # time, ylat, xlon
+    elif grid_name == 'c1w1':
+        tgt_size = (1205, 808)  # lower resolution 5 km grid (> 1 MB per raster)
+        tgt_geotrans = (-2895.e3, 5.e3, 0., -8.e3, 0., 5.e3)  # 5 km
     elif grid_name == "on1":
         tgt_geotrans = [-87.87916564, 0.008331298, 0.0, 41.995832443, 0.0, 0.008335113525]
         resampling = "cubic_spline"
-    elif grid_name == "arb2":
-        tgt_geotrans = [-1460500, 5e3, 0, 810500, 0, 5e3]
-        tgt_size = (284, 258)
-        resampling = "average"  # it's a fairly coarse grid...
-    elif grid_name == "arb3":
-        tgt_geotrans = [-1280e3, 5e3, 0, 900e3, 0, 5e3]
-        tgt_size = (172, 144)
-        resampling = "average"  # it's a fairly coarse grid...
     elif grid_name == "hd1":
         tgt_size = (70, 49)  # lower resolution 5 km grid
         tgt_geotrans = (-479184.769227, 5.0e3, 0, 68508.4877898, 0, 5.0e3)  # 5 km
@@ -261,6 +256,17 @@ if __name__ == "__main__":
     elif grid_name == "asb2":
         tgt_size = (955, 675)  # higher resolution 1 km grid (> 1 MB per day)
         tgt_geotrans = (-159.0e3, 1.0e3, 0.0, 5202.0e3, 0.0, 1.0e3)  # 1 km
+    elif grid_name == "arb2":
+        tgt_geotrans = [-1460500, 5e3, 0, 810500, 0, 5e3]
+        tgt_size = (284, 258)
+        resampling = "average"  # it's a fairly coarse grid...
+    elif grid_name == "arb3":
+        tgt_geotrans = [-1280e3, 5e3, 0, 900e3, 0, 5e3]
+        tgt_size = (172, 144)
+        resampling = "average"  # it's a fairly coarse grid...
+    elif grid_name == "ccj1":
+        tgt_geotrans = (-1618000, 5000, 0, 3058000, 0, 5000)
+        tgt_size = (22, 33)  # 5 km
     elif grid_name == "qel1":
         tgt_size = (121, 191)  # approx. 10 km grid, similar to ERA5
         # tgt_geotrans = (-26770., 10400, 0., 6902510, 0., 10970)  # ~10 km
@@ -270,11 +276,6 @@ if __name__ == "__main__":
     elif grid_name == "qel2":
         tgt_size = (126, 211)  # exactly 10 km grid, similar to ERA5
         tgt_geotrans = (-26772.0, 10e3, 0.0, 6902511, 0.0, 10e3)  # 10 km
-    elif grid_name == "ccj1":
-        tgt_geotrans = (-1618000, 5000, 0, 3058000, 0, 5000)
-        tgt_size = (22, 33)  # 5 km
-        # tgt_geotrans = (-129.15, 0.1, 0, 64.25, 0, 0.1); tgt_size = (29, 15)  # 0.1 deg
-        # lwarp = False  # should be just a clipped native grid (geographic)
     elif grid_name == "native":  # original grid
         time_chunks = 1  # this can be pretty big!
         tgt_size = None
@@ -291,9 +292,10 @@ if __name__ == "__main__":
     ltest = False  # prefix with 'test' - don't overwrite exiting data
 
     # some defaults for most datasets
-    time_chunks = 8  # used for multi_chunks or directly in SnoDAS & CaSPAr; typically not much speed-up beyond 8
+    time_chunks = 1  # used for multi_chunks or directly in SnoDAS & CaSPAr; typically not much speed-up beyond 8
     dataset_kwargs = dict()
     subdataset = None
+    dataset_name = None  # the dataset name in the target folder; defaults to dataset
     bias_correction = None
     bc_varmap = dict()
     obs_name = None
@@ -341,30 +343,30 @@ if __name__ == "__main__":
     # dataset_kwargs['grid'] = 'son2'
     # dataset_kwargs['grid'] = 'snw2'; resampling = None; lwarp = False
 
-    ## MergedForcing Monthly
+    ## MergedForcing Monthly (incl. ERA5)
     dataset = 'MergedForcing'  # to load module and use in this script
-    subdataset = 'MergedForcing';  varlist = ['liqwatflx_ne5']
+    # subdataset = 'MergedForcing';  varlist = ['liqwatflx_ne5']
     # subdataset = 'NRCan';  varlist = ['pet_hog']
-    # subdataset = 'ERA5';  varlist = ['liqwatflx', 'pet_era5']
+    subdataset = 'ERA5';  dataset_name = 'ERA5';  varlist = ['liqwatflx', 'pet_era5']
     grid_res = 'na12'  # can be either resolution or grid, depending on source dataset
     period = (1981, 2011)
     data_mode = "daily"  # averages computed from daily data
     time_interval = "clim"
     dataset_args = dict(ERA5=dict(grid='NA10'.lower(), subset='ERA5L'), )
-    dataset_kwargs = dict(period=period, grid=grid_res,
+    dataset_kwargs = dict(period=period, grid=grid_res, ldt64=True,
                           mode=data_mode, aggregation=time_interval,
                           dataset=subdataset, dataset_args=dataset_args)
     sim_cycles = 10  # cycles/repetitions in include file for periodic forcing
     start_date = end_date = None
 
-    # ## ERA5
+    # ## ERA5 Daily
     # dataset = 'ERA5'; subdataset = 'ERA5L'
     # #time_chunks = 92 # for small grids only!
     # varlist = ['snow','dswe',]
     # # varlist = ['precip','pet_era5','liqwatflx','snow','dswe',]
     # # varlist = ['pet_era5','liqwatflx',]
-    # data_mode = "avg"
-    # time_interval = "clim"
+    # data_mode = "daily"
+    # time_interval = "daily"
     # sim_cycles = 10  # cycles/repetitions in include file for periodic forcing
     # start_date = end_date = None
     # dataset_kwargs = dict(subset=subdataset, combine_attrs='override')
@@ -391,14 +393,14 @@ if __name__ == "__main__":
     # else:
     #     from projects.GreatLakes import WRF_exps
     # exp_name = os.getenv('WRFEXP', "g-ens")
-    # domain = 2
+    # domain = 1
     # filetype = "aux"
     # data_mode = "avg"
     # time_interval = "clim"
     # sim_cycles = 10  # cycles/repetitions in include file for periodic forcing
     # start_date = end_date = None
     # # start_date = '1979-01-01'; end_date = '1979-12-31'
-    # dataset_kwargs = dict(experiment=exp_name, domain=domain, filetypes=filetype,
+    # dataset_kwargs = dict(experiment=exp_name, domains=domain, filetypes=filetype,
     #                       exps=WRF_exps, lconst=False,)
     # # target_folder_ascii = "//aquanty-nas/share/temp_data_exchange/Erler/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}_{int:s}/climate_forcing/"
     # target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{exp_name:s}_d{dom:0=2d}/{bc:s}_{int:s}/climate_forcing/"
@@ -498,14 +500,14 @@ if __name__ == "__main__":
         target_folder = target_folder_ascii.format(root=hgs_root,
                                                    proj=project,
                                                    grid=gridstr,
-                                                   name=dataset,
+                                                   name=dataset_name or dataset,
                                                    int=time_interval,
                                                    bc=bc_str,
                                                    exp_name=exp_name,
                                                    dom=domain,
                                                    exp_folder=exp_folder,)
         raster_format = "AAIGrid"
-        filename_novar = raster_name.format(dataset=dataset.lower(),
+        filename_novar = raster_name.format(dataset=(subdataset or dataset).lower(),
                                             variable="{var:s}",
                                             grid=grid_name.lower(),
                                             date="{date:s}",)  # no date for now...
@@ -719,8 +721,12 @@ if __name__ == "__main__":
         print("\n***   Executing {:d} Workloads for '{:s}' using Dask   ***".format(n_loads, varname))
         # print(("Chunks (time only): {}".format(xvar.chunks[0])))
 
-        # with dask.set_options(scheduler='processes'):
-        # with dask.config.set(pool=ThreadPool(4)):
+        # Dask scheduler settings - threading can make debugging very difficult
+        if ltest:
+            dask.config.set(scheduler='synchronous')  # single-threaded for small workload and debugging
+        else:
+            dask.config.set(scheduler='threading')  # default scheduler - some parallelization
+
         with ProgressBar():
             dask.compute(*work_load)
 
