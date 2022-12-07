@@ -575,10 +575,12 @@ def _multichunkPresets(multi_chunks):
     # return valid multi_chunks (dict)
     return multi_chunks
 
-def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_pattern=None, filelist=None, default_varlist=None,
-               varmap=None, mask_and_scale=True, grid=None, lgeoref=True, geoargs=None, chunks=True, multi_chunks=None,
-               ldropAtts=False, lskip=False, filetypes=None,
-               compat='override', join='inner', fill_value=np.NaN, combine_attrs='no_conflicts', **kwargs):
+
+def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_pattern=None,
+               filelist=None, default_varlist=None, varmap=None, mask_and_scale=True,
+               grid=None, lgeoref=True, geoargs=None, chunks=True, multi_chunks=None,
+               ldropAtts=False, lskip=False, filetypes=None, fill_value=np.NaN,
+               compat='override', join='override', combine_attrs='no_conflicts', **kwargs):
     ''' function to open a dataset in one of two modes: 1) variables are stored in separate files, but in the same folder (this mainly
         applies to high-resolution, high-frequency (daily) observations, e.g. SnoDAS) or 2) multiple variables are stored in different
         filetypes and each is opened and then merged (usually model output); datasets are opened using xarray '''
@@ -709,14 +711,17 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
                 print("Skipping missing dataset file '{}' ('{}')".format(filename,folder))
             else:
                 raise IOError("The dataset file '{}' was not found in folder:\n '{}'".format(filename,folder))
-    # merge into new dataset
+
+    ## merge into new dataset
     if len(ds_list) == 0:
         raise ValueError("Dataset is empty - aborting! Folder: \n '{}'".format(folder))
-    # resolve a very common conflict caused by NCO logging
-    if np.sum(['history' in ds.attrs for ds in ds_list]) > 1:
+    # resolve a very common attribute conflicts (e.g. due to NCO logging)
+    if len(ds_list) > 1:
         for ds in ds_list:
-            if 'history' in ds.attrs: ds.attrs['history'] = 'conflicting sources'
+            for att in ('history', 'updated'):
+                ds.attrs[att] = 'check sources'
     xds = xr.merge(ds_list, compat=compat, join=join, fill_value=fill_value, combine_attrs=combine_attrs)
+
     # add projection info
     if lgeoref:
         if geoargs is not None:
