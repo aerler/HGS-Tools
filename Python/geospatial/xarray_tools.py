@@ -408,12 +408,12 @@ def updateVariableAttrs(xds, varatts=None, varmap=None, varlist=None, **kwargs):
 def addGeoReference(xds, proj4_string=None, x_coords=None, y_coords=None, lcreate=False, xlon_coord=None, ylat_coord=None):
     ''' helper function to add GDAL/rasterio-style georeferencing information to an xarray dataset;
         note that this only refers to attributed, not axes, but also includes variables '''
-    xlon,ylat = getGeoCoords(xds, x_coords=x_coords, y_coords=y_coords, lvars=lcreate, lraise=not lcreate)
+    xlon, ylat = getGeoCoords(xds, x_coords=x_coords, y_coords=y_coords, lvars=lcreate, lraise=not lcreate)
     if lcreate:
         if (xlon is None and ylat is None):
             assert xlon_coord is not None and ylat_coord is not None
             # need to find names again...
-            xlon_dim,ylat_dim = getGeoDims(xds, x_coords=x_coords, y_coords=y_coords, lraise=True)
+            xlon_dim, ylat_dim = getGeoDims(xds, x_coords=x_coords, y_coords=y_coords, lraise=True)
             # create new xlon/ylat coordinates, based on coordinates passed down
             coords = {xlon_dim:xlon_coord, ylat_dim:ylat_coord}
             xds = xds.assign_coords(**coords)
@@ -428,7 +428,7 @@ def addGeoReference(xds, proj4_string=None, x_coords=None, y_coords=None, lcreat
             proj4_string = '+proj=longlat +lon_0=0 +lat_0=0 +ellps=WGS84 +datum=WGS84' # default geographic, also EPSG 4326
         else:
             raise ValueError("Cannot infer projection - need to provide proj4 string!")
-    elif isinstance(proj4_string,str):
+    elif isinstance(proj4_string, str):
         xds.attrs['proj4'] = proj4_string
     else:
         raise TypeError("Cannot infer projection - need to provide proj4 string!")
@@ -579,7 +579,7 @@ def _multichunkPresets(multi_chunks):
 def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_pattern=None,
                filelist=None, default_varlist=None, varmap=None, mask_and_scale=True,
                grid=None, lgeoref=True, geoargs=None, chunks=True, multi_chunks=None,
-               ldropAtts=False, lskip=False, filetypes=None, fill_value=np.NaN,
+               ldropAtts=True, lskip=False, filetypes=None, fill_value=np.NaN,
                compat='override', join='override', combine_attrs='no_conflicts', **kwargs):
     ''' function to open a dataset in one of two modes: 1) variables are stored in separate files, but in the same folder (this mainly
         applies to high-resolution, high-frequency (daily) observations, e.g. SnoDAS) or 2) multiple variables are stored in different
@@ -692,6 +692,8 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
                             # overwrite 1D chunks with nD chunks (nD fields should dictate chunking)
                             chunks.update(chunks_nD)
             if multi_chunks: # enlarge chunks with multiplier
+                if not (chunks and isinstance(chunks, dict)):
+                    raise ValueError("Multi_chunks only works with explicit chunks or direct inference from NetCDF file.")
                 chunks = {dim:(val*multi_chunks.get(dim,1)) for dim,val in chunks.items()}
             # open dataset with xarray
             #print(varname,chunks)
@@ -701,7 +703,17 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
             #       specified explicitly at the initial load time (later chunking seems to have no effect!)
             #       That being said, I don't know if this is still the case...
             # rename, prune/drop vars and apply attributes
-            if ldropAtts: ds.attrs = dict() # drop original attributes from NC file (still add georef etc.)
+            if ldropAtts:
+                # drop selected attributes from NC file (still add georef etc.)
+                if 'history' in ds.attrs:
+                    ds.attrs['history'] = 'suppressed'  # annoying attrs
+                for att in ('NCO', 'CDO', 'CDI', 'nco_openmp_thread_number'):
+                        ds.attrs.pop(att, None)
+                if len(filetypes) > 1:  # conflicting attrs
+                    for att in ('dataset_name', 'name', 'title', 'resolution', 'Conventions',
+                                'geospatial_netcdf_version', 'updated'):
+                        if att in ds.attrs:
+                            ds.attrs[att] = 'check sources'
             if varatts or varmap:
                 ds = updateVariableAttrs(ds, varatts=varatts[filetype], varmap=varmap[filetype],
                                          varlist=None if lopt1 else varlist)
@@ -746,8 +758,9 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
     return xds
 
 
-def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, chunks=None, encoding=None, laddTime=None,
-               time_dim='time', time_agg=None, ltmpfile=True, lcompute=True, lprogress=True, lfeedback=True, **kwargs):
+def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, chunks=None, encoding=None,
+               laddTime=None, time_dim='time', time_agg=None, ltmpfile=True, lcompute=True, lprogress=True,
+               lfeedback=True, **kwargs):
     ''' function to save a xarray dataset to disk, with options to add/overwrite variables, choose smart encoding,
         add timstamps, use a temp file, and handle dask functionality '''
     from geospatial.netcdf_tools import addTimeStamps, addNameLengthMonth
@@ -809,10 +822,13 @@ def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, 
             tmp.update(encoding[varname])
             encoding[varname] = tmp
         #print(varname,cks,rvar.encoding)
-    # write to NetCDF
-    ## write to file (with progress)
+    # clean up attributes
+    for name, att in tuple(xds.attrs.items()):
+        if isinstance(att, str) and att.lower() in ('suppressed', '*suppressed*', 'check sources'):
+            del xds.attrs[name]
 
-    # write results to file (actually just create file)
+    ## write to file (with progress)
+    # create file (no compute yet)
     task = xds.to_netcdf(tmp_filepath, mode=nc_mode, format='NETCDF4', unlimited_dims=['time'],
                          engine='netcdf4', encoding=encoding, compute=False)
     if lcompute:
