@@ -107,7 +107,7 @@ if __name__ == "__main__":
     lwarp = True  # set False to suppress reprojection
     lclip = None  # None: clip rasters, but not NetCDF
     time_interval = "daily"
-    time_chunks = 1  # typically not much speed-up beyond 8
+    time_chunks = 8  # typically not much speed-up beyond 8
     output_chunks = None
     resampling = "bilinear"
     lexec = True  # actually write rasters or just include file
@@ -121,8 +121,14 @@ if __name__ == "__main__":
     # project = 'SNW'
     # grid_name = 'snw1'
     ## explicitly defined grids
-    project = 'C1W'
-    grid_name = 'c1w1'
+    # project = 'C1W'
+    # grid_name = 'c1w1'
+    # project = 'GLB'
+    # grid_name = 'dog2'
+    project = 'ASB'
+    grid_name = 'swan1'
+    # project = 'Geo'
+    # grid_name = 'snodas'
 
     ## define target grid/projection
     # projection/UTM zone
@@ -209,6 +215,12 @@ if __name__ == "__main__":
         tgt_size = (1392, 720)  # (x,y) map size of NRCan grid
         resampling = "cubic_spline"
         output_chunks = (8, 60, 58)  # time, ylat, xlon
+    elif grid_name == 'snodas':
+        tgt_geotrans = (-130.516666666667-0.00416666666666052, 0.00833333333333333, 0,
+                        24.1000000000000-0.00416666666666052, 0, 0.00833333333333333)
+        tgt_size = (8192, 4096) # (x,y) map size of SnoDAS grid
+        resampling = "cubic_spline"
+        output_chunks = (8, 256, 256)  # time, ylat, xlon
     elif grid_name == 'c1w1':
         tgt_size = (1205, 808)  # lower resolution 5 km grid (> 1 MB per raster)
         tgt_geotrans = (-2895.e3, 5.e3, 0., -8.e3, 0., 5.e3)  # 5 km
@@ -250,12 +262,21 @@ if __name__ == "__main__":
     elif grid_name == "dog2":
         tgt_size = (24, 22)  # medium resolution 5 km grid
         tgt_geotrans = (247.e3, 5.e3, 0., 5375.e3, 0., 5.e3)
+    elif grid_name == 'pem1':
+        tgt_size = (55,40)  # lower resolution 5 km grid
+        tgt_geotrans = (388.e3, 5.e3, 0., 5336.e3, 0., 5.e3)  # 5 km
+    elif grid_name == 'pem2':
+        tgt_size = (275,200)  # higher resolution 1 km grid
+        tgt_geotrans = (388.e3, 1.e3, 0., 5336.e3, 0., 1.e3)  # 1 km
     elif grid_name == "asb1":
         tgt_size = (191, 135)  # lower resolution 5 km grid
         tgt_geotrans = (-159.0e3, 5.0e3, 0.0, 5202.0e3, 0.0, 5.0e3)  # 5 km
     elif grid_name == "asb2":
         tgt_size = (955, 675)  # higher resolution 1 km grid (> 1 MB per day)
         tgt_geotrans = (-159.0e3, 1.0e3, 0.0, 5202.0e3, 0.0, 1.0e3)  # 1 km
+    elif grid_name == "swan1":
+        tgt_size = (10, 7)
+        tgt_geotrans = (501.e3, 1.0e3, 0.0, 5464.0e3, 0.0, 1.0e3)        
     elif grid_name == "arb2":
         tgt_geotrans = [-1460500, 5e3, 0, 810500, 0, 5e3]
         tgt_size = (284, 258)
@@ -292,7 +313,6 @@ if __name__ == "__main__":
     ltest = False  # prefix with 'test' - don't overwrite exiting data
 
     # some defaults for most datasets
-    time_chunks = 1  # used for multi_chunks or directly in SnoDAS & CaSPAr; typically not much speed-up beyond 8
     dataset_kwargs = dict()
     subdataset = None
     dataset_name = None  # the dataset name in the target folder; defaults to dataset
@@ -300,11 +320,14 @@ if __name__ == "__main__":
     bc_varmap = dict()
     obs_name = None
     bc_method = None
+    period = None
+    sim_cycles = 1
     fill_masked = True
     fill_max_search = 5
     raster_name = "{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc"
-    target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}_{int:s}/"
+    # target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}_{int:s}/"
     # target_folder_ascii = '//aquanty-nas/share/temp_data_exchange/Erler/{proj:s}/{grid:s}/{name:s}/{bc:s}_{int:s}/'
+    target_folder_ascii = '//aquanty-nas/share/temp_data_exchange/Erler/{proj:s}/{grid:s}/{name:s}/{int:s}/'
     if ltest:
         target_folder_ascii += "test/"  # store in subfolder
     data_mode = "daily"
@@ -345,19 +368,25 @@ if __name__ == "__main__":
 
     ## MergedForcing Monthly (incl. ERA5)
     dataset = 'MergedForcing'  # to load module and use in this script
+    dataset_args = dict(ERA5=dict(grid='NA10'.lower(), subset='ERA5L'),
+                        NRCan=dict(resolution='NA12'))
     # subdataset = 'MergedForcing';  varlist = ['liqwatflx_ne5']
+    # subdataset = 'MergedForcing';  varlist = ['liqwatflx_sno',]
     # subdataset = 'NRCan';  varlist = ['pet_hog']
-    subdataset = 'ERA5';  dataset_name = 'ERA5';  varlist = ['liqwatflx', 'pet_era5']
-    grid_res = 'na12'  # can be either resolution or grid, depending on source dataset
-    period = (1981, 2011)
+    # subdataset = 'NRCan';  varlist = ['precip']
+    subdataset = 'SnoDAS';  varlist = ['dswe',]
+    # subdataset = 'ERA5';  dataset_name = 'ERA5';  varlist = ['liqwatflx', 'pet_era5']
+    # src_grid = 'na12'  # can be either resolution or grid, depending on source dataset
+    # src_grid = None
+    src_grid = 'snodas'
+    # time_interval = "clim"; period = (1981, 2011)
+    # time_interval = "clim"; period = (2000, 2020)
+    # start_date = end_date = None; sim_cycles = 20  # cycles/repetitions in include file for periodic forcing
     data_mode = "daily"  # averages computed from daily data
-    time_interval = "clim"
-    dataset_args = dict(ERA5=dict(grid='NA10'.lower(), subset='ERA5L'), )
-    dataset_kwargs = dict(period=period, grid=grid_res, ldt64=True,
-                          mode=data_mode, aggregation=time_interval,
+    time_interval = "daily"
+    dataset_kwargs = dict(period=period, grid=src_grid, ldt64=True, chunks=True,
+                          mode=data_mode, aggregation=time_interval, multi_chunks=None,
                           dataset=subdataset, dataset_args=dataset_args)
-    sim_cycles = 10  # cycles/repetitions in include file for periodic forcing
-    start_date = end_date = None
 
     # ## ERA5 Daily
     # dataset = 'ERA5'; subdataset = 'ERA5L'
@@ -414,7 +443,9 @@ if __name__ == "__main__":
     # start_date = '1981-01-01'; end_date = '2020-09-01' # MergedForcing period
     # start_date = '1981-01-01'; end_date = '2020-12-31' # full ERA5-Land period
     # start_date = '2000-01-01'; end_date = '2018-01-01'
-    # start_date = '2011-01-01'; end_date = '2017-12-31' # combined NRCan-SnoDAS period
+    start_date = '2009-12-14'; end_date = '2020-12-31' # combined NRCan-SnoDAS period
+    # start_date = '2010-10-01'; end_date = '2020-12-31' # Prairie NRCan-SnoDAS period    
+    # start_date = '2010-01-01'; end_date = '2020-12-31' # conservative NRCan-SnoDAS period
     # start_date = '2016-01-01'; end_date = '2017-12-31'
     # start_date = '2016-01-01'; end_date = '2016-01-31' # for testing NRCan
 
@@ -422,8 +453,8 @@ if __name__ == "__main__":
         varlist = varlist[:1]
         resampling = "nearest"  # faster, for testing...
         if start_date and end_date:
-            start_date = "1997-01-01"
-            end_date = "1998-01-01" if time_interval.lower() == "monthly" else "1997-01-15"
+            start_date = "2011-01-01"
+            end_date = "2012-01-01" if time_interval.lower() == "monthly" else "2011-01-15"
 
     ## output type: ASCII raster or NetCDF-4
     # mode = 'NetCDF'
@@ -536,7 +567,7 @@ if __name__ == "__main__":
             varlist=varlist, time_chunks=time_chunks, **dataset_kwargs)
     elif time_interval.lower() == "daily":
         xds = ds_mod.loadDailyTimeSeries(
-            varlist=varlist, multi_chunks=dict(time=time_chunks), **dataset_kwargs)
+            varlist=varlist, **dataset_kwargs)
     elif time_interval.lower() == "monthly":
         xds = ds_mod.loadTimeSeries(varlist=varlist, lxarray=True, **dataset_kwargs)
     elif time_interval.lower().startswith("clim"):
@@ -629,13 +660,12 @@ if __name__ == "__main__":
             start_inc = time()
             inc_filepath = target_folder + varname.lower() + ".inc"
             print(("\nWriting HGS include file:\n '{:s}'".format(inc_filepath)))
-            writeIncFile(
-                filepath=inc_filepath,
-                time_coord=time_coord,
-                filename_pattern=filename,
-                date_fmt=date_fmt,
-                cycles=sim_cycles,
-            )
+            writeIncFile(filepath=inc_filepath,
+                         time_coord=time_coord,
+                         filename_pattern=filename,
+                         date_fmt=date_fmt,
+                         cycles=sim_cycles,
+                         )
             end_inc = time()
             # print("\nTiming to write include file: {} seconds".format(end_inc-start_inc))
 
@@ -722,13 +752,14 @@ if __name__ == "__main__":
         # print(("Chunks (time only): {}".format(xvar.chunks[0])))
 
         # Dask scheduler settings - threading can make debugging very difficult
-        if ltest:
-            dask.config.set(scheduler='synchronous')  # single-threaded for small workload and debugging
-        else:
-            dask.config.set(scheduler='threading')  # default scheduler - some parallelization
+        # if ltest:
+        #     dask.config.set(scheduler='synchronous')  # single-threaded for small workload and debugging
+        # else:
+        #     # dask.config.set(scheduler='threading')  # default scheduler - some parallelization
+        #     dask.config.set(scheduler='synchronous')  # for very large fields
 
         with ProgressBar():
-            dask.compute(*work_load)
+            dask.compute(*work_load, scheduler='threads', num_workers=4)
 
         # print("\nDummy output:")
         # print(dummy_output)
