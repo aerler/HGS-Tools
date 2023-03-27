@@ -121,12 +121,13 @@ if __name__ == "__main__":
     # project = 'SNW'
     # grid_name = 'snw1'
     ## explicitly defined grids
-    # project = 'C1W'
+    project = 'C1W'
+    grid_name = 'bfi1'
     # grid_name = 'c1w1'
     # project = 'GLB'
     # grid_name = 'dog2'
-    project = 'ASB'
-    grid_name = 'swan1'
+    # project = 'ASB'
+    # grid_name = 'swan1'    
     # project = 'Geo'
     # grid_name = 'snodas'
 
@@ -224,6 +225,9 @@ if __name__ == "__main__":
     elif grid_name == 'c1w1':
         tgt_size = (1205, 808)  # lower resolution 5 km grid (> 1 MB per raster)
         tgt_geotrans = (-2895.e3, 5.e3, 0., -8.e3, 0., 5.e3)  # 5 km
+    elif grid_name == 'bfi1':  # Baffin Island
+        tgt_size = (388, 297)
+        tgt_geotrans = (-42863.98, 5.e3, 0., 2468861, 0., 5.e3)  # 5 km
     elif grid_name == "on1":
         tgt_geotrans = [-87.87916564, 0.008331298, 0.0, 41.995832443, 0.0, 0.008335113525]
         resampling = "cubic_spline"
@@ -325,9 +329,9 @@ if __name__ == "__main__":
     fill_masked = True
     fill_max_search = 5
     raster_name = "{dataset:s}_{variable:s}_{grid:s}_{date:s}.asc"
-    # target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}_{int:s}/"
+    target_folder_ascii = "{root:s}/{proj:s}/{grid:s}/{name:s}/{bc:s}_{int:s}/"
     # target_folder_ascii = '//aquanty-nas/share/temp_data_exchange/Erler/{proj:s}/{grid:s}/{name:s}/{bc:s}_{int:s}/'
-    target_folder_ascii = '//aquanty-nas/share/temp_data_exchange/Erler/{proj:s}/{grid:s}/{name:s}/{int:s}/'
+    # target_folder_ascii = '//aquanty-nas/share/temp_data_exchange/Erler/{proj:s}/{grid:s}/{name:s}/{int:s}/'
     if ltest:
         target_folder_ascii += "test/"  # store in subfolder
     data_mode = "daily"
@@ -373,17 +377,18 @@ if __name__ == "__main__":
     # subdataset = 'MergedForcing';  varlist = ['liqwatflx_ne5']
     # subdataset = 'MergedForcing';  varlist = ['liqwatflx_sno',]
     # subdataset = 'NRCan';  varlist = ['pet_hog']
-    # subdataset = 'NRCan';  varlist = ['precip']
-    subdataset = 'SnoDAS';  varlist = ['dswe',]
+    subdataset = 'NRCan';  varlist = ['precip']
+    # subdataset = 'SnoDAS';  varlist = ['dswe',]
     # subdataset = 'ERA5';  dataset_name = 'ERA5';  varlist = ['liqwatflx', 'pet_era5']
-    # src_grid = 'na12'  # can be either resolution or grid, depending on source dataset
+    src_grid = 'na12'  # can be either resolution or grid, depending on source dataset
     # src_grid = None
-    src_grid = 'snodas'
+    # src_grid = 'snodas'
     # time_interval = "clim"; period = (1981, 2011)
     # time_interval = "clim"; period = (2000, 2020)
+    time_interval = "monthly"
     # start_date = end_date = None; sim_cycles = 20  # cycles/repetitions in include file for periodic forcing
-    data_mode = "daily"  # averages computed from daily data
-    time_interval = "daily"
+    # data_mode = "daily"  # averages computed from daily data
+    # time_interval = "daily"
     dataset_kwargs = dict(period=period, grid=src_grid, ldt64=True, chunks=True,
                           mode=data_mode, aggregation=time_interval, multi_chunks=None,
                           dataset=subdataset, dataset_args=dataset_args)
@@ -489,6 +494,7 @@ if __name__ == "__main__":
                                                               mode=data_mode,
                                                               aggregation=time_interval,
                                                               varname="{var_str:s}",
+                                                              lcreateFolder=False,
                                                               **target_kwargs)
         bc_folder = ds_mod.avgfolder
     else:
