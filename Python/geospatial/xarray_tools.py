@@ -506,8 +506,18 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
     if lts:
         import pandas as pd
         ts_var = xds[time_stamp].load()
-        period = (pd.to_datetime(ts_var.data[0]).year, (pd.to_datetime(ts_var.data[-1])+pd.Timedelta(31, unit='D')).year)
-        prdstr = '{:04d}-{:04d}'.format(*period)
+        p1 = pd.to_datetime(ts_var.data[0]).year
+        p2 = (pd.to_datetime(ts_var.data[-1])+pd.Timedelta(31, unit='D')).year
+        start_date = str(ts_var.data[0])
+        end_date= str(ts_var.data[-1])
+    else:
+        ts_var = xds[time_name].load()
+        p1 = ts_var.data[0].astype('datetime64[Y]').astype(int) + 1970
+        p2 = (ts_var.data[-1] + np.timedelta64(31, 'D')).astype('datetime64[Y]').astype(int) + 1970
+        start_date = np.datetime_as_string(ts_var.data[0], unit='M')
+        end_date = np.datetime_as_string(ts_var.data[-1], unit='M')
+    period = (p1, p2)
+    prdstr = '{:04d}-{:04d}'.format(*period)
 
     # save and remove CRS variable to add after averaging
     if 'crs' in xds:
@@ -539,14 +549,13 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
     tm.attrs['long_name']  = 'Calendar '+aggregation.title()
     tm.attrs['units']      = aggregation
     # add period info for quick identification
-    if lts:
-        tm.attrs['start_date'] = str(ts_var.data[0])
-        tm.attrs['end_date']   = str(ts_var.data[-1])
-        tm.attrs['period']     = prdstr
-        # add attributes to dataset
-        cds.attrs['start_date'] = str(ts_var.data[0])
-        cds.attrs['end_date']   = str(ts_var.data[-1])
-        cds.attrs['period']     = prdstr
+    tm.attrs['start_date'] = start_date
+    tm.attrs['end_date']   = end_date
+    tm.attrs['period']     = prdstr
+    # add attributes to dataset
+    cds.attrs['start_date'] = start_date
+    cds.attrs['end_date']   = end_date
+    cds.attrs['period']     = prdstr
 
     # return formatted climatology dataset
     return cds
@@ -557,7 +566,10 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
 def _multichunkPresets(multi_chunks):
     ''' translate string identifiers into valid multichunk dicts, based on presets '''
     if isinstance(multi_chunks, str):
-        if multi_chunks.lower() == 'regular': # 256 MB
+        if multi_chunks.lower() == 'large': # 512 MB
+            multi_chunks = {dim:8 for dim in ('lat','lon','latitude','longitude','x','y',)}
+            multi_chunks['time'] = 64
+        elif multi_chunks.lower() == 'regular': # 256 MB
             multi_chunks = {dim:16 for dim in ('lat','lon','latitude','longitude','x','y',)}
             multi_chunks['time'] = 8
         elif multi_chunks.lower() == 'small': # 64 MB
@@ -760,7 +772,7 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
 
 def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, chunks=None, encoding=None,
                laddTime=None, time_dim='time', time_agg=None, ltmpfile=True, lcompute=True, lprogress=True,
-               lfeedback=True, **kwargs):
+               lfeedback=True, comp_args=None, **kwargs):
     ''' function to save a xarray dataset to disk, with options to add/overwrite variables, choose smart encoding,
         add timstamps, use a temp file, and handle dask functionality '''
     from geospatial.netcdf_tools import addTimeStamps, addNameLengthMonth
@@ -835,9 +847,9 @@ def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, 
         # execute with or without progress bar
         if lprogress:
             with ProgressBar():
-                task.compute()
+                task.compute(**comp_args)
         else:
-            task.compute()
+            task.compute(**comp_args)
 
         ## add extras
         with nc.Dataset(tmp_filepath, mode='a') as ncds:

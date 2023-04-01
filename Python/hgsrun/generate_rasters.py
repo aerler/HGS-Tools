@@ -377,11 +377,11 @@ if __name__ == "__main__":
     # subdataset = 'MergedForcing';  varlist = ['liqwatflx_ne5']
     # subdataset = 'MergedForcing';  varlist = ['liqwatflx_sno',]
     # subdataset = 'NRCan';  varlist = ['pet_hog']
-    subdataset = 'NRCan';  varlist = ['precip']
+    subdataset = 'NRCan';  varlist = ['precip', 'T2']
     # subdataset = 'SnoDAS';  varlist = ['dswe',]
     # subdataset = 'ERA5';  dataset_name = 'ERA5';  varlist = ['liqwatflx', 'pet_era5']
-    src_grid = 'na12'  # can be either resolution or grid, depending on source dataset
-    # src_grid = None
+    # src_grid = 'na12'  # can be either resolution or grid, depending on source dataset
+    src_grid = None
     # src_grid = 'snodas'
     # time_interval = "clim"; period = (1981, 2011)
     # time_interval = "clim"; period = (2000, 2020)
@@ -389,7 +389,7 @@ if __name__ == "__main__":
     # start_date = end_date = None; sim_cycles = 20  # cycles/repetitions in include file for periodic forcing
     # data_mode = "daily"  # averages computed from daily data
     # time_interval = "daily"
-    dataset_kwargs = dict(period=period, grid=src_grid, ldt64=True, chunks=True,
+    dataset_kwargs = dict(grid=src_grid, ldt64=True, chunks=True,
                           mode=data_mode, aggregation=time_interval, multi_chunks=None,
                           dataset=subdataset, dataset_args=dataset_args)
 
@@ -448,11 +448,12 @@ if __name__ == "__main__":
     # start_date = '1981-01-01'; end_date = '2020-09-01' # MergedForcing period
     # start_date = '1981-01-01'; end_date = '2020-12-31' # full ERA5-Land period
     # start_date = '2000-01-01'; end_date = '2018-01-01'
-    start_date = '2009-12-14'; end_date = '2020-12-31' # combined NRCan-SnoDAS period
+    # start_date = '2009-12-14'; end_date = '2020-12-31' # combined NRCan-SnoDAS period
     # start_date = '2010-10-01'; end_date = '2020-12-31' # Prairie NRCan-SnoDAS period    
     # start_date = '2010-01-01'; end_date = '2020-12-31' # conservative NRCan-SnoDAS period
     # start_date = '2016-01-01'; end_date = '2017-12-31'
     # start_date = '2016-01-01'; end_date = '2016-01-31' # for testing NRCan
+    start_date = '1949-01-01'; end_date = '2020-12-31' # combined NRCan-SnoDAS period    
 
     if ltest:
         varlist = varlist[:1]
@@ -462,8 +463,8 @@ if __name__ == "__main__":
             end_date = "2012-01-01" if time_interval.lower() == "monthly" else "2011-01-15"
 
     ## output type: ASCII raster or NetCDF-4
-    # mode = 'NetCDF'
-    mode = "raster2d"
+    mode = 'NetCDF'
+    # mode = "raster2d"
 
     # import dataset module
     ds_mod = import_module("datasets.{0:s}".format(dataset))
