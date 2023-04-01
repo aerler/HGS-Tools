@@ -15,17 +15,18 @@ import netCDF4 as nc
 from dask.diagnostics import ProgressBar
 
 # internal imports
-from geospatial.netcdf_tools import getNCAtts, geospatial_netcdf_version, zlib_default # this import should be fine
+from geospatial.netcdf_tools import getNCAtts, geospatial_netcdf_version, zlib_default  # this import should be fine
 
 ## an important option I am relying on!
 xr.set_options(keep_attrs=True)
 
 # names of valid geographic/projected coordinates
-default_x_coords = dict(geo=('lon','long','longitude',), proj=('x','easting','west_east') )
-default_y_coords = dict(geo=('lat','latitude',),         proj=('y','northing','south_north'))
+default_x_coords = dict(geo=('lon', 'long', 'longitude',), proj=('x', 'easting', 'west_east'))
+default_y_coords = dict(geo=('lat', 'latitude',),          proj=('y', 'northing', 'south_north'))
 default_lon_coords = default_x_coords['geo']; default_lat_coords = default_y_coords['geo']
-
-
+default_xlon_coords = default_x_coords['geo'] + default_x_coords['proj']
+default_ylat_coords = default_y_coords['geo'] + default_y_coords['proj']
+default_horizontal_coords = default_xlon_coords + default_ylat_coords
 
 ## helper functions
 
@@ -566,23 +567,26 @@ def computeNormals(xds, aggregation='month', time_stamp='time_stamp', lresample=
 def _multichunkPresets(multi_chunks):
     ''' translate string identifiers into valid multichunk dicts, based on presets '''
     if isinstance(multi_chunks, str):
-        if multi_chunks.lower() == 'large': # 512 MB
-            multi_chunks = {dim:8 for dim in ('lat','lon','latitude','longitude','x','y',)}
+        if multi_chunks.lower() == 'large':  # 512 MB
+            multi_chunks = {dim: 8 for dim in default_horizontal_coords}
             multi_chunks['time'] = 64
-        elif multi_chunks.lower() == 'regular': # 256 MB
-            multi_chunks = {dim:16 for dim in ('lat','lon','latitude','longitude','x','y',)}
+        elif multi_chunks.lower() == 'regular':  # 256 MB
+            multi_chunks = {dim: 16 for dim in default_horizontal_coords}
             multi_chunks['time'] = 8
-        elif multi_chunks.lower() == 'small': # 64 MB
-            multi_chunks = {dim:8 for dim in ('lat','lon','latitude','longitude','x','y','time')}
-        elif multi_chunks.lower() == 'time': # 184 MB
-            multi_chunks = {dim:4 for dim in ('lat','lon','latitude','longitude','x','y')}
-            multi_chunks['time'] = 92 # for reductions along time, we can use a higher value (8 days * 92 ~ 2 years)
+        elif multi_chunks.lower() == 'small':  # 64 MB
+            multi_chunks = {dim: 8 for dim in default_horizontal_coords + ('time',)}
+        elif multi_chunks.lower() == 'horizontal':  # variable size
+            multi_chunks = {dim: -1 for dim in default_horizontal_coords}
+            multi_chunks['time'] = 1  # operations along time dim tend to work better with large horizontal slices
+        elif multi_chunks.lower() == 'time':  # 184 MB
+            multi_chunks = {dim: 4 for dim in default_horizontal_coords}
+            multi_chunks['time'] = 92  # for reductions along time, we can use a higher value (8 days * 92 ~ 2 years)
         elif multi_chunks.lower() == 'tiny':
-            multi_chunks = {dim:2 for dim in ('lat','lon','latitude','longitude','x','y')}
-            multi_chunks['time'] = 2 # for reductions along time, we can use a higher value (8 days * 92 ~ 2 years)
+            multi_chunks = {dim: 2 for dim in default_horizontal_coords}
+            multi_chunks['time'] = 2  # for reductions along time, we can use a higher value (8 days * 92 ~ 2 years)
         else:
             raise NotImplementedError(multi_chunks)
-    elif ( multi_chunks is not None ) and not isinstance(multi_chunks, dict):
+    elif (multi_chunks is not None) and not isinstance(multi_chunks, dict):
         raise TypeError(multi_chunks)
     # return valid multi_chunks (dict)
     return multi_chunks
@@ -667,7 +671,7 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
         if len(filelist) != len(filetypes):
             raise ValueError(filelist)
     elif isinstance(filelist, str):
-        filelist = {filetype:filelist for filetype in filetypes}
+        filelist = {filetype: filelist for filetype in filetypes}
     else:
         raise ValueError(filelist)
     # just some default settings that will produce chunks larger than 100 MB on 8*64*64 float chunks
@@ -682,31 +686,31 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
     ds_list = []
     for filetype in filetypes:
         filename = filelist[filetype].lower().format(var=filetype.lower(), type=filetype.lower()) # all lower case
-        filepath = '{}/{}'.format(folder,filename)
+        filepath = '{}/{}'.format(folder, filename)
         chunks = orig_chunks  # reset
         # apply varmap in reverse to varlist
         if os.path.exists(filepath):
             # load dataset
             if chunks is True:
                 # infer chunks from NetCDF-4 file (not sure why xarray doesn't do this automatically...)
-                with nc.Dataset(filepath, 'r') as ncds : # open in read-only using NetCDF4 module
+                with nc.Dataset(filepath, 'r') as ncds :  # open in read-only using NetCDF4 module
                     chunks = dict(); chunks_nD = dict()
                     for varname,ncvar in ncds.variables.items():
                         for dim,size in zip(ncvar.dimensions,ncvar.chunking()):
                             if ncvar.ndim > 1:
                                 if dim in chunks_nD and chunks_nD[dim] != size:
                                     print("WARNING: Chunks (nD) for dimension '{}' not coherent in file:\n '{}'".format(dim, filepath))
-                                chunks_nD[dim] = size # this just selects the last value... not necessarily always the same
+                                chunks_nD[dim] = size  # this just selects the last value... not necessarily always the same
                             else:
                                 if dim in chunks and chunks[dim] != size:
                                     print("WARNING: Chunks (1D) for dimension '{}' not coherent in file:\n '{}'".format(dim, filepath))
-                                chunks[dim] = size # this just selects the last value... not necessarily always the same
+                                chunks[dim] = size  # this just selects the last value... not necessarily always the same
                             # overwrite 1D chunks with nD chunks (nD fields should dictate chunking)
                             chunks.update(chunks_nD)
-            if multi_chunks: # enlarge chunks with multiplier
+            if multi_chunks:  # enlarge chunks with multiplier
                 if not (chunks and isinstance(chunks, dict)):
                     raise ValueError("Multi_chunks only works with explicit chunks or direct inference from NetCDF file.")
-                chunks = {dim:(val*multi_chunks.get(dim,1)) for dim,val in chunks.items()}
+                chunks = {dim: (val * multi_chunks.get(dim, 1)) for dim, val in chunks.items()}
             # open dataset with xarray
             #print(varname,chunks)
             ds = xr.open_dataset(filepath, chunks=chunks, mask_and_scale=mask_and_scale, **kwargs)
@@ -747,16 +751,16 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
     xds = xr.merge(ds_list, compat=compat, join=join, fill_value=fill_value, combine_attrs=combine_attrs)
 
     # add projection info
-    if lgeoref:
-        if geoargs is not None:
-            # check
-            if 'proj4' in xds.attrs and 'proj4_string' in geoargs:
-                if xds.attrs['proj4'] != geoargs['proj4_string']:
-                    raise ValueError(xds.attrs['proj4'])
-            # custom options
-            xds = addGeoReference(xds, **geoargs)
+    if geoargs is not None:
+        # check
+        if 'proj4' in xds.attrs and 'proj4_string' in geoargs:
+            if xds.attrs['proj4'] != geoargs['proj4_string']:
+                raise ValueError(xds.attrs['proj4'])
+        # custom options
+        xds = addGeoReference(xds, **geoargs)
+    elif lgeoref:
         # default options
-        elif 'proj4' in xds.attrs:
+        if 'proj4' in xds.attrs:
             # read projection string
             xds = addGeoReference(xds, proj4_string=xds.attrs['proj4'])
         elif grid:
@@ -845,6 +849,7 @@ def saveXArray(xds, filename=None, folder=None, mode='overwrite', varlist=None, 
                          engine='netcdf4', encoding=encoding, compute=False)
     if lcompute:
         # execute with or without progress bar
+        if comp_args is None: comp_args = dict()
         if lprogress:
             with ProgressBar():
                 task.compute(**comp_args)
