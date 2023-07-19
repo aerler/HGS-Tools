@@ -34,6 +34,8 @@
 *.tar
 
 *.nc
+*.csv
+*.dat
 
 Articles/
 archive/
@@ -44,6 +46,7 @@ bin/
 test/
 gmon/.out
 .*project
+.vscode/
 
 Python/dataset/test.txt
 Python/queue-test.txt
