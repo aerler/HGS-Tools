@@ -765,9 +765,14 @@ def loadXArray(varname=None, varlist=None, folder=None, varatts=None, filename_p
             xds = addGeoReference(xds, proj4_string=xds.attrs['proj4'])
         elif grid:
             # load griddef from pickle
-            from geodata.gdal import loadPickledGridDef
-            griddef = loadPickledGridDef(grid=grid)
-            xds = addGeoReference(xds, proj4_string=griddef.projection.ExportToProj4(),)
+            from geodata.gdal import loadPickledGridDef, ArgumentError
+            try:
+                griddef = loadPickledGridDef(grid=grid)
+                proj4_string = griddef.projection.ExportToProj4()
+            except ArgumentError:
+                warn("Could not load griddef from pickle file: '{}'".format(grid))
+                proj4_string = None                
+            xds = addGeoReference(xds, proj4_string=proj4_string)
         else:
             # use default lat/lon, if it works...
             xds = addGeoReference(xds,)
